@@ -27,7 +27,7 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 ## Tasks
 - [x] T1 Scaffold: pyproject (uv), ruff/mypy/pytest config, `config.py` (settings), `.gitignore`, `.env.example`, logging setup. Route: delegated (writer).
 - [x] T2 Domain + application: entities, ports, domain errors, use cases (CreateCustomer, UpdateCustomer, GetCustomer, SearchCustomers, CreateSaleOrder, ConfirmSaleOrder, HandleOdooEvent) with fake-repo unit tests. Route: delegated (writer).
-- [ ] T3 Odoo client: transport port + jsonrpc (httpx, retries/backoff on network errors only) + xmlrpc (`asyncio.to_thread`), uid cache + re-auth, `execute_kw` + helpers, fault mapping, company context. respx tests. Route: delegated (writer).
+- [x] T3 Odoo client: transport port + jsonrpc (httpx, retries/backoff on network errors only) + xmlrpc (`asyncio.to_thread`), uid cache + re-auth, `execute_kw` + helpers, fault mapping, company context. respx tests. Route: delegated (writer).
 - [ ] T4 Odoo repository adapters (customer, product, sale order) + json2 transport + transport factory. Route: delegated (writer).
 - [ ] T5 API: routers, schemas, DI wiring, error handlers (401/404/422/502), `X-API-Key`, `/health`. TestClient tests. Route: delegated (writer).
 - [ ] T6 Idempotency: `Idempotency-Key` on POSTs, SQLite store. Route: delegated (writer).
@@ -56,5 +56,11 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 - GREEN: 40 passed (customer/sale-order use cases with in-memory fakes, event bus isolation, HandleOdooEvent).
 - Checks: pytest 40 passed; ruff check clean; ruff format --check clean; mypy src clean.
 
+### T3 (route: delegated writer; commit: subject "feat(odoo): add async odoo client with jsonrpc and xmlrpc transports"; T2 = 3ac89a8)
+- RED: `uv run pytest -q` -> `ImportError`/collection errors for errors, retry, jsonrpc, xmlrpc, client modules (errors module tested RED first: collection error, then GREEN 24 passed).
+- GREEN: 124 passed (error mapping, retry policy, respx JSON-RPC incl. auth failure, re-auth, MissingError, ValidationError, retry on search_read, no retry on create, timeout, company context; XML-RPC via fake ServerProxy; OdooClient uid cache/re-auth/helpers).
+- Checks: pytest 124 passed; ruff check clean; ruff format --check clean; mypy src clean.
+- Design: transport owns session uid; client caches uid and decides when to re-authenticate (documented in `transport.py`), keeping json2 implementable behind the same Protocol.
+
 ## Next step
-T3.
+T4.
