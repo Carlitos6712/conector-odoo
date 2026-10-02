@@ -3,7 +3,9 @@ import logging
 import pytest
 from fastapi.testclient import TestClient
 
+from conector_odoo.domain.entities import CustomerData
 from conector_odoo.domain.errors import (
+    BatchPartiallyApplied,
     ConnectorError,
     OdooAuthError,
     OdooNotFound,
@@ -177,3 +179,18 @@ def test_lifespan_closes_the_odoo_client() -> None:
         assert client is not None
     transport = client._transport
     assert transport._client.is_closed
+
+
+def test_batch_partially_applied_maps_to_502_with_created_ids(env: Env) -> None:
+    async def boom(self: object, data: CustomerData) -> None:
+        raise BatchPartiallyApplied([5, 6], 1, "chunk 1 failed: timeout")
+
+    env.customers.create = boom.__get__(env.customers)  # type: ignore[method-assign]
+    response = env.client.post("/customers", json={"name": "Ada"})
+    assert response.status_code == 502
+    assert response.json() == {
+        "error": "batch_partially_applied",
+        "detail": "chunk 1 failed: timeout",
+        "created_ids": [5, 6],
+        "failed_chunk": 1,
+    }

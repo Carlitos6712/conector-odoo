@@ -64,6 +64,14 @@ logger = logging.getLogger(__name__)
 
 Sleep = Callable[[float], Awaitable[None]]
 
+
+def _limits(max_connections: int | None) -> httpx.Limits:
+    """Connection pool sized to the client's concurrency cap (httpx defaults when unset)."""
+    if max_connections is None:
+        return httpx.Limits(max_connections=100, max_keepalive_connections=20)
+    return httpx.Limits(max_connections=max_connections, max_keepalive_connections=max_connections)
+
+
 # Positional parameter names per method (before any keyword arguments).
 _POSITIONAL: dict[str, tuple[str, ...]] = {
     "search_read": ("domain",),
@@ -108,6 +116,7 @@ class Json2Transport:
         timeout: float = 10.0,
         max_retries: int = 2,
         client: httpx.AsyncClient | None = None,
+        max_connections: int | None = None,
         sleep: Sleep = asyncio.sleep,
         backoff_base: float = 0.5,
     ) -> None:
@@ -118,7 +127,8 @@ class Json2Transport:
         self._timeout = timeout
         self._max_retries = max_retries
         self._owns_client = client is None
-        self._client = client or httpx.AsyncClient(timeout=timeout)
+        self._max_connections = max_connections
+        self._client = client or httpx.AsyncClient(timeout=timeout, limits=_limits(max_connections))
         self._sleep = sleep
         self._backoff_base = backoff_base
         self._uid: int | None = None

@@ -1,5 +1,5 @@
 """Domain errors. The API layer maps them to 401 / 403 / 404 / 422 / 502 (and 202 for
-``CreatedButUnreadable``)."""
+``CreatedButUnreadable``; ``BatchPartiallyApplied`` is a 502 that lists the created ids)."""
 
 
 class ConnectorError(Exception):
@@ -44,3 +44,18 @@ class CreatedButUnreadable(ConnectorError):
         super().__init__(message)
         self.model = model
         self.record_id = record_id
+
+
+class BatchPartiallyApplied(ConnectorError):
+    """A chunked ``create`` failed after earlier chunks were already created in Odoo.
+
+    Chunks are separate, non-idempotent calls that are never retried, so the records created
+    before the failure exist. ``created_ids`` lists them in input order (the first
+    ``len(created_ids)`` input items were applied) and ``failed_chunk`` is the zero-based index
+    of the chunk that failed. The original error is available as ``__cause__``.
+    """
+
+    def __init__(self, created_ids: list[int], failed_chunk: int, message: str) -> None:
+        super().__init__(message)
+        self.created_ids = list(created_ids)
+        self.failed_chunk = failed_chunk

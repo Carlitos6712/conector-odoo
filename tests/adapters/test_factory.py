@@ -47,3 +47,14 @@ def test_build_odoo_client_uses_company_id() -> None:
 
 def test_build_odoo_client_without_company() -> None:
     assert build_odoo_client(make_settings())._company_id is None
+
+
+@pytest.mark.parametrize("protocol", ["jsonrpc", "json2"])
+def test_http_transports_get_the_connection_limit(protocol: str) -> None:
+    transport = build_transport(make_settings(odoo_protocol=protocol, odoo_max_concurrency=5))
+    assert transport._max_connections == 5  # type: ignore[attr-defined]
+
+
+def test_build_odoo_client_passes_the_concurrency_limit() -> None:
+    client = build_odoo_client(make_settings(odoo_max_concurrency=3))
+    assert client._max_concurrency == 3

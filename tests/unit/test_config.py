@@ -19,6 +19,9 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "ODOO_TIMEOUT_SECONDS",
         "ODOO_MAX_RETRIES",
         "ODOO_COMPANY_ID",
+        "ODOO_MAX_CONCURRENCY",
+        "ODOO_BATCH_SIZE",
+        "BULK_MAX_ITEMS",
         "CONNECTOR_API_KEY",
         "IDEMPOTENCY_DB_PATH",
         "LOG_LEVEL",
@@ -141,3 +144,43 @@ def test_in_progress_timeout_default_is_the_store_constant(monkeypatch: pytest.M
     _set_env(monkeypatch)
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
     assert settings.idempotency_in_progress_timeout_seconds == DEFAULT_IN_PROGRESS_TIMEOUT_SECONDS
+
+
+def test_batching_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_env(monkeypatch)
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.odoo_max_concurrency == 8
+    assert settings.odoo_batch_size == 500
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("ODOO_MAX_CONCURRENCY", "0"),
+        ("ODOO_MAX_CONCURRENCY", "65"),
+        ("ODOO_BATCH_SIZE", "0"),
+        ("ODOO_BATCH_SIZE", "5001"),
+    ],
+)
+def test_batching_settings_are_bounded(
+    monkeypatch: pytest.MonkeyPatch, name: str, value: str
+) -> None:
+    _set_env(monkeypatch, **{name: value})
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize(
+    ("name", "value", "attr", "expected"),
+    [
+        ("ODOO_MAX_CONCURRENCY", "1", "odoo_max_concurrency", 1),
+        ("ODOO_MAX_CONCURRENCY", "64", "odoo_max_concurrency", 64),
+        ("ODOO_BATCH_SIZE", "1", "odoo_batch_size", 1),
+        ("ODOO_BATCH_SIZE", "5000", "odoo_batch_size", 5000),
+    ],
+)
+def test_batching_settings_accept_the_bounds(
+    monkeypatch: pytest.MonkeyPatch, name: str, value: str, attr: str, expected: int
+) -> None:
+    _set_env(monkeypatch, **{name: value})
+    assert getattr(Settings(_env_file=None), attr) == expected  # type: ignore[call-arg]

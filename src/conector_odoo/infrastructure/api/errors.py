@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 
 from conector_odoo.config import Settings
 from conector_odoo.domain.errors import (
+    BatchPartiallyApplied,
     ConnectorError,
     CreatedButUnreadable,
     OdooAuthError,
@@ -84,6 +85,16 @@ async def _connector_error(request: Request, exc: Exception) -> JSONResponse:
 def connector_error_response(request: Request, exc: ConnectorError) -> JSONResponse:
     """Map a domain error to its HTTP response (shared with ``IdempotencyGuard``)."""
     detail = scrub(str(exc), request.app.state.settings)
+    if isinstance(exc, BatchPartiallyApplied):
+        # 502, but part of the batch WAS applied: the ids must reach the client.
+        _log_failure(request, exc, 502, detail)
+        partial: dict[str, object] = {
+            "error": "batch_partially_applied",
+            "detail": detail,
+            "created_ids": exc.created_ids,
+            "failed_chunk": exc.failed_chunk,
+        }
+        return JSONResponse(partial, status_code=502)
     status, code = next(
         ((s, c) for kind, s, c in _MAPPING if isinstance(exc, kind)), (502, "connector_error")
     )

@@ -39,6 +39,9 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 - [x] T7a Review follow-ups (T7 4-lens review). Route: delegated (writer).
 - [x] T8 `odoo_addon/`: minimal module posting signed events for res.partner and sale.order. Route: delegated (writer).
 - [x] T9 Dockerfile, docker-compose.yml, README (setup, env, curl, API key, addon install, mermaid). Route: delegated (writer).
+- [x] T10 Odoo client batching: keyset `iter_search_read`, chunked `read_many`/`create_many`/`write_many`, `BatchPartiallyApplied`, concurrency semaphore + httpx limits, settings `odoo_max_concurrency`/`odoo_batch_size`. Route: delegated writer.
+- [ ] T11 Streaming NDJSON export for customers and products. Route: delegated writer.
+- [ ] T12 Bulk customer upsert endpoint. Route: delegated writer.
 
 ## Acceptance criteria
 - All PROMPT.md endpoints exist and are tested; `uv run pytest`, `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy src` pass.
@@ -49,6 +52,8 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 
 ## Progress / evidence
 (updated per task: commit SHA, checks observed, review tier)
+
+- T7a-T9 native review: high, granted, 4 lenses, approved and acknowledged (lineage review-653c38c024e2e4db). `.env.example` user-change review (lineage review-f7f0de65ed2a0acc) found a live-looking API key; user moved values to `.env` and restored the template; correction exceeded the frozen 3-line budget, lineage abandoned (operator_disposition).
 
 ### T1 (route: delegated writer; commit: see `git log` subject "chore: scaffold project with uv, settings and logging")
 - RED: `uv run pytest -q` -> 2 collection errors (`ModuleNotFoundError: conector_odoo.logging`, config missing).
@@ -131,7 +136,13 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 - `docker build -t conector-odoo:dev .` succeeded (multi-stage, uv `sync --frozen --no-dev`, non-root uid 10001). Smoke run: container started, `/health` answered 503 `degraded` ("cannot reach Odoo") against an unreachable Odoo as designed, `/app/data` owned by the app user.
 - README env table checked against `config.py` (all 17 variables and defaults match). The openssl signing example was compared with the Python HMAC for the same input (identical digest).
 
+### T10 (route: delegated writer; commit: subject "feat(odoo): add keyset batch iteration, chunked operations and concurrency limit")
+- RED: `uv run pytest -q` -> 2 collection errors (`ImportError: BatchPartiallyApplied` from `conector_odoo.domain.errors` in the new batching tests and the API error-mapping test).
+- GREEN: 532 passed (keyset domain progression over 3 batches, empty result, full last batch costs one extra call, batch size validation, chunk boundaries 0/1/100/101/250, order preservation and missing ids in `read_many`, partial failure carries created ids and chunk index, semaphore caps in-flight calls with an `asyncio.Event`-gated fake transport, no deadlock with one slot on re-auth, json2 multi-create body, settings bounds, factory passes limits, 502 `batch_partially_applied` body). Checks: pytest 532 passed; ruff check clean; ruff format --check clean; mypy src clean.
+- Decisions: first batch has no `id` clause, later ones append `["id", ">", last_id]`; the semaphore wraps each transport call (and `authenticate`) but is never held across a re-authentication. A failure of the first `create_many` chunk re-raises the original error (nothing applied); `BatchPartiallyApplied` is only raised when earlier chunks created records. Malformed multi-create results (wrong length or non-int ids) raise `OdooUnavailable`. Pool limits apply to jsonrpc/json2 only (xmlrpc has no pool; its calls are still capped by the semaphore). Batching constants live in `application/pagination.py`.
+
 ### Pending for user
+- `.env.example` should also list `ODOO_MAX_CONCURRENCY` (default 8), `ODOO_BATCH_SIZE` (default 500) and `BULK_MAX_ITEMS` (default 1000).
 - `.env.example` needs updating (new settings: `IDEMPOTENCY_IN_PROGRESS_TIMEOUT_SECONDS`, `IDEMPOTENCY_TTL_HOURS`, `IDEMPOTENCY_PURGE_INTERVAL_SECONDS`, `WEBHOOK_TOLERANCE_SECONDS`, `WEBHOOK_REDELIVERY_AFTER_SECONDS`; 16-character minimum for `ODOO_API_KEY`, `CONNECTOR_API_KEY`, `WEBHOOK_SECRET`). Subagents have no access to `.env*` files.
 
 ## Next step

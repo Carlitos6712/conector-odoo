@@ -135,3 +135,19 @@ async def test_every_call_authenticates_once_and_sends_the_bearer_key(client: Od
     assert route.call_count == 2
     assert route.calls[0].request.headers["authorization"] == "bearer key"
     assert client.uid == 42
+
+
+@respx.mock
+async def test_create_many_sends_one_vals_list_per_chunk(client: OdooClient) -> None:
+    mock_auth()
+    route = respx.post(f"{BASE}/res.partner/create").mock(
+        side_effect=[httpx.Response(200, json=[1, 2]), httpx.Response(200, json=[3])]
+    )
+    ids = await client.create_many(
+        "res.partner", [{"name": "A"}, {"name": "B"}, {"name": "C"}], chunk_size=2
+    )
+    assert ids == [1, 2, 3]
+    assert [json.loads(c.request.content) for c in route.calls] == [
+        {"vals_list": [{"name": "A"}, {"name": "B"}]},
+        {"vals_list": [{"name": "C"}]},
+    ]

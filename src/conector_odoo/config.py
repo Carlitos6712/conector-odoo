@@ -3,9 +3,15 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from conector_odoo.application.pagination import (
+    DEFAULT_BATCH_SIZE,
+    DEFAULT_MAX_CONCURRENCY,
+    MAX_BATCH_SIZE,
+    MAX_CONCURRENCY,
+)
 from conector_odoo.infrastructure.idempotency.store import DEFAULT_IN_PROGRESS_TIMEOUT_SECONDS
 
 OdooProtocol = Literal["jsonrpc", "xmlrpc", "json2"]
@@ -31,6 +37,10 @@ class Settings(BaseSettings):
     odoo_timeout_seconds: float = 10.0
     odoo_max_retries: int = 2
     odoo_company_id: int | None = None
+    # Max Odoo calls in flight at once (also the HTTP connection pool size).
+    odoo_max_concurrency: int = Field(default=DEFAULT_MAX_CONCURRENCY, ge=1, le=MAX_CONCURRENCY)
+    # Default page size of keyset iteration and chunked Odoo operations.
+    odoo_batch_size: int = Field(default=DEFAULT_BATCH_SIZE, ge=1, le=MAX_BATCH_SIZE)
 
     connector_api_key: SecretStr | None = None
     webhook_secret: SecretStr

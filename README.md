@@ -88,6 +88,8 @@ All settings are environment variables (or entries in `.env`).
 | `ODOO_TIMEOUT_SECONDS` | `10.0` | Per-request timeout towards Odoo. |
 | `ODOO_MAX_RETRIES` | `2` | Retries on network errors for idempotent calls (never for `create`). |
 | `ODOO_COMPANY_ID` | unset | Default company injected in the Odoo context (`allowed_company_ids`). |
+| `ODOO_MAX_CONCURRENCY` | `8` | Max Odoo calls in flight at once (1-64). Also the HTTP connection pool size for `jsonrpc`/`json2`. |
+| `ODOO_BATCH_SIZE` | `500` | Default page size for keyset iteration and chunked Odoo operations (1-5000). |
 | `CONNECTOR_API_KEY` | unset | Key clients send in `X-API-Key`, at least 16 characters. If unset, the data endpoints are unauthenticated and a warning is logged at startup. |
 | `WEBHOOK_SECRET` | required | Shared secret to verify Odoo webhooks, at least 16 characters. |
 | `WEBHOOK_TOLERANCE_SECONDS` | `300` | Max clock skew between the signed timestamp and the connector clock. |
@@ -169,6 +171,7 @@ Errors are JSON: `{"error": "<code>", "detail": "<message>"}`.
 | 422 | `validation_error` / `idempotency_key_reused` | Invalid input (also Odoo validation errors), or the key was reused with another request. |
 | 202 | `created_but_unreadable` | The record WAS created in Odoo but could not be read back; the body carries `id` and `model`, and `Location` points to the resource. Do not retry the create. |
 | 502 | `odoo_unavailable` / `connector_error` | Odoo unreachable, timed out or returned a server error. |
+| 502 | `batch_partially_applied` | A chunked create failed after earlier chunks were created. The body adds `created_ids` (what exists in Odoo, in input order) and `failed_chunk`; do not blindly retry. |
 | 503 | `idempotency_store_unavailable` / `webhook_store_unavailable` | The local SQLite store failed; the action was not executed. `/health` also answers 503 `degraded` when Odoo is down. |
 
 ### Idempotency
@@ -230,6 +233,26 @@ in-flight) events are acknowledged with 200. Handlers must therefore be idempote
 `odoo_addon/connector_webhook/` posts the events above from Odoo 17+ (partner created/updated, sale
 order confirmed). Install steps, system parameters and version caveats are in
 [odoo_addon/connector_webhook/README.md](odoo_addon/connector_webhook/README.md).
+
+## Large data volumes
+
+The Odoo client is built to move many records without loading everything at once.
+
+- **Keyset pagination.** `OdooClient.iter_search_read` walks a model in batches ordered by `id`:
+  each batch is `search_read(domain + [id > last_id], limit=batch_size, order="id asc")`. Unlike
+  `offset`, the cost of a batch does not grow with its position and concurrent inserts or deletes
+  cannot shift the window. Only one batch is in memory at a time. `batch_size` is 1-5000 (default
+  `ODOO_BATCH_SIZE`).
+- **Chunked operations.** `read_many` (keeps input order, skips missing ids), `write_many` and
+  `create_many` split big lists into chunks (500, 500 and 100 by default). `create_many` uses Odoo
+  multi-create (one `create` call per chunk with a list of values).
+- **No blind retries.** Each `create` chunk is a separate non-idempotent call: it is never retried.
+  If a later chunk fails, the client raises `BatchPartiallyApplied` carrying the ids already created
+  and the failed chunk index. Over HTTP this is a `502` `batch_partially_applied` response with
+  `created_ids`; the records in `created_ids` exist in Odoo.
+- **Concurrency limit.** `ODOO_MAX_CONCURRENCY` caps in-flight Odoo calls across the whole process
+  (semaphore) and sizes the HTTP connection pool. Raise it for throughput if Odoo has spare workers;
+  lower it to protect a small Odoo instance. Excess calls wait, they are not rejected.
 
 ## Development
 

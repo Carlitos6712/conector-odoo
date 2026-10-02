@@ -17,10 +17,19 @@ def build_transport(settings: Settings) -> OdooTransport:
     retries = settings.odoo_max_retries
     if settings.odoo_protocol == "xmlrpc":
         return XmlRpcTransport(url, db, user, api_key, timeout=timeout, max_retries=retries)
+    pool = settings.odoo_max_concurrency
     if settings.odoo_protocol == "json2":
-        return Json2Transport(url, db, user, api_key, timeout=timeout, max_retries=retries)
-    return JsonRpcTransport(url, db, user, api_key, timeout=timeout, max_retries=retries)
+        return Json2Transport(
+            url, db, user, api_key, timeout=timeout, max_retries=retries, max_connections=pool
+        )
+    return JsonRpcTransport(
+        url, db, user, api_key, timeout=timeout, max_retries=retries, max_connections=pool
+    )
 
 
 def build_odoo_client(settings: Settings) -> OdooClient:
-    return OdooClient(build_transport(settings), company_id=settings.odoo_company_id)
+    return OdooClient(
+        build_transport(settings),
+        company_id=settings.odoo_company_id,
+        max_concurrency=settings.odoo_max_concurrency,
+    )
