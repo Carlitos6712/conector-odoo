@@ -105,3 +105,20 @@ def test_confirm_is_idempotent_for_confirmed_orders(env: Env) -> None:
 
 def test_confirm_missing_sale_order_is_404(env: Env) -> None:
     assert env.client.post("/sale-orders/9/confirm").status_code == 404
+
+
+def test_get_sale_order_passes_the_company_id_query_param(env: Env) -> None:
+    env.client.post("/sale-orders", json=ORDER)
+    assert env.client.get("/sale-orders/1?company_id=2").status_code == 200
+    assert env.orders.get_companies[-1] == 2
+
+
+def test_confirm_sale_order_passes_the_company_id_query_param(env: Env) -> None:
+    env.client.post("/sale-orders", json=ORDER)
+    assert env.client.post("/sale-orders/1/confirm?company_id=2").status_code == 200
+    assert env.orders.confirm_companies == [2]
+
+
+@pytest.mark.parametrize("path", ["/sale-orders/1?company_id=0", "/sale-orders/1?company_id=x"])
+def test_invalid_company_id_is_422(env: Env, path: str) -> None:
+    assert env.client.get(path).status_code == 422

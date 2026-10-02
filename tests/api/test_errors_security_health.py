@@ -157,7 +157,7 @@ def test_create_app_defaults_to_settings_from_the_environment(
     monkeypatch.setenv("ODOO_DB", "db")
     monkeypatch.setenv("ODOO_USER", "bot")
     monkeypatch.setenv("ODOO_API_KEY", "k")
-    monkeypatch.setenv("WEBHOOK_SECRET", "w")
+    monkeypatch.setenv("WEBHOOK_SECRET", "whsec-test-secret-123")
     monkeypatch.setenv("CONNECTOR_API_KEY", API_KEY)
     from conector_odoo.config import get_settings
 

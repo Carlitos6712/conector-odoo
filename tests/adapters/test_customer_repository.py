@@ -1,7 +1,12 @@
 import pytest
 
 from conector_odoo.domain.entities import Customer, CustomerData, CustomerQuery, CustomerUpdate
-from conector_odoo.domain.errors import OdooNotFound, OdooUnavailable, OdooValidationError
+from conector_odoo.domain.errors import (
+    CreatedButUnreadable,
+    OdooNotFound,
+    OdooUnavailable,
+    OdooValidationError,
+)
 from conector_odoo.infrastructure.odoo.customer_repository import OdooCustomerRepository
 from tests.adapters.fake_odoo_client import FakeOdooClient
 
@@ -237,6 +242,7 @@ async def test_create_read_back_failure_reports_the_created_customer_id(
 ) -> None:
     client.script("res.partner", "create", 5)
     client.script("res.partner", "read", OdooUnavailable("boom"))
-    with pytest.raises(OdooUnavailable) as info:
+    with pytest.raises(CreatedButUnreadable) as info:
         await repo.create(CustomerData(name="Ada"))
+    assert (info.value.model, info.value.record_id) == ("res.partner", 5)
     assert "customer 5 was created" in str(info.value)

@@ -26,12 +26,23 @@ class ConfirmSaleOrder:
     def __init__(self, orders: SaleOrderRepository) -> None:
         self._orders = orders
 
-    async def execute(self, order_id: int) -> SaleOrder:
-        order = await self._orders.get(order_id)
+    async def execute(self, order_id: int, company_id: int | None = None) -> SaleOrder:
+        order = await self._orders.get(order_id, company_id)
         if order is None:
             raise OdooNotFound(f"sale order {order_id} not found")
         if order.state in _CONFIRMED_STATES:
             return order
         if order.state == "cancel":
             raise OdooValidationError("a cancelled sale order cannot be confirmed")
-        return await self._orders.confirm(order_id)
+        return await self._orders.confirm(order_id, company_id)
+
+
+class GetSaleOrder:
+    def __init__(self, orders: SaleOrderRepository) -> None:
+        self._orders = orders
+
+    async def execute(self, order_id: int, company_id: int | None = None) -> SaleOrder:
+        order = await self._orders.get(order_id, company_id)
+        if order is None:
+            raise OdooNotFound(f"sale order {order_id} not found")
+        return order

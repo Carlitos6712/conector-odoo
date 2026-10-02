@@ -117,6 +117,22 @@ async def test_authenticate_without_a_usable_uid_in_context_falls_back_to_the_lo
     with caplog.at_level("WARNING"):
         assert await harness.transport.authenticate() == 42
     assert "could not verify" in caplog.text
+    assert "context_get returned no usable uid" in caplog.text
+
+
+@pytest.mark.parametrize("status", [403, 404, 500])
+@respx.mock
+async def test_authenticate_falls_back_to_the_login_lookup_when_context_get_fails(
+    harness: Harness, status: int, caplog: pytest.LogCaptureFixture
+) -> None:
+    respx.post(f"{URL}/json/2/res.users/context_get").mock(return_value=httpx.Response(status))
+    search = respx.post(f"{URL}/json/2/res.users/search").mock(
+        return_value=httpx.Response(200, json=[42])
+    )
+    with caplog.at_level("WARNING"):
+        assert await harness.transport.authenticate() == 42
+    assert search.called
+    assert "context_get failed" in caplog.text
 
 
 @pytest.mark.parametrize(

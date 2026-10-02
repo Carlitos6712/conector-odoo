@@ -36,7 +36,7 @@ def make_settings(**overrides: Any) -> Settings:
         "odoo_db": "db",
         "odoo_user": "bot",
         "odoo_api_key": ODOO_KEY,
-        "webhook_secret": "whsec",
+        "webhook_secret": "whsec-test-secret-123",
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)  # type: ignore[call-arg]

@@ -4,16 +4,17 @@ Lines are created through the ``order_line`` one2many command ``[0, 0, values]``
 lists, not tuples). ``price_unit`` is omitted when ``None`` so Odoo applies the pricelist.
 ``company_id`` is set on the order and also passed as the call company so the context matches;
 the read-back after ``create`` uses the same company so it sees the record that was just created.
-If that read-back fails the order already exists in Odoo, so the error says so (with the id)
-instead of surfacing as a plain failure that would invite a duplicate create.
+If that read-back fails the order already exists in Odoo, so ``CreatedButUnreadable`` (carrying
+the id) is raised instead of a plain failure that would invite a duplicate create.
+``get``/``confirm`` accept an optional ``company_id`` to read/act in that company context.
 """
 
 from typing import Any
 
 from conector_odoo.domain.entities import SaleOrder, SaleOrderData, SaleOrderLine
-from conector_odoo.domain.errors import ConnectorError, OdooNotFound, OdooUnavailable
+from conector_odoo.domain.errors import OdooNotFound
 from conector_odoo.infrastructure.odoo.client import OdooClient
-from conector_odoo.infrastructure.odoo.mapping import many2one_id
+from conector_odoo.infrastructure.odoo.mapping import many2one_id, read_back
 
 ORDER_MODEL = "sale.order"
 LINE_MODEL = "sale.order.line"
@@ -33,25 +34,24 @@ class OdooSaleOrderRepository:
         if data.company_id is not None:
             values["company_id"] = data.company_id
         order_id = await self._client.create(ORDER_MODEL, values, company_id=data.company_id)
-        try:
-            order = await self._read(order_id, data.company_id)
-        except ConnectorError as exc:
-            raise OdooUnavailable(
-                f"sale order {order_id} was created but could not be read back"
-            ) from exc
-        if order is None:
-            raise OdooUnavailable(f"sale order {order_id} was created but could not be read back")
-        return order
+        return await read_back(
+            ORDER_MODEL,
+            order_id,
+            "sale order",
+            lambda: self._read(order_id, data.company_id),
+        )
 
-    async def confirm(self, order_id: int) -> SaleOrder:
-        await self._client.execute_kw(ORDER_MODEL, "action_confirm", [[order_id]])
-        order = await self.get(order_id)
+    async def confirm(self, order_id: int, company_id: int | None = None) -> SaleOrder:
+        await self._client.execute_kw(
+            ORDER_MODEL, "action_confirm", [[order_id]], company_id=company_id
+        )
+        order = await self._read(order_id, company_id)
         if order is None:
             raise OdooNotFound(f"sale order {order_id} not found")
         return order
 
-    async def get(self, order_id: int) -> SaleOrder | None:
-        return await self._read(order_id, None)
+    async def get(self, order_id: int, company_id: int | None = None) -> SaleOrder | None:
+        return await self._read(order_id, company_id)
 
     async def _read(self, order_id: int, company_id: int | None) -> SaleOrder | None:
         try:

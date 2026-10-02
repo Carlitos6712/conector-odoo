@@ -32,6 +32,7 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 - [x] T4 Odoo repository adapters (customer, product, sale order) + json2 transport + transport factory. Route: delegated (writer).
 - [x] T4a Review follow-ups (T4 review). Route: delegated (writer).
 - [x] T5 API: routers, schemas, DI wiring, error handlers (401/404/422/502), `X-API-Key`, `/health`. TestClient tests. Route: delegated (writer).
+- [x] T5a Review follow-ups (T5 4-lens review). Route: delegated (writer).
 - [ ] T6 Idempotency: `Idempotency-Key` on POSTs, SQLite store. Route: delegated (writer).
 - [ ] T7 Webhooks: `/webhooks/odoo`, HMAC SHA256 verification, in-process event bus, BackgroundTasks. Route: delegated (writer).
 - [ ] T8 `odoo_addon/`: minimal module posting signed events for res.partner and sale.order. Route: delegated (writer).
@@ -88,6 +89,12 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 - GREEN: 305 passed (product use cases, every endpoint happy path, 401/403/404/422/502 mappings, X-API-Key enforced/disabled, health ok/degraded, request id + request log, lifespan closes the client).
 - Checks: pytest 305 passed; ruff check clean; ruff format --check clean; mypy src clean.
 - Design: `create_app(settings=None)` factory (`uvicorn conector_odoo.main:create_app --factory`); lifespan builds a `Container` (client + repositories) on `app.state.container`; repository dependencies are the test override points; `/health` public, all other routers declare `require_api_key`; email validated with a simple regex (no `email-validator` dependency). T6 hook: add the Idempotency-Key dependency beside `require_api_key` on the POST routes; T7 mounts its router in `_include_routers` without `require_api_key`.
+
+### T4a+T5 native review and T5a follow-ups (route: delegated writer)
+- T4a+T5 native review: high, granted, 4 lenses (risk, resilience, readability, reliability), approved and acknowledged (lineage review-60f09bb3a0f0ae05); advisory findings fixed in T5a; R1-001 kept optional per brief + startup warning. T4a=d348f46, T5=c016601.
+- T5a RED: 4 collection errors (`CreatedButUnreadable`, `GetSaleOrder` missing, new test module) + 14 failures (secret min length, json2 context_get fallback, company_id query param).
+- T5a GREEN: 331 passed. Checks: pytest 331 passed; ruff check clean; ruff format --check clean; mypy src clean.
+- Decisions: `connector_api_key`/`webhook_secret` need >=16 chars (`hide_input_in_errors` so a rejected secret is not echoed); startup WARNING in the lifespan when the API key is unset. New `CreatedButUnreadable(model, record_id)` mapped to 202 `{error: created_but_unreadable, detail, id, model}` + `Location` (/customers/{id}, /sale-orders/{id}), built by one `read_back` helper shared by both repositories. json2 `context_get` non-auth failures warn and fall back to the login lookup (401 still raises). `scrub` ignores secrets <8 chars. Failure log line carries scrubbed `detail` and `request_id` (middleware sets `request.state.request_id`). `MAX_PAGE_SIZE` moved to `application/pagination.py`. `GetSaleOrder` use case; `company_id` query param on GET /sale-orders/{id} and POST /sale-orders/{id}/confirm (ports, fakes, adapter).
 
 ## Next step
 T6.

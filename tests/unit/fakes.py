@@ -83,6 +83,8 @@ class FakeSaleOrderRepository:
         self.items: dict[int, SaleOrder] = {}
         self._next_id = 1
         self.confirm_calls = 0
+        self.get_companies: list[int | None] = []
+        self.confirm_companies: list[int | None] = []
 
     async def create(self, data: SaleOrderData) -> SaleOrder:
         order = SaleOrder(
@@ -98,8 +100,9 @@ class FakeSaleOrderRepository:
         self._next_id += 1
         return order
 
-    async def confirm(self, order_id: int) -> SaleOrder:
+    async def confirm(self, order_id: int, company_id: int | None = None) -> SaleOrder:
         self.confirm_calls += 1
+        self.confirm_companies.append(company_id)
         order = self.items.get(order_id)
         if order is None:
             raise OdooNotFound(f"sale order {order_id} not found")
@@ -107,5 +110,6 @@ class FakeSaleOrderRepository:
         self.items[order_id] = confirmed
         return confirmed
 
-    async def get(self, order_id: int) -> SaleOrder | None:
+    async def get(self, order_id: int, company_id: int | None = None) -> SaleOrder | None:
+        self.get_companies.append(company_id)
         return self.items.get(order_id)

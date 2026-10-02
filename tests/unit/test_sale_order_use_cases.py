@@ -2,7 +2,7 @@ from dataclasses import replace
 
 import pytest
 
-from conector_odoo.application.sale_orders import ConfirmSaleOrder, CreateSaleOrder
+from conector_odoo.application.sale_orders import ConfirmSaleOrder, CreateSaleOrder, GetSaleOrder
 from conector_odoo.domain.entities import SaleOrderData, SaleOrderLine
 from conector_odoo.domain.errors import OdooNotFound, OdooValidationError
 from tests.unit.fakes import FakeSaleOrderRepository
@@ -72,3 +72,23 @@ async def test_confirm_cancelled_order_is_rejected() -> None:
     repo.items[created.id] = replace(created, state="cancel")
     with pytest.raises(OdooValidationError):
         await ConfirmSaleOrder(repo).execute(created.id)
+
+
+async def test_get_sale_order_returns_the_order_and_forwards_the_company() -> None:
+    repo = FakeSaleOrderRepository()
+    created = await CreateSaleOrder(repo).execute(_data(SaleOrderLine(product_id=1, quantity=1)))
+    assert await GetSaleOrder(repo).execute(created.id, company_id=3) == created
+    assert repo.get_companies == [3]
+
+
+async def test_get_sale_order_raises_not_found_when_missing() -> None:
+    with pytest.raises(OdooNotFound):
+        await GetSaleOrder(FakeSaleOrderRepository()).execute(99)
+
+
+async def test_confirm_sale_order_forwards_the_company() -> None:
+    repo = FakeSaleOrderRepository()
+    created = await CreateSaleOrder(repo).execute(_data(SaleOrderLine(product_id=1, quantity=1)))
+    await ConfirmSaleOrder(repo).execute(created.id, company_id=3)
+    assert repo.get_companies == [3]
+    assert repo.confirm_companies == [3]

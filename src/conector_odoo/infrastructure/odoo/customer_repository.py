@@ -15,14 +15,9 @@ filter therefore escapes them with ``escape_like`` and stays a case-insensitive 
 from typing import Any
 
 from conector_odoo.domain.entities import Customer, CustomerData, CustomerQuery, CustomerUpdate
-from conector_odoo.domain.errors import (
-    ConnectorError,
-    OdooNotFound,
-    OdooUnavailable,
-    OdooValidationError,
-)
+from conector_odoo.domain.errors import OdooNotFound, OdooValidationError
 from conector_odoo.infrastructure.odoo.client import OdooClient
-from conector_odoo.infrastructure.odoo.mapping import many2one_id, text_or_none
+from conector_odoo.infrastructure.odoo.mapping import many2one_id, read_back, text_or_none
 
 MODEL = "res.partner"
 FIELDS = [
@@ -66,15 +61,7 @@ class OdooCustomerRepository:
             }
         )
         customer_id = await self._client.create(MODEL, values)
-        try:
-            customer = await self.get(customer_id)
-        except ConnectorError as exc:
-            raise OdooUnavailable(
-                f"customer {customer_id} was created but could not be read back"
-            ) from exc
-        if customer is None:
-            raise OdooUnavailable(f"customer {customer_id} was created but could not be read back")
-        return customer
+        return await read_back(MODEL, customer_id, "customer", lambda: self.get(customer_id))
 
     async def update(self, customer_id: int, update: CustomerUpdate) -> Customer:
         values = await self._to_values(update.changes())

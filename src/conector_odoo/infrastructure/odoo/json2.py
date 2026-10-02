@@ -32,7 +32,9 @@ The key is accepted only if both agree; a different owner or no such login raise
 ``res.users``. UNCERTAINTY: the ``uid`` entry of the ``context_get`` response is not documented
 for Odoo 19. If it is absent or not an integer, ownership cannot be verified, so a warning is
 logged and the login lookup alone decides (the key is still validated by the HTTP 401 check
-and the lookup needs read access to ``res.users``). Verify against a real Odoo 19 instance.
+and the lookup needs read access to ``res.users``). Any non-auth failure of ``context_get``
+(403/404/5xx) is handled the same way (warning + fallback); only a 401 aborts.
+Verify against a real Odoo 19 instance.
 The returned id is always positive, so it cannot be confused with the "authentication failed"
 values (0/False) of the other protocols.
 
@@ -50,7 +52,7 @@ from typing import Any
 
 import httpx
 
-from conector_odoo.domain.errors import OdooAuthError, OdooUnavailable
+from conector_odoo.domain.errors import ConnectorError, OdooAuthError, OdooUnavailable
 from conector_odoo.infrastructure.odoo.errors import (
     map_http_status,
     map_odoo_exception,
@@ -123,8 +125,7 @@ class Json2Transport:
 
     async def authenticate(self) -> int:
         self._uid = None
-        context = await self._call("res.users", "context_get", {}, idempotent=True)
-        owner = context.get("uid") if isinstance(context, dict) else None
+        owner = await self._key_owner()
         found = await self._call(
             "res.users",
             "search",
@@ -139,11 +140,30 @@ class Json2Transport:
                 raise OdooAuthError("the API key does not belong to the configured user")
         else:
             logger.warning(
-                "json2 could not verify the API key owner: context_get returned no uid",
+                "json2 could not verify the API key owner: context_get returned no usable uid",
                 extra={"operation": "res.users.context_get"},
             )
         self._uid = uid
         return uid
+
+    async def _key_owner(self) -> object:
+        """Best-effort ``uid`` of the API key owner; ``None`` when it cannot be determined.
+
+        Auth failures (401) still propagate. Any other failure of ``context_get`` (it is not
+        documented for every Odoo version, and may be forbidden) only skips the owner check and
+        falls back to the login lookup.
+        """
+        try:
+            context = await self._call("res.users", "context_get", {}, idempotent=True)
+        except OdooAuthError:
+            raise
+        except ConnectorError as exc:
+            logger.warning(
+                "json2 could not verify the API key owner: context_get failed",
+                extra={"operation": "res.users.context_get", "error_type": type(exc).__name__},
+            )
+            return None
+        return context.get("uid") if isinstance(context, dict) else None
 
     async def execute_kw(
         self,

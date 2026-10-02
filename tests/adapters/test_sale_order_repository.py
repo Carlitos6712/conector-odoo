@@ -1,7 +1,12 @@
 import pytest
 
 from conector_odoo.domain.entities import SaleOrder, SaleOrderData, SaleOrderLine
-from conector_odoo.domain.errors import OdooNotFound, OdooPermissionError, OdooUnavailable
+from conector_odoo.domain.errors import (
+    CreatedButUnreadable,
+    OdooNotFound,
+    OdooPermissionError,
+    OdooUnavailable,
+)
 from conector_odoo.infrastructure.odoo.sale_order_repository import OdooSaleOrderRepository
 from tests.adapters.fake_odoo_client import FakeOdooClient
 
@@ -131,10 +136,21 @@ async def test_create_read_back_failure_reports_the_created_order_id(
 ) -> None:
     client.script("sale.order", "create", 8)
     client.script("sale.order", "read", failure)
-    with pytest.raises(OdooUnavailable) as info:
+    with pytest.raises(CreatedButUnreadable) as info:
         await repo.create(SaleOrderData(customer_id=5, lines=(SaleOrderLine(3, 1.0),)))
+    assert (info.value.model, info.value.record_id) == ("sale.order", 8)
     assert "8" in str(info.value)
     assert "created" in str(info.value)
+
+
+async def test_create_read_back_returning_nothing_reports_the_created_order(
+    repo: OdooSaleOrderRepository, client: FakeOdooClient
+) -> None:
+    client.script("sale.order", "create", 8)
+    client.script("sale.order", "read", [])
+    with pytest.raises(CreatedButUnreadable) as info:
+        await repo.create(SaleOrderData(customer_id=5, lines=(SaleOrderLine(3, 1.0),)))
+    assert info.value.record_id == 8
 
 
 async def test_create_without_company_omits_company(
@@ -155,7 +171,28 @@ async def test_confirm_calls_action_confirm_then_rereads(
     script_get(client, "sale")
     confirmed = await repo.confirm(8)
     assert confirmed.state == "sale"
-    assert client.calls_to("sale.order", "action_confirm") == [{"args": [[8]], "kwargs": None}]
+    assert client.calls_to("sale.order", "action_confirm") == [
+        {"args": [[8]], "kwargs": None, "company_id": None}
+    ]
+
+
+async def test_get_with_company_reads_order_and_lines_in_that_company(
+    repo: OdooSaleOrderRepository, client: FakeOdooClient
+) -> None:
+    script_get(client)
+    await repo.get(8, company_id=2)
+    assert client.calls_to("sale.order", "read")[0]["company_id"] == 2
+    assert client.calls_to("sale.order.line", "read")[0]["company_id"] == 2
+
+
+async def test_confirm_with_company_confirms_and_rereads_in_that_company(
+    repo: OdooSaleOrderRepository, client: FakeOdooClient
+) -> None:
+    client.script("sale.order", "action_confirm", True)
+    script_get(client, "sale")
+    await repo.confirm(8, company_id=2)
+    assert client.calls_to("sale.order", "action_confirm")[0]["company_id"] == 2
+    assert client.calls_to("sale.order", "read")[0]["company_id"] == 2
 
 
 async def test_confirm_missing_order_raises_not_found(

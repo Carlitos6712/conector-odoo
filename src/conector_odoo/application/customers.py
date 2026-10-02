@@ -1,10 +1,9 @@
 """Customer use cases."""
 
+from conector_odoo.application.pagination import MAX_PAGE_SIZE
 from conector_odoo.domain.entities import Customer, CustomerData, CustomerQuery, CustomerUpdate
 from conector_odoo.domain.errors import OdooNotFound, OdooValidationError
 from conector_odoo.domain.ports import CustomerRepository
-
-MAX_PAGE_SIZE = 1000
 
 
 class CreateCustomer:

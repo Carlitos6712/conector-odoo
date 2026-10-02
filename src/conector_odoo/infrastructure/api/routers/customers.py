@@ -8,6 +8,7 @@ from conector_odoo.application.customers import (
     SearchCustomers,
     UpdateCustomer,
 )
+from conector_odoo.application.pagination import MAX_PAGE_SIZE
 from conector_odoo.domain.entities import CustomerQuery
 from conector_odoo.infrastructure.api.dependencies import (
     get_create_customer,
@@ -45,7 +46,7 @@ async def search_customers(
     use_case: Annotated[SearchCustomers, Depends(get_search_customers)],
     email: str | None = None,
     name: str | None = None,
-    limit: Annotated[int, Query(ge=1, le=1000)] = 50,
+    limit: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[CustomerOut]:
     query = CustomerQuery(email=email, name=name, limit=limit, offset=offset)

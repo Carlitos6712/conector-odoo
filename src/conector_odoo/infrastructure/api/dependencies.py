@@ -18,7 +18,7 @@ from conector_odoo.application.customers import (
     UpdateCustomer,
 )
 from conector_odoo.application.products import GetProduct, ListProducts
-from conector_odoo.application.sale_orders import ConfirmSaleOrder, CreateSaleOrder
+from conector_odoo.application.sale_orders import ConfirmSaleOrder, CreateSaleOrder, GetSaleOrder
 from conector_odoo.config import Settings
 from conector_odoo.domain.ports import CustomerRepository, ProductRepository, SaleOrderRepository
 from conector_odoo.infrastructure.odoo.client import OdooClient
@@ -110,3 +110,7 @@ def get_create_sale_order(repo: SaleOrderRepo) -> CreateSaleOrder:
 
 def get_confirm_sale_order(repo: SaleOrderRepo) -> ConfirmSaleOrder:
     return ConfirmSaleOrder(repo)
+
+
+def get_get_sale_order(repo: SaleOrderRepo) -> GetSaleOrder:
+    return GetSaleOrder(repo)

@@ -95,4 +95,4 @@ class FakeOdooClient:
         company_id: int | None = None,
         context: dict[str, Any] | None = None,
     ) -> Any:
-        return self._call(model, method, args=args, kwargs=kwargs)
+        return self._call(model, method, args=args, kwargs=kwargs, company_id=company_id)

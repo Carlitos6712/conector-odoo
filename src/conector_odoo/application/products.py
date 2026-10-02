@@ -1,6 +1,6 @@
 """Product use cases (read-only)."""
 
-from conector_odoo.application.customers import MAX_PAGE_SIZE
+from conector_odoo.application.pagination import MAX_PAGE_SIZE
 from conector_odoo.domain.entities import Product
 from conector_odoo.domain.errors import OdooNotFound, OdooValidationError
 from conector_odoo.domain.ports import ProductRepository

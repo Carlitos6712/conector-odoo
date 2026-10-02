@@ -2,6 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Query
 
+from conector_odoo.application.pagination import MAX_PAGE_SIZE
 from conector_odoo.application.products import GetProduct, ListProducts
 from conector_odoo.infrastructure.api.dependencies import get_get_product, get_list_products
 from conector_odoo.infrastructure.api.schemas import ErrorOut, ProductOut
@@ -18,7 +19,7 @@ router = APIRouter(
 @router.get("", response_model=list[ProductOut])
 async def list_products(
     use_case: Annotated[ListProducts, Depends(get_list_products)],
-    limit: Annotated[int, Query(ge=1, le=1000)] = 50,
+    limit: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[ProductOut]:
     return [ProductOut.from_domain(p) for p in await use_case.execute(limit, offset)]

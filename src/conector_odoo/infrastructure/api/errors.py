@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from conector_odoo.config import Settings
 from conector_odoo.domain.errors import (
     ConnectorError,
+    CreatedButUnreadable,
     OdooAuthError,
     OdooNotFound,
     OdooPermissionError,
@@ -29,11 +30,18 @@ _MAPPING: tuple[tuple[type[ConnectorError], int, str], ...] = (
 )
 
 
+# Secrets shorter than this are not scrubbed: replacing a tiny string would mangle the message.
+_MIN_SCRUB_LENGTH = 8
+
+# Where a freshly created record can be fetched, by Odoo model (used for the 202 ``Location``).
+_RESOURCE_PATHS = {"res.partner": "/customers", "sale.order": "/sale-orders"}
+
+
 def scrub(text: str, settings: Settings) -> str:
     """Mask configured secrets in a message before it leaves the process."""
     secrets = [settings.odoo_api_key, settings.webhook_secret, settings.connector_api_key]
     for secret in secrets:
-        if secret is not None and secret.get_secret_value():
+        if secret is not None and len(secret.get_secret_value()) >= _MIN_SCRUB_LENGTH:
             text = text.replace(secret.get_secret_value(), "***")
     return text
 
@@ -42,17 +50,58 @@ def _body(error: str, detail: str) -> dict[str, str]:
     return {"error": error, "detail": detail}
 
 
+def _request_id(request: Request) -> str | None:
+    # Set by the logging middleware (which also sanitizes it); the raw header is not trusted.
+    request_id: str | None = getattr(request.state, "request_id", None)
+    return request_id
+
+
+def _log_failure(request: Request, exc: Exception, status: int, detail: str) -> None:
+    logger.warning(
+        "request failed",
+        extra={
+            "error_type": type(exc).__name__,
+            "status_code": status,
+            "path": request.url.path,
+            "detail": detail,
+            "request_id": _request_id(request),
+        },
+    )
+
+
 async def _connector_error(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, ConnectorError)
+    detail = scrub(str(exc), request.app.state.settings)
+    if isinstance(exc, CreatedButUnreadable):
+        return _created_but_unreadable(request, exc, detail)
     status, code = next(
         ((s, c) for kind, s, c in _MAPPING if isinstance(exc, kind)), (502, "connector_error")
     )
-    detail = scrub(str(exc), request.app.state.settings)
-    logger.warning(
-        "request failed",
-        extra={"error_type": type(exc).__name__, "status_code": status, "path": request.url.path},
-    )
+    _log_failure(request, exc, status, detail)
     return JSONResponse(_body(code, detail), status_code=status)
+
+
+def _created_but_unreadable(
+    request: Request, exc: CreatedButUnreadable, detail: str
+) -> JSONResponse:
+    """Answer 202 Accepted: the record WAS created, only the read-back failed.
+
+    201 would promise a body we cannot build, and any 4xx/5xx invites a blind retry that would
+    duplicate the record. 202 plus the id (and a ``Location`` when the model has a resource
+    path) tells the client the write happened and where to fetch it.
+    """
+    _log_failure(request, exc, 202, detail)
+    headers: dict[str, str] = {}
+    base = _RESOURCE_PATHS.get(exc.model)
+    if base is not None:
+        headers["Location"] = f"{base}/{exc.record_id}"
+    body: dict[str, object] = {
+        "error": "created_but_unreadable",
+        "detail": detail,
+        "id": exc.record_id,
+        "model": exc.model,
+    }
+    return JSONResponse(body, status_code=202, headers=headers)
 
 
 async def _api_key_error(request: Request, exc: Exception) -> JSONResponse:

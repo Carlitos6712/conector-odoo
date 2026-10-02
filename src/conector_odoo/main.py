@@ -24,6 +24,8 @@ from conector_odoo.infrastructure.api.middleware import install_request_logging
 from conector_odoo.infrastructure.api.routers import customers, health, products, sale_orders
 from conector_odoo.logging import configure_logging
 
+logger = logging.getLogger(__name__)
+
 
 def _include_routers(app: FastAPI) -> None:
     app.include_router(health.router)
@@ -39,6 +41,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        if resolved.connector_api_key is None:
+            logger.warning("connector API key not configured; data endpoints are unauthenticated")
         container = build_container(resolved)
         app.state.container = container
         try:

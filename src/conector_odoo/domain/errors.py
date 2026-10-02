@@ -1,4 +1,5 @@
-"""Domain errors. The API layer maps them to 401 / 403 / 404 / 422 / 502."""
+"""Domain errors. The API layer maps them to 401 / 403 / 404 / 422 / 502 (and 202 for
+``CreatedButUnreadable``)."""
 
 
 class ConnectorError(Exception):
@@ -30,3 +31,16 @@ class OdooValidationError(ConnectorError):
 
 class OdooUnavailable(ConnectorError):
     """Odoo is unreachable, timed out or answered with an unexpected failure (HTTP 502)."""
+
+
+class CreatedButUnreadable(ConnectorError):
+    """A ``create`` succeeded in Odoo but the new record could not be read back.
+
+    The record exists, so callers must not blindly retry the create: the error carries the
+    ``model`` and ``record_id`` so the API can answer 202 with a pointer to the resource.
+    """
+
+    def __init__(self, model: str, record_id: int, message: str) -> None:
+        super().__init__(message)
+        self.model = model
+        self.record_id = record_id

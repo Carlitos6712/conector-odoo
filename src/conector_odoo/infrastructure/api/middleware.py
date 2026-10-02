@@ -23,6 +23,7 @@ def install_request_logging(app: FastAPI) -> None:
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
         request_id = _request_id(request)
+        request.state.request_id = request_id
         started = time.perf_counter()
         status = 500
         try:

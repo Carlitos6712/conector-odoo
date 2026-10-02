@@ -8,7 +8,7 @@ BASE_ENV = {
     "ODOO_DB": "prod",
     "ODOO_USER": "bot@example.com",
     "ODOO_API_KEY": "key-123",
-    "WEBHOOK_SECRET": "hook-secret",
+    "WEBHOOK_SECRET": "hook-secret-0123456",
 }
 
 
@@ -46,14 +46,14 @@ def test_parses_required_values_and_defaults(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_secrets_are_masked(monkeypatch: pytest.MonkeyPatch) -> None:
-    _set_env(monkeypatch, CONNECTOR_API_KEY="conn-key")
+    _set_env(monkeypatch, CONNECTOR_API_KEY="conn-key-0123456789")
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
     assert isinstance(settings.odoo_api_key, SecretStr)
     assert settings.odoo_api_key.get_secret_value() == "key-123"
     assert "key-123" not in repr(settings)
-    assert "hook-secret" not in repr(settings)
+    assert "hook-secret-0123456" not in repr(settings)
     assert settings.connector_api_key is not None
-    assert "conn-key" not in str(settings.connector_api_key)
+    assert "conn-key-0123456789" not in str(settings.connector_api_key)
 
 
 def test_protocol_must_be_known(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -80,3 +80,17 @@ def test_empty_optional_values_become_none(monkeypatch: pytest.MonkeyPatch) -> N
 def test_get_settings_is_cached(monkeypatch: pytest.MonkeyPatch) -> None:
     _set_env(monkeypatch)
     assert get_settings() is get_settings()
+
+
+@pytest.mark.parametrize("name", ["CONNECTOR_API_KEY", "WEBHOOK_SECRET"])
+def test_short_secrets_are_rejected(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+    _set_env(monkeypatch, **{name: "x" * 15})
+    with pytest.raises(ValidationError) as info:
+        Settings(_env_file=None)  # type: ignore[call-arg]
+    assert "x" * 15 not in str(info.value)
+
+
+@pytest.mark.parametrize("name", ["CONNECTOR_API_KEY", "WEBHOOK_SECRET"])
+def test_secrets_of_minimum_length_are_accepted(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+    _set_env(monkeypatch, **{name: "x" * 16})
+    Settings(_env_file=None)  # type: ignore[call-arg]
