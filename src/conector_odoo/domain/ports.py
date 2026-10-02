@@ -44,4 +44,6 @@ class SaleOrderRepository(Protocol):
 
 
 class EventBus(Protocol):
+    def subscribe(self, event_type: str, handler: EventHandler) -> None: ...
+
     async def publish(self, event: OdooEvent) -> None: ...

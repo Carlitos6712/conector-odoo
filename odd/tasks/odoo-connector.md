@@ -35,7 +35,7 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 - [x] T5a Review follow-ups (T5 4-lens review). Route: delegated (writer).
 - [x] T6 Idempotency: `Idempotency-Key` on POSTs, SQLite store. Route: delegated (writer).
 - [x] T6a Review follow-ups (T6 4-lens review). Route: delegated (writer).
-- [ ] T7 Webhooks: `/webhooks/odoo`, HMAC SHA256 verification, in-process event bus, BackgroundTasks. Route: delegated (writer).
+- [x] T7 Webhooks: `/webhooks/odoo`, HMAC SHA256 verification, in-process event bus, BackgroundTasks. Route: delegated (writer).
 - [ ] T8 `odoo_addon/`: minimal module posting signed events for res.partner and sale.order. Route: delegated (writer).
 - [ ] T9 Dockerfile, docker-compose.yml, README (setup, env, curl, API key, addon install, mermaid). Route: delegated (writer).
 
@@ -108,8 +108,13 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 - T6a GREEN: 380 passed. Checks: pytest 380 passed; ruff check clean; ruff format --check clean; mypy src clean.
 - Decisions: failures where the write may have happened (`OdooUnavailable`/any `ConnectorError` not in the no-write list, unexpected exceptions) mark the key `unknown` and store the error response; retry -> 409 `idempotency_outcome_unknown`. Only validation/not-found/auth/permission errors release the key. Abandoned `in_progress` rows (older than `idempotency_in_progress_timeout_seconds`) become `unknown` on `begin`. `scrub` masks every non-empty secret; `odoo_api_key` >= 16 chars. DB file 0600 (existing file tightened), new parent dir 0700. Lifespan purge task (`app.state.purge_task`) and per-resource try/finally on shutdown. Existing DBs created before this change keep the old CHECK constraint (no `unknown` status): delete the dev file (unreleased schema).
 
+### T7 (route: delegated writer; commit: subject "feat(webhooks): receive signed odoo events and dispatch to event bus"; T6a = 28cee70)
+- RED: `uv run pytest -q` -> 4 collection errors (`ModuleNotFoundError` for `infrastructure.webhooks.{signature,store,handlers}` and the webhooks API tests importing them).
+- GREEN: 438 passed (HMAC sign/verify vectors, boundary/malformed inputs, SQLite dedup store, default handlers, endpoint: valid/bare-hex/bad/missing/stale/tampered signature, duplicate, replay, invalid payload, unknown type, 413 incl. chunked, no API key needed, handler isolation, 503 on store failure). Checks: pytest 438 passed; ruff check clean; ruff format --check clean; mypy src clean.
+- Design: scheme `HMAC-SHA256(secret, f"{ts}.".encode() + raw_body)` hex, headers `X-Odoo-Timestamp` + `X-Odoo-Signature: sha256=<hex>` (documented in `routers/webhooks.py` and `infrastructure/webhooks/signature.py`). Dedup in table `webhook_events` of the idempotency SQLite file (own connection; purged by the lifespan loop via `MultiPurger`). Unknown `event_type` -> 202 `ignored` (logged, not dispatched). Event id recorded only after signature + schema validation. `Container` gains `event_bus` + `webhook_events`; `EventBus` port gains `subscribe`. Body read by streaming with a 1 MiB cap.
+
 ### Pending for user
 - `.env.example` needs updating (new settings: `IDEMPOTENCY_IN_PROGRESS_TIMEOUT_SECONDS`, `IDEMPOTENCY_TTL_HOURS`, `IDEMPOTENCY_PURGE_INTERVAL_SECONDS`, `WEBHOOK_TOLERANCE_SECONDS`; 16-character minimum for `ODOO_API_KEY`, `CONNECTOR_API_KEY`, `WEBHOOK_SECRET`). Subagents have no access to `.env*` files.
 
 ## Next step
-T7.
+T8.

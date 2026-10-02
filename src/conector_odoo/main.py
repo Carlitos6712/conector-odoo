@@ -4,8 +4,8 @@ Run with ``uvicorn conector_odoo.main:create_app --factory``.
 
 Extension points for later tasks:
 
-* ``_include_routers``: mount new routers here (the T7 ``/webhooks/odoo`` router authenticates
-  with its HMAC signature, so it must NOT declare ``require_api_key``).
+* ``_include_routers``: mount new routers here (the ``/webhooks/odoo`` router authenticates with
+  its HMAC signature, so it must NOT declare ``require_api_key``).
 * ``Idempotency-Key``: POST routes take ``GuardDep`` (``infrastructure/api/idempotency.py``) and
   wrap their action in ``guard.run(...)``; the SQLite store lives on ``Container.idempotency``
   (``Settings.idempotency_db_path``). The lifespan purges expired keys in a background task
@@ -24,8 +24,14 @@ from conector_odoo.config import Settings, get_settings
 from conector_odoo.infrastructure.api.dependencies import build_container
 from conector_odoo.infrastructure.api.errors import register_error_handlers
 from conector_odoo.infrastructure.api.middleware import install_request_logging
-from conector_odoo.infrastructure.api.routers import customers, health, products, sale_orders
-from conector_odoo.infrastructure.idempotency.purge import purge_loop
+from conector_odoo.infrastructure.api.routers import (
+    customers,
+    health,
+    products,
+    sale_orders,
+    webhooks,
+)
+from conector_odoo.infrastructure.idempotency.purge import MultiPurger, purge_loop
 from conector_odoo.logging import configure_logging
 
 logger = logging.getLogger(__name__)
@@ -36,6 +42,7 @@ def _include_routers(app: FastAPI) -> None:
     app.include_router(customers.router)
     app.include_router(products.router)
     app.include_router(sale_orders.router)
+    app.include_router(webhooks.router)  # HMAC-authenticated: no require_api_key
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -51,7 +58,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.container = container
         purge_task = asyncio.create_task(
             purge_loop(
-                container.idempotency,
+                MultiPurger(container.idempotency, container.webhook_events),
                 ttl_hours=resolved.idempotency_ttl_hours,
                 interval_seconds=resolved.idempotency_purge_interval_seconds,
             ),
@@ -70,7 +77,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 try:
                     await container.odoo_client.aclose()
                 finally:
-                    await container.idempotency.close()
+                    try:
+                        await container.webhook_events.close()
+                    finally:
+                        await container.idempotency.close()
 
     app = FastAPI(title="conector-odoo", version="1.0.0", lifespan=lifespan)
     app.state.settings = resolved

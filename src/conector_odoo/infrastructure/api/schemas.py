@@ -4,9 +4,11 @@ Pydantic lives only in this layer; the domain keeps plain dataclasses.
 """
 
 import re
-from typing import Annotated, Literal, Self
+from datetime import UTC, datetime
+from typing import Annotated, Any, Literal, Self
+from uuid import UUID
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from conector_odoo.domain.entities import (
     Customer,
@@ -197,3 +199,29 @@ class DegradedHealthOut(BaseModel):
 class ErrorOut(BaseModel):
     error: str
     detail: str
+
+
+class WebhookEventIn(BaseModel):
+    """Event pushed by the Odoo addon. Unknown extra fields are ignored (forward compatible).
+
+    ``event_type`` is a free string on purpose: an unknown type is acknowledged and ignored (so a
+    newer addon never gets retries from an older connector) rather than rejected with 422.
+    ``occurred_at`` without a timezone is interpreted as UTC.
+    """
+
+    event_id: UUID
+    event_type: str = Field(min_length=1, max_length=100)
+    model: str = Field(min_length=1, max_length=100)
+    record_id: PositiveId
+    occurred_at: datetime
+    payload: dict[str, Any]
+
+    @field_validator("occurred_at")
+    @classmethod
+    def _assume_utc(cls, value: datetime) -> datetime:
+        return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
+class WebhookAck(BaseModel):
+    status: Literal["accepted", "duplicate", "ignored"]
+    event_id: str

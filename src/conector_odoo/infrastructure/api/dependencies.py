@@ -17,6 +17,7 @@ from conector_odoo.application.customers import (
     SearchCustomers,
     UpdateCustomer,
 )
+from conector_odoo.application.event_bus import InMemoryEventBus
 from conector_odoo.application.products import GetProduct, ListProducts
 from conector_odoo.application.sale_orders import ConfirmSaleOrder, CreateSaleOrder, GetSaleOrder
 from conector_odoo.config import Settings
@@ -28,6 +29,8 @@ from conector_odoo.infrastructure.odoo.customer_repository import OdooCustomerRe
 from conector_odoo.infrastructure.odoo.factory import build_odoo_client
 from conector_odoo.infrastructure.odoo.product_repository import OdooProductRepository
 from conector_odoo.infrastructure.odoo.sale_order_repository import OdooSaleOrderRepository
+from conector_odoo.infrastructure.webhooks.handlers import register_default_handlers
+from conector_odoo.infrastructure.webhooks.store import SqliteWebhookEventStore
 
 
 @dataclass(frozen=True)
@@ -37,10 +40,14 @@ class Container:
     products: ProductRepository
     orders: SaleOrderRepository
     idempotency: IdempotencyStore
+    event_bus: InMemoryEventBus
+    webhook_events: SqliteWebhookEventStore
 
 
 def build_container(settings: Settings) -> Container:
     client = build_odoo_client(settings)
+    event_bus = InMemoryEventBus()
+    register_default_handlers(event_bus)
     return Container(
         odoo_client=client,
         customers=OdooCustomerRepository(client),
@@ -50,6 +57,8 @@ def build_container(settings: Settings) -> Container:
             settings.idempotency_db_path,
             in_progress_timeout_seconds=settings.idempotency_in_progress_timeout_seconds,
         ),
+        event_bus=event_bus,
+        webhook_events=SqliteWebhookEventStore(settings.idempotency_db_path),
     )
 
 
@@ -64,6 +73,14 @@ def get_container(request: Request) -> Container:
 
 
 ContainerDep = Annotated[Container, Depends(get_container)]
+
+
+def get_event_bus(container: ContainerDep) -> InMemoryEventBus:
+    return container.event_bus
+
+
+def get_webhook_event_store(container: ContainerDep) -> SqliteWebhookEventStore:
+    return container.webhook_events
 
 
 def get_odoo_client(container: ContainerDep) -> OdooClient:

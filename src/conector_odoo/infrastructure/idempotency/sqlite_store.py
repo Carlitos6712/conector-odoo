@@ -50,7 +50,7 @@ class SqliteIdempotencyStore:
     def __init__(self, path: str, *, in_progress_timeout_seconds: float = 300.0) -> None:
         self._timeout = timedelta(seconds=in_progress_timeout_seconds)
         if path != ":memory:":
-            _prepare_private_file(Path(path))
+            prepare_private_file(Path(path))
         self._lock = threading.Lock()
         self._conn = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
         self._conn.execute(_SCHEMA)
@@ -173,7 +173,7 @@ class SqliteIdempotencyStore:
             self._conn.close()
 
 
-def _prepare_private_file(path: Path) -> None:
+def prepare_private_file(path: Path) -> None:
     """Create the database file as 0600 (parent 0700 if created here); tighten an existing one."""
     parent = path.parent
     if not parent.exists():

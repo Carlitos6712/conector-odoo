@@ -121,3 +121,8 @@ def test_idempotency_maintenance_defaults(monkeypatch: pytest.MonkeyPatch) -> No
     assert settings.idempotency_in_progress_timeout_seconds == 300
     assert settings.idempotency_ttl_hours == 24
     assert settings.idempotency_purge_interval_seconds == 3600
+
+
+def test_webhook_tolerance_defaults_to_five_minutes(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_env(monkeypatch)
+    assert Settings(_env_file=None).webhook_tolerance_seconds == 300  # type: ignore[call-arg]

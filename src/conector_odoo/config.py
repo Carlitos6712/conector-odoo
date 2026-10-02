@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     # Records older than this are purged (at startup and every purge interval).
     idempotency_ttl_hours: float = 24.0
     idempotency_purge_interval_seconds: float = 3600.0
+    # Max clock skew (seconds) between Odoo's signed timestamp and ours; bounds replay windows.
+    webhook_tolerance_seconds: int = 300
     log_level: str = "INFO"
 
     @field_validator("odoo_api_key", "connector_api_key", "webhook_secret")
