@@ -25,7 +25,7 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 `ask-on-risk` (default). Forecast: ~3000+ authored lines total; local repo with no remote, so no PRs are created. Work-unit commits on branch `feat/odoo-connector`.
 
 ## Tasks
-- [ ] T1 Scaffold: pyproject (uv), ruff/mypy/pytest config, `config.py` (settings), `.gitignore`, `.env.example`, logging setup. Route: delegated (writer).
+- [x] T1 Scaffold: pyproject (uv), ruff/mypy/pytest config, `config.py` (settings), `.gitignore`, `.env.example`, logging setup. Route: delegated (writer).
 - [ ] T2 Domain + application: entities, ports, domain errors, use cases (CreateCustomer, UpdateCustomer, GetCustomer, SearchCustomers, CreateSaleOrder, ConfirmSaleOrder, HandleOdooEvent) with fake-repo unit tests. Route: delegated (writer).
 - [ ] T3 Odoo client: transport port + jsonrpc (httpx, retries/backoff on network errors only) + xmlrpc (`asyncio.to_thread`), uid cache + re-auth, `execute_kw` + helpers, fault mapping, company context. respx tests. Route: delegated (writer).
 - [ ] T4 Odoo repository adapters (customer, product, sale order) + json2 transport + transport factory. Route: delegated (writer).
@@ -45,5 +45,11 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 ## Progress / evidence
 (updated per task: commit SHA, checks observed, review tier)
 
+### T1 (route: delegated writer; commit: see `git log` subject "chore: scaffold project with uv, settings and logging")
+- RED: `uv run pytest -q` -> 2 collection errors (`ModuleNotFoundError: conector_odoo.logging`, config missing).
+- GREEN: 11 passed (settings parsing, SecretStr masking, protocol Literal, empty-optional -> None, cache, JSON logs, redaction).
+- Checks: pytest 11 passed; ruff check clean; ruff format --check clean; mypy src clean.
+- Review tier: not assessed (writer task; native review per orchestrator).
+
 ## Next step
-T1.
+T2.
