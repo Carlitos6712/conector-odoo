@@ -6,9 +6,9 @@ Extension points for later tasks:
 
 * ``_include_routers``: mount new routers here (the T7 ``/webhooks/odoo`` router authenticates
   with its HMAC signature, so it must NOT declare ``require_api_key``).
-* T6 ``Idempotency-Key``: add a dependency (or route-level middleware) next to ``require_api_key``
-  on the POST routes of ``routers/customers.py`` and ``routers/sale_orders.py``;
-  ``Settings.idempotency_db_path`` already holds the SQLite location.
+* ``Idempotency-Key``: POST routes take ``GuardDep`` (``infrastructure/api/idempotency.py``) and
+  wrap their action in ``guard.run(...)``; the SQLite store lives on ``Container.idempotency``
+  (``Settings.idempotency_db_path``) and is closed on shutdown.
 """
 
 import logging
@@ -49,6 +49,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             yield
         finally:
             await container.odoo_client.aclose()
+            await container.idempotency.close()
 
     app = FastAPI(title="conector-odoo", version="1.0.0", lifespan=lifespan)
     app.state.settings = resolved

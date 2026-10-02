@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, Depends, Path, Query, Response
 
 from conector_odoo.application.customers import (
     CreateCustomer,
@@ -16,6 +16,7 @@ from conector_odoo.infrastructure.api.dependencies import (
     get_search_customers,
     get_update_customer,
 )
+from conector_odoo.infrastructure.api.idempotency import IDEMPOTENCY_RESPONSES, GuardDep
 from conector_odoo.infrastructure.api.schemas import (
     CustomerCreate,
     CustomerOut,
@@ -34,11 +35,16 @@ router = APIRouter(
 CustomerId = Annotated[int, Path(gt=0)]
 
 
-@router.post("", status_code=201, response_model=CustomerOut)
+@router.post("", status_code=201, response_model=CustomerOut, responses=IDEMPOTENCY_RESPONSES)
 async def create_customer(
-    body: CustomerCreate, use_case: Annotated[CreateCustomer, Depends(get_create_customer)]
-) -> CustomerOut:
-    return CustomerOut.from_domain(await use_case.execute(body.to_domain()))
+    body: CustomerCreate,
+    use_case: Annotated[CreateCustomer, Depends(get_create_customer)],
+    guard: GuardDep,
+) -> Response:
+    async def action() -> CustomerOut:
+        return CustomerOut.from_domain(await use_case.execute(body.to_domain()))
+
+    return await guard.run(body, action, 201)
 
 
 @router.get("", response_model=list[CustomerOut])

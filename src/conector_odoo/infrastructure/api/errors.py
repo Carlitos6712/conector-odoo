@@ -71,9 +71,9 @@ def _log_failure(request: Request, exc: Exception, status: int, detail: str) -> 
 
 async def _connector_error(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, ConnectorError)
-    detail = scrub(str(exc), request.app.state.settings)
     if isinstance(exc, CreatedButUnreadable):
-        return _created_but_unreadable(request, exc, detail)
+        return created_but_unreadable_response(request, exc)
+    detail = scrub(str(exc), request.app.state.settings)
     status, code = next(
         ((s, c) for kind, s, c in _MAPPING if isinstance(exc, kind)), (502, "connector_error")
     )
@@ -81,15 +81,14 @@ async def _connector_error(request: Request, exc: Exception) -> JSONResponse:
     return JSONResponse(_body(code, detail), status_code=status)
 
 
-def _created_but_unreadable(
-    request: Request, exc: CreatedButUnreadable, detail: str
-) -> JSONResponse:
+def created_but_unreadable_response(request: Request, exc: CreatedButUnreadable) -> JSONResponse:
     """Answer 202 Accepted: the record WAS created, only the read-back failed.
 
     201 would promise a body we cannot build, and any 4xx/5xx invites a blind retry that would
     duplicate the record. 202 plus the id (and a ``Location`` when the model has a resource
     path) tells the client the write happened and where to fetch it.
     """
+    detail = scrub(str(exc), request.app.state.settings)
     _log_failure(request, exc, 202, detail)
     headers: dict[str, str] = {}
     base = _RESOURCE_PATHS.get(exc.model)

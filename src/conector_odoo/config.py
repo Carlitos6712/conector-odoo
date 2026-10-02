@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     connector_api_key: SecretStr | None = None
     webhook_secret: SecretStr
 
-    idempotency_db_path: str = "idempotency.sqlite3"
+    idempotency_db_path: str = "./data/idempotency.sqlite3"
     log_level: str = "INFO"
 
     @field_validator("connector_api_key", "webhook_secret")

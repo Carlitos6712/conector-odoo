@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, Depends, Path, Query, Response
 
 from conector_odoo.application.sale_orders import ConfirmSaleOrder, CreateSaleOrder, GetSaleOrder
 from conector_odoo.infrastructure.api.dependencies import (
@@ -8,6 +8,7 @@ from conector_odoo.infrastructure.api.dependencies import (
     get_create_sale_order,
     get_get_sale_order,
 )
+from conector_odoo.infrastructure.api.idempotency import IDEMPOTENCY_RESPONSES, GuardDep
 from conector_odoo.infrastructure.api.schemas import ErrorOut, SaleOrderCreate, SaleOrderOut
 from conector_odoo.infrastructure.api.security import require_api_key
 
@@ -22,23 +23,33 @@ OrderId = Annotated[int, Path(gt=0)]
 CompanyId = Annotated[int | None, Query(gt=0, description="Odoo company context")]
 
 
-@router.post("", status_code=201, response_model=SaleOrderOut)
+@router.post("", status_code=201, response_model=SaleOrderOut, responses=IDEMPOTENCY_RESPONSES)
 async def create_sale_order(
     body: SaleOrderCreate,
     use_case: Annotated[CreateSaleOrder, Depends(get_create_sale_order)],
-) -> SaleOrderOut:
-    return SaleOrderOut.from_domain(await use_case.execute(body.to_domain()))
+    guard: GuardDep,
+) -> Response:
+    async def action() -> SaleOrderOut:
+        return SaleOrderOut.from_domain(await use_case.execute(body.to_domain()))
+
+    return await guard.run(body, action, 201)
 
 
 @router.post(
-    "/{order_id}/confirm", response_model=SaleOrderOut, responses={404: {"model": ErrorOut}}
+    "/{order_id}/confirm",
+    response_model=SaleOrderOut,
+    responses={404: {"model": ErrorOut}, **IDEMPOTENCY_RESPONSES},
 )
 async def confirm_sale_order(
     order_id: OrderId,
     use_case: Annotated[ConfirmSaleOrder, Depends(get_confirm_sale_order)],
+    guard: GuardDep,
     company_id: CompanyId = None,
-) -> SaleOrderOut:
-    return SaleOrderOut.from_domain(await use_case.execute(order_id, company_id))
+) -> Response:
+    async def action() -> SaleOrderOut:
+        return SaleOrderOut.from_domain(await use_case.execute(order_id, company_id))
+
+    return await guard.run(None, action, 200)
 
 
 @router.get("/{order_id}", response_model=SaleOrderOut, responses={404: {"model": ErrorOut}})

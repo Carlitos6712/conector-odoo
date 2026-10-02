@@ -94,3 +94,10 @@ def test_short_secrets_are_rejected(monkeypatch: pytest.MonkeyPatch, name: str) 
 def test_secrets_of_minimum_length_are_accepted(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
     _set_env(monkeypatch, **{name: "x" * 16})
     Settings(_env_file=None)  # type: ignore[call-arg]
+
+
+def test_idempotency_db_path_defaults_to_the_data_directory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_env(monkeypatch)
+    assert Settings(_env_file=None).idempotency_db_path == "./data/idempotency.sqlite3"  # type: ignore[call-arg]

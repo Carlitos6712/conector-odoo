@@ -21,6 +21,8 @@ from conector_odoo.application.products import GetProduct, ListProducts
 from conector_odoo.application.sale_orders import ConfirmSaleOrder, CreateSaleOrder, GetSaleOrder
 from conector_odoo.config import Settings
 from conector_odoo.domain.ports import CustomerRepository, ProductRepository, SaleOrderRepository
+from conector_odoo.infrastructure.idempotency.sqlite_store import SqliteIdempotencyStore
+from conector_odoo.infrastructure.idempotency.store import IdempotencyStore
 from conector_odoo.infrastructure.odoo.client import OdooClient
 from conector_odoo.infrastructure.odoo.customer_repository import OdooCustomerRepository
 from conector_odoo.infrastructure.odoo.factory import build_odoo_client
@@ -34,6 +36,7 @@ class Container:
     customers: CustomerRepository
     products: ProductRepository
     orders: SaleOrderRepository
+    idempotency: IdempotencyStore
 
 
 def build_container(settings: Settings) -> Container:
@@ -43,6 +46,7 @@ def build_container(settings: Settings) -> Container:
         customers=OdooCustomerRepository(client),
         products=OdooProductRepository(client),
         orders=OdooSaleOrderRepository(client),
+        idempotency=SqliteIdempotencyStore(settings.idempotency_db_path),
     )
 
 

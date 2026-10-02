@@ -33,7 +33,7 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 - [x] T4a Review follow-ups (T4 review). Route: delegated (writer).
 - [x] T5 API: routers, schemas, DI wiring, error handlers (401/404/422/502), `X-API-Key`, `/health`. TestClient tests. Route: delegated (writer).
 - [x] T5a Review follow-ups (T5 4-lens review). Route: delegated (writer).
-- [ ] T6 Idempotency: `Idempotency-Key` on POSTs, SQLite store. Route: delegated (writer).
+- [x] T6 Idempotency: `Idempotency-Key` on POSTs, SQLite store. Route: delegated (writer).
 - [ ] T7 Webhooks: `/webhooks/odoo`, HMAC SHA256 verification, in-process event bus, BackgroundTasks. Route: delegated (writer).
 - [ ] T8 `odoo_addon/`: minimal module posting signed events for res.partner and sale.order. Route: delegated (writer).
 - [ ] T9 Dockerfile, docker-compose.yml, README (setup, env, curl, API key, addon install, mermaid). Route: delegated (writer).
@@ -96,5 +96,10 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 - T5a GREEN: 331 passed. Checks: pytest 331 passed; ruff check clean; ruff format --check clean; mypy src clean.
 - Decisions: `connector_api_key`/`webhook_secret` need >=16 chars (`hide_input_in_errors` so a rejected secret is not echoed); startup WARNING in the lifespan when the API key is unset. New `CreatedButUnreadable(model, record_id)` mapped to 202 `{error: created_but_unreadable, detail, id, model}` + `Location` (/customers/{id}, /sale-orders/{id}), built by one `read_back` helper shared by both repositories. json2 `context_get` non-auth failures warn and fall back to the login lookup (401 still raises). `scrub` ignores secrets <8 chars. Failure log line carries scrubbed `detail` and `request_id` (middleware sets `request.state.request_id`). `MAX_PAGE_SIZE` moved to `application/pagination.py`. `GetSaleOrder` use case; `company_id` query param on GET /sale-orders/{id} and POST /sale-orders/{id}/confirm (ports, fakes, adapter).
 
+### T6 (route: delegated writer; commit: subject "feat(api): add sqlite-backed idempotency keys for post endpoints"; T5a = d36340a)
+- RED: `uv run pytest -q tests/idempotency tests/api/test_idempotency_api.py` -> collection error (`ModuleNotFoundError: conector_odoo.infrastructure.idempotency`); after the first implementation pass, the in-progress test exposed a hash-vs-409 ordering mismatch in the test itself (fixed: the test now claims the key with the real request hash).
+- GREEN: 354 passed. Checks: pytest 354 passed; ruff check clean; ruff format --check clean; mypy src clean.
+- Design: `IdempotencyStore` Protocol in `infrastructure/idempotency/store.py`; `SqliteIdempotencyStore` (one connection + `threading.Lock`, calls via `asyncio.to_thread`, `:memory:` supported, extra `response_headers` column so a replayed 202 keeps its `Location`). `IdempotencyGuard` dependency (`infrastructure/api/idempotency.py`, `GuardDep`) wraps the POST handlers via `guard.run(body, action, status)`; no middleware. Failure (any exception) releases the key; 2xx and 202 created_but_unreadable are stored; cancellation keeps the key in progress (the write may have happened). Hash = sha256 of canonical JSON of body + path params + query params; hash mismatch is checked before the in-progress check. Container gains `idempotency`, closed in the lifespan; default path `./data/idempotency.sqlite3` (parent dir created). `purge_older_than(hours)` available, no scheduler.
+
 ## Next step
-T6.
+T7.
