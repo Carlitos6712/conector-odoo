@@ -31,7 +31,7 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 - [x] T3a Review follow-ups (R3-001..R3-005). Route: delegated (writer).
 - [x] T4 Odoo repository adapters (customer, product, sale order) + json2 transport + transport factory. Route: delegated (writer).
 - [x] T4a Review follow-ups (T4 review). Route: delegated (writer).
-- [ ] T5 API: routers, schemas, DI wiring, error handlers (401/404/422/502), `X-API-Key`, `/health`. TestClient tests. Route: delegated (writer).
+- [x] T5 API: routers, schemas, DI wiring, error handlers (401/404/422/502), `X-API-Key`, `/health`. TestClient tests. Route: delegated (writer).
 - [ ] T6 Idempotency: `Idempotency-Key` on POSTs, SQLite store. Route: delegated (writer).
 - [ ] T7 Webhooks: `/webhooks/odoo`, HMAC SHA256 verification, in-process event bus, BackgroundTasks. Route: delegated (writer).
 - [ ] T8 `odoo_addon/`: minimal module posting signed events for res.partner and sale.order. Route: delegated (writer).
@@ -83,5 +83,11 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 - T4a GREEN: 229 passed. Checks: pytest 229 passed; ruff check clean; ruff format --check clean; mypy src clean.
 - Decisions: email `=ilike` value escaped (`\`, `%`, `_`); name `ilike` left raw because Odoo escapes `ilike` itself (escaping would double-escape). Read-back after create uses the order company and, on failure, raises `OdooUnavailable("... <id> was created but could not be read back")`. json2 `authenticate` = `res.users/context_get` (key owner `uid`) compared with `res.users/search` on the login; mismatch -> `OdooAuthError`; missing `uid` in the context (undocumented for Odoo 19) logs a warning and falls back to the login lookup.
 
+### T5 (route: delegated writer; commit: subject "feat(api): add fastapi routers, schemas, error handlers and api key auth"; T4a = d348f46)
+- RED: product use-case tests -> collection error (`application.products` missing); `tests/api` -> collection error (`conector_odoo.infrastructure.api` missing).
+- GREEN: 305 passed (product use cases, every endpoint happy path, 401/403/404/422/502 mappings, X-API-Key enforced/disabled, health ok/degraded, request id + request log, lifespan closes the client).
+- Checks: pytest 305 passed; ruff check clean; ruff format --check clean; mypy src clean.
+- Design: `create_app(settings=None)` factory (`uvicorn conector_odoo.main:create_app --factory`); lifespan builds a `Container` (client + repositories) on `app.state.container`; repository dependencies are the test override points; `/health` public, all other routers declare `require_api_key`; email validated with a simple regex (no `email-validator` dependency). T6 hook: add the Idempotency-Key dependency beside `require_api_key` on the POST routes; T7 mounts its router in `_include_routers` without `require_api_key`.
+
 ## Next step
-T5.
+T6.
