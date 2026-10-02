@@ -1,0 +1,17 @@
+# Odoo is external: point ODOO_URL (in .env) at your instance.
+services:
+  connector:
+    build: .
+    image: conector-odoo:latest
+    env_file: .env
+    environment:
+      # The container always stores its SQLite file on the mounted volume.
+      IDEMPOTENCY_DB_PATH: /app/data/idempotency.sqlite3
+    ports:
+      - "8000:8000"
+    volumes:
+      - connector-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  connector-data:

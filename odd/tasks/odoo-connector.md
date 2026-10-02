@@ -38,7 +38,7 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 - [x] T7 Webhooks: `/webhooks/odoo`, HMAC SHA256 verification, in-process event bus, BackgroundTasks. Route: delegated (writer).
 - [x] T7a Review follow-ups (T7 4-lens review). Route: delegated (writer).
 - [x] T8 `odoo_addon/`: minimal module posting signed events for res.partner and sale.order. Route: delegated (writer).
-- [ ] T9 Dockerfile, docker-compose.yml, README (setup, env, curl, API key, addon install, mermaid). Route: delegated (writer).
+- [x] T9 Dockerfile, docker-compose.yml, README (setup, env, curl, API key, addon install, mermaid). Route: delegated (writer).
 
 ## Acceptance criteria
 - All PROMPT.md endpoints exist and are tested; `uv run pytest`, `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy src` pass.
@@ -126,8 +126,13 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 - Design: all pure logic (body, signing, retrying `deliver`) in `models/signing.py` (no `odoo` import); `models/connector_webhook.py` is a thin AbstractModel `connector.webhook` that reads `ir.config_parameter`, builds the payload and posts via `env.cr.postcommit.add`. Ruff: `known-third-party = ["odoo"]` and per-file ignores for `__init__.py` (F401) and `__manifest__.py` (B018). Retries: 3 retries (4 attempts) on transport errors and 5xx, 0.5/1/2 s backoff, same event_id, fresh timestamp+signature.
 - Odoo-version uncertainty: addon not run against a live Odoo. `base.automation` XML uses `trigger` `on_create`/`on_write`, `(4, id)` links (works for the Many2many of 17 and the One2many of 18+), `trigger_field_ids`, `filter_pre_domain`/`filter_domain`, `ir.actions.server` `usage=base_automation`; Odoo 19 field names unverified. Manual UI alternative documented in the addon README.
 
+### T9 (route: delegated writer; commit: subject "docs: add dockerfile, compose and readme"; T8 = d3aa7fd)
+- Non-Python unit: no RED/GREEN cycle (configuration and documentation). Checks: pytest 488 passed; ruff check clean; ruff format --check clean; mypy src clean.
+- `docker build -t conector-odoo:dev .` succeeded (multi-stage, uv `sync --frozen --no-dev`, non-root uid 10001). Smoke run: container started, `/health` answered 503 `degraded` ("cannot reach Odoo") against an unreachable Odoo as designed, `/app/data` owned by the app user.
+- README env table checked against `config.py` (all 17 variables and defaults match). The openssl signing example was compared with the Python HMAC for the same input (identical digest).
+
 ### Pending for user
 - `.env.example` needs updating (new settings: `IDEMPOTENCY_IN_PROGRESS_TIMEOUT_SECONDS`, `IDEMPOTENCY_TTL_HOURS`, `IDEMPOTENCY_PURGE_INTERVAL_SECONDS`, `WEBHOOK_TOLERANCE_SECONDS`, `WEBHOOK_REDELIVERY_AFTER_SECONDS`; 16-character minimum for `ODOO_API_KEY`, `CONNECTOR_API_KEY`, `WEBHOOK_SECRET`). Subagents have no access to `.env*` files.
 
 ## Next step
-T8 (addon) and T9 (Docker + README), then final review of T7a-T9.
+Final review of T7a-T9, user updates `.env.example`, then the delivery decision (push/PR) by the user.
