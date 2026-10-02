@@ -37,7 +37,7 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 - [x] T6a Review follow-ups (T6 4-lens review). Route: delegated (writer).
 - [x] T7 Webhooks: `/webhooks/odoo`, HMAC SHA256 verification, in-process event bus, BackgroundTasks. Route: delegated (writer).
 - [x] T7a Review follow-ups (T7 4-lens review). Route: delegated (writer).
-- [ ] T8 `odoo_addon/`: minimal module posting signed events for res.partner and sale.order. Route: delegated (writer).
+- [x] T8 `odoo_addon/`: minimal module posting signed events for res.partner and sale.order. Route: delegated (writer).
 - [ ] T9 Dockerfile, docker-compose.yml, README (setup, env, curl, API key, addon install, mermaid). Route: delegated (writer).
 
 ## Acceptance criteria
@@ -119,6 +119,12 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 - T7a RED: 26 failed + 1 collection error (`infrastructure.sqlite` missing): 5000-digit timestamp raised, `claim`/`status`/`mark_processed` missing, bus returned None, naive/unparsable `created_at`, `clock` seam, new setting, generic purge log. MultiPurger isolation test was a characterization test (already green).
 - T7a GREEN: 467 passed. Checks: pytest 467 passed; ruff check clean; ruff format --check clean; mypy src clean.
 - Decisions: `verify` rejects timestamps over 12 digits before `int()`. Webhook dedup is two-phase (`received` -> `processed`; `claim` returns new/redeliver/duplicate; `webhook_redelivery_after_seconds`, default 60); the bus `publish` and `HandleOdooEvent.execute` now return `bool` (all handlers succeeded) so the background task marks `processed` only on full success; delivery is at-least-once, handlers must be idempotent. Existing `webhook_events` tables are migrated (`status` column, legacy rows = processed). Naive `created_at` = UTC, unparsable = abandoned (`unknown`, warning log). Stores take an injectable `clock`. Shared SQLite boilerplate in `infrastructure/sqlite.py` (`SqliteDatabase`, `prepare_private_file`). `DEFAULT_IN_PROGRESS_TIMEOUT_SECONDS` lives in `idempotency/store.py` and is imported by config and the store. Purge logs: "purged expired records" / "purge failed" with a `store` field.
+
+### T8 (route: delegated writer; commit: subject "feat(addon): add odoo module that posts signed events to the connector"; T7a = fc20dd0)
+- RED: `uv run pytest -q tests/addon` -> collection error (`FileNotFoundError: odoo_addon/connector_webhook/models/signing.py`); a test expecting a non-ASCII-escaped body then failed against the spec'd `json.dumps` defaults (test corrected, spec followed).
+- GREEN: 488 passed (signing verifies with the connector's `verify`, header contract, event shape, retry matrix incl. fresh timestamp per attempt and same bytes, no retry on 4xx, secret never logged, manifest via `ast.literal_eval`, XML well-formed, server-action code is valid Python, config parameter data has no secret and is `noupdate`). Checks: pytest 488 passed; ruff check clean; ruff format --check clean; mypy src clean (addon outside `src`).
+- Design: all pure logic (body, signing, retrying `deliver`) in `models/signing.py` (no `odoo` import); `models/connector_webhook.py` is a thin AbstractModel `connector.webhook` that reads `ir.config_parameter`, builds the payload and posts via `env.cr.postcommit.add`. Ruff: `known-third-party = ["odoo"]` and per-file ignores for `__init__.py` (F401) and `__manifest__.py` (B018). Retries: 3 retries (4 attempts) on transport errors and 5xx, 0.5/1/2 s backoff, same event_id, fresh timestamp+signature.
+- Odoo-version uncertainty: addon not run against a live Odoo. `base.automation` XML uses `trigger` `on_create`/`on_write`, `(4, id)` links (works for the Many2many of 17 and the One2many of 18+), `trigger_field_ids`, `filter_pre_domain`/`filter_domain`, `ir.actions.server` `usage=base_automation`; Odoo 19 field names unverified. Manual UI alternative documented in the addon README.
 
 ### Pending for user
 - `.env.example` needs updating (new settings: `IDEMPOTENCY_IN_PROGRESS_TIMEOUT_SECONDS`, `IDEMPOTENCY_TTL_HOURS`, `IDEMPOTENCY_PURGE_INTERVAL_SECONDS`, `WEBHOOK_TOLERANCE_SECONDS`, `WEBHOOK_REDELIVERY_AFTER_SECONDS`; 16-character minimum for `ODOO_API_KEY`, `CONNECTOR_API_KEY`, `WEBHOOK_SECRET`). Subagents have no access to `.env*` files.

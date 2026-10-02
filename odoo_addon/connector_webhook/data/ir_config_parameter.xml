@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        noupdate: values edited in Settings > Technical > System Parameters survive module upgrades.
+        The secret is deliberately NOT created here: add `connector_webhook.secret` yourself with the
+        connector's WEBHOOK_SECRET. Until it exists the addon only logs a warning and sends nothing.
+    -->
+    <data noupdate="1">
+        <record id="config_parameter_url" model="ir.config_parameter">
+            <field name="key">connector_webhook.url</field>
+            <field name="value">http://connector.example.com:8000</field>
+        </record>
+    </data>
+</odoo>
