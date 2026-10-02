@@ -195,4 +195,7 @@ async def test_aclose_keeps_injected_client_open() -> None:
 
 async def test_aclose_closes_owned_client() -> None:
     transport = JsonRpcTransport(url=URL, db="d", user="u", api_key=KEY)
+    owned = transport._client
+    assert not owned.is_closed
     await transport.aclose()
+    assert owned.is_closed

@@ -2,9 +2,10 @@
 
 Mapping rules:
 
-* ``AccessDenied`` -> ``OdooAuthError`` (bad credentials or API key).
-* ``AccessError`` -> ``OdooAuthError`` as well. The domain has no "forbidden" error, so an
-  authenticated user lacking rights surfaces as 401; the message keeps Odoo's explanation.
+* ``AccessDenied``, ``SessionExpiredException``, HTTP 401 -> ``OdooAuthError`` (bad credentials,
+  API key or expired session; the client may re-authenticate and replay).
+* ``AccessError``, HTTP 403, XML-RPC fault code 4 -> ``OdooPermissionError`` (403). The user is
+  authenticated but lacks rights; this is raised during execution, so it is never replayed.
 * ``MissingError`` -> ``OdooNotFound``.
 * ``ValidationError`` / ``UserError`` / database integrity errors -> ``OdooValidationError``.
 * Anything else (unknown faults, other database errors, 5xx) -> ``OdooUnavailable`` (502).
@@ -20,6 +21,7 @@ from conector_odoo.domain.errors import (
     ConnectorError,
     OdooAuthError,
     OdooNotFound,
+    OdooPermissionError,
     OdooUnavailable,
     OdooValidationError,
 )
@@ -47,8 +49,10 @@ def sanitize(text: str, secrets: Iterable[str] = ()) -> str:
 def map_odoo_exception(name: str | None, message: str) -> ConnectorError:
     """Map an Odoo exception class name (``odoo.exceptions.X``) to a domain error."""
     short = (name or "").rsplit(".", 1)[-1]
-    if short in {"AccessDenied", "AccessError"}:
+    if short in {"AccessDenied", "SessionExpiredException"}:
         return OdooAuthError(message)
+    if short == "AccessError":
+        return OdooPermissionError(message)
     if short == "MissingError":
         return OdooNotFound(message)
     if short in {"ValidationError", "UserError", "RedirectWarning"}:
@@ -87,13 +91,16 @@ def map_xmlrpc_fault(code: int, text: str, secrets: Iterable[str] = ()) -> Conne
     if code == _FAULT_ACCESS_DENIED:
         return OdooAuthError(message)
     if code == _FAULT_ACCESS_ERROR:
-        return OdooAuthError(message)
-    if code == _FAULT_WARNING:
-        # UserError subclasses (including MissingError) share this code.
-        if any(hint in text.lower() for hint in _MISSING_HINTS):
-            return OdooNotFound(message)
-        return OdooValidationError(message)
+        return OdooPermissionError(message)
     names = _EXCEPTION_NAME.findall(text)
+    if code == _FAULT_WARNING:
+        # UserError subclasses (including MissingError) share this code. Prefer the exception
+        # class name; fall back to free-text hints only when the class name is absent.
+        if names:
+            is_missing = names[-1].rsplit(".", 1)[-1] == "MissingError"
+        else:
+            is_missing = any(hint in text.lower() for hint in _MISSING_HINTS)
+        return OdooNotFound(message) if is_missing else OdooValidationError(message)
     if names:
         return map_odoo_exception(names[-1], message)
     return OdooUnavailable(message or "unexpected Odoo failure")
@@ -101,6 +108,8 @@ def map_xmlrpc_fault(code: int, text: str, secrets: Iterable[str] = ()) -> Conne
 
 def map_http_status(status: int, secrets: Iterable[str] = ()) -> ConnectorError:
     """Map a non-success HTTP status returned by the Odoo endpoint."""
-    if status in {401, 403}:
+    if status == 401:
         return OdooAuthError(sanitize(f"Odoo rejected the request (HTTP {status})", secrets))
+    if status == 403:
+        return OdooPermissionError(sanitize(f"Odoo forbade the request (HTTP {status})", secrets))
     return OdooUnavailable(sanitize(f"Odoo answered with HTTP {status}", secrets))

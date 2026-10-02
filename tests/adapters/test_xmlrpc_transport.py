@@ -1,5 +1,7 @@
+import http.client
 import xmlrpc.client
 from typing import Any
+from xml.parsers.expat import ExpatError
 
 import pytest
 
@@ -125,3 +127,20 @@ async def test_os_errors_never_retry_create(
         await transport.execute_kw("res.partner", "create", [[{"name": "A"}]])
     assert len(registry.calls) == 2
     assert sleeps == []
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        http.client.IncompleteRead(b"partial"),
+        http.client.BadStatusLine("garbage"),
+        ExpatError("not well-formed"),
+    ],
+)
+async def test_http_and_parser_errors_are_unavailable(
+    transport: XmlRpcTransport, registry: Registry, error: Exception
+) -> None:
+    registry.responses = [7, error]
+    with pytest.raises(OdooUnavailable) as info:
+        await transport.execute_kw("res.partner", "create", [[{"name": "A"}]])
+    assert KEY not in str(info.value)

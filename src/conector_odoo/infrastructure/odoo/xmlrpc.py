@@ -5,10 +5,12 @@
 """
 
 import asyncio
+import http.client
 import logging
 import xmlrpc.client
 from collections.abc import Awaitable, Callable
 from typing import Any
+from xml.parsers.expat import ExpatError
 from xmlrpc.client import ServerProxy
 
 from conector_odoo.domain.errors import OdooAuthError, OdooUnavailable
@@ -142,5 +144,11 @@ class XmlRpcTransport:
             )
             suffix = "" if idempotent else " (outcome unknown, not retried)"
             raise OdooUnavailable(f"cannot reach Odoo: {type(exc).__name__}{suffix}") from exc
+        except (http.client.HTTPException, ExpatError) as exc:
+            logger.error(
+                "odoo invalid response", extra={"operation": label, "error": type(exc).__name__}
+            )
+            suffix = "" if idempotent else " (outcome unknown, not retried)"
+            raise OdooUnavailable(f"invalid Odoo response: {type(exc).__name__}{suffix}") from exc
         except xmlrpc.client.Error as exc:
             raise OdooUnavailable(f"invalid XML-RPC response: {type(exc).__name__}") from exc

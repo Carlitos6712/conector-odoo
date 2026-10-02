@@ -1,4 +1,4 @@
-"""Domain errors. The API layer maps them to 401 / 404 / 422 / 502."""
+"""Domain errors. The API layer maps them to 401 / 403 / 404 / 422 / 502."""
 
 
 class ConnectorError(Exception):
@@ -6,7 +6,18 @@ class ConnectorError(Exception):
 
 
 class OdooAuthError(ConnectorError):
-    """Odoo rejected the credentials or the access rights (HTTP 401)."""
+    """Odoo rejected the credentials or the session (HTTP 401).
+
+    Only this error triggers re-authentication in ``OdooClient``.
+    """
+
+
+class OdooPermissionError(ConnectorError):
+    """The authenticated user lacks rights for the operation (HTTP 403).
+
+    Deliberately NOT an ``OdooAuthError``: it is raised while Odoo executes the call, so the
+    client must never re-authenticate and replay it (replaying ``create`` could duplicate data).
+    """
 
 
 class OdooNotFound(ConnectorError):

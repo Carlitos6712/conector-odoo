@@ -6,7 +6,7 @@ import httpx
 import pytest
 import respx
 
-from conector_odoo.domain.errors import OdooAuthError, OdooUnavailable
+from conector_odoo.domain.errors import OdooAuthError, OdooPermissionError, OdooUnavailable
 from conector_odoo.infrastructure.odoo.client import OdooClient
 from conector_odoo.infrastructure.odoo.jsonrpc import JsonRpcTransport
 
@@ -86,6 +86,56 @@ async def test_other_errors_are_not_retried() -> None:
         await client.execute_kw("res.partner", "search", [[]])
     assert len(transport.calls) == 1
     assert transport.auth_calls == 1
+
+
+async def test_permission_error_is_not_replayed() -> None:
+    transport = FakeTransport()
+    transport.results = [OdooPermissionError("not allowed"), 99]
+    client = OdooClient(transport)
+    with pytest.raises(OdooPermissionError):
+        await client.execute_kw("res.partner", "create", [[{"name": "A"}]])
+    assert len(transport.calls) == 1
+    assert transport.auth_calls == 1
+
+
+@pytest.mark.parametrize(
+    "denied",
+    [
+        httpx.Response(403),
+        httpx.Response(
+            200,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": {
+                    "code": 200,
+                    "message": "Odoo Server Error",
+                    "data": {"name": "odoo.exceptions.AccessError", "message": "nope"},
+                },
+            },
+        ),
+    ],
+)
+@respx.mock
+async def test_access_error_and_403_do_not_reauthenticate_over_jsonrpc(
+    denied: httpx.Response,
+) -> None:
+    ok = httpx.Response(200, json={"jsonrpc": "2.0", "id": 1, "result": 7})
+    route = respx.post("https://odoo.test/jsonrpc").mock(side_effect=[ok, denied, ok, ok])
+    transport = JsonRpcTransport(url="https://odoo.test", db="d", user="u", api_key="k")
+    client = OdooClient(transport)
+    with pytest.raises(OdooPermissionError):
+        await client.create("res.partner", {"name": "A"})
+    assert route.call_count == 2  # one authenticate + one object call, no replay
+    await client.aclose()
+
+
+@pytest.mark.parametrize("bad", [[], None, False, "x"])
+async def test_create_with_unexpected_result_is_unavailable(bad: Any) -> None:
+    transport = FakeTransport()
+    transport.results = [bad]
+    with pytest.raises(OdooUnavailable):
+        await OdooClient(transport).create("res.partner", {"name": "A"})
 
 
 async def test_failed_reauth_resets_cached_uid() -> None:

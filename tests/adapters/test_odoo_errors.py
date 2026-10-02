@@ -3,6 +3,7 @@ import pytest
 from conector_odoo.domain.errors import (
     OdooAuthError,
     OdooNotFound,
+    OdooPermissionError,
     OdooUnavailable,
     OdooValidationError,
 )
@@ -26,7 +27,8 @@ def _error(name: str, message: str = "boom", debug: str = "") -> dict[str, objec
     ("name", "expected"),
     [
         ("odoo.exceptions.AccessDenied", OdooAuthError),
-        ("odoo.exceptions.AccessError", OdooAuthError),
+        ("odoo.exceptions.AccessError", OdooPermissionError),
+        ("odoo.http.SessionExpiredException", OdooAuthError),
         ("odoo.exceptions.MissingError", OdooNotFound),
         ("odoo.exceptions.ValidationError", OdooValidationError),
         ("odoo.exceptions.UserError", OdooValidationError),
@@ -63,12 +65,23 @@ def test_sanitize_masks_and_truncates() -> None:
     ("code", "text", "expected"),
     [
         (3, "Access Denied", OdooAuthError),
-        (4, "You are not allowed", OdooAuthError),
+        (4, "You are not allowed", OdooPermissionError),
         (2, "Record does not exist or has been deleted.", OdooNotFound),
         (2, "Invalid field value", OdooValidationError),
         (1, "Traceback...\nodoo.exceptions.MissingError: gone", OdooNotFound),
         (1, "Traceback...\nodoo.exceptions.ValidationError: bad", OdooValidationError),
         (1, "Traceback...\nodoo.exceptions.AccessDenied: no", OdooAuthError),
+        (1, "Traceback...\nodoo.exceptions.AccessError: not allowed", OdooPermissionError),
+        (
+            2,
+            "Traceback...\nodoo.exceptions.ValidationError: field 'x' does not exist",
+            OdooValidationError,
+        ),
+        (
+            2,
+            "Traceback...\nodoo.exceptions.MissingError: Record is gone",
+            OdooNotFound,
+        ),
         (1, "Traceback...\nKeyError: 'x'", OdooUnavailable),
     ],
 )
@@ -80,7 +93,12 @@ def test_xmlrpc_faults_map_to_domain_errors(
 
 @pytest.mark.parametrize(
     ("status", "expected"),
-    [(401, OdooAuthError), (403, OdooAuthError), (404, OdooUnavailable), (503, OdooUnavailable)],
+    [
+        (401, OdooAuthError),
+        (403, OdooPermissionError),
+        (404, OdooUnavailable),
+        (503, OdooUnavailable),
+    ],
 )
 def test_http_status_mapping(status: int, expected: type[Exception]) -> None:
     assert type(map_http_status(status)) is expected

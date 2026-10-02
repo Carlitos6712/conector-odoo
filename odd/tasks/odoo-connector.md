@@ -28,6 +28,7 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 - [x] T1 Scaffold: pyproject (uv), ruff/mypy/pytest config, `config.py` (settings), `.gitignore`, `.env.example`, logging setup. Route: delegated (writer).
 - [x] T2 Domain + application: entities, ports, domain errors, use cases (CreateCustomer, UpdateCustomer, GetCustomer, SearchCustomers, CreateSaleOrder, ConfirmSaleOrder, HandleOdooEvent) with fake-repo unit tests. Route: delegated (writer).
 - [x] T3 Odoo client: transport port + jsonrpc (httpx, retries/backoff on network errors only) + xmlrpc (`asyncio.to_thread`), uid cache + re-auth, `execute_kw` + helpers, fault mapping, company context. respx tests. Route: delegated (writer).
+- [x] T3a Review follow-ups (R3-001..R3-005). Route: delegated (writer).
 - [ ] T4 Odoo repository adapters (customer, product, sale order) + json2 transport + transport factory. Route: delegated (writer).
 - [ ] T5 API: routers, schemas, DI wiring, error handlers (401/404/422/502), `X-API-Key`, `/health`. TestClient tests. Route: delegated (writer).
 - [ ] T6 Idempotency: `Idempotency-Key` on POSTs, SQLite store. Route: delegated (writer).
@@ -61,6 +62,13 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 - GREEN: 124 passed (error mapping, retry policy, respx JSON-RPC incl. auth failure, re-auth, MissingError, ValidationError, retry on search_read, no retry on create, timeout, company context; XML-RPC via fake ServerProxy; OdooClient uid cache/re-auth/helpers).
 - Checks: pytest 124 passed; ruff check clean; ruff format --check clean; mypy src clean.
 - Design: transport owns session uid; client caches uid and decides when to re-authenticate (documented in `transport.py`), keeping json2 implementable behind the same Protocol.
+
+### T3 review + T3a follow-ups (route: delegated writer)
+- T3 native review: medium, granted, lens review-reliability, approved and acknowledged (lineage review-aa1cbe628d540660); advisory R3-001..R3-005 fixed in T3a. T1+T2 combined review stopped with lens_context_budget_exceeded (no authority created); not reviewed.
+- T3 commit: 1b35f41.
+- T3a RED: 16 failed / 122 passed (permission-vs-auth mapping, no replay on AccessError/403, xmlrpc HTTPException/ExpatError, MissingError class-name precedence, create result guard).
+- T3a GREEN: 138 passed. Checks: pytest 138 passed; ruff check clean; ruff format --check clean; mypy src clean.
+- Decision: new `OdooPermissionError(ConnectorError)` (HTTP 403), not an `OdooAuthError` subclass, so the client never replays it. AccessError, HTTP 403, XML-RPC fault 4 map to it; AccessDenied, SessionExpiredException, HTTP 401 stay `OdooAuthError`.
 
 ## Next step
 T4.

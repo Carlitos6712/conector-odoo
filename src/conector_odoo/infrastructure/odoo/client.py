@@ -3,7 +3,7 @@
 import asyncio
 from typing import Any
 
-from conector_odoo.domain.errors import OdooAuthError
+from conector_odoo.domain.errors import OdooAuthError, OdooUnavailable
 from conector_odoo.infrastructure.odoo.transport import OdooTransport
 
 
@@ -13,9 +13,11 @@ class OdooClient:
     * The uid is authenticated once (guarded by a lock so concurrent first calls do not
       authenticate twice) and cached on the client; the transport keeps the session state it
       needs (see ``OdooTransport``).
-    * On ``OdooAuthError`` during a call the client re-authenticates once and retries that call
-      once. Replaying even ``create`` is safe here because an auth failure means Odoo rejected
-      the call before executing it. Concurrent failures share a single re-authentication.
+    * On ``OdooAuthError`` (bad/expired credentials or session) during a call the client
+      re-authenticates once and retries that call once. Replaying even ``create`` is safe here
+      because an auth failure means Odoo rejected the call before executing it. Concurrent
+      failures share a single re-authentication. ``OdooPermissionError`` (``AccessError``,
+      HTTP 403) is raised during execution, so it propagates immediately and is never replayed.
     * ``company_id`` (constructor default, overridable per call) is injected into the call
       ``context`` as ``allowed_company_ids`` and ``company_id``; an explicitly provided
       context wins on key conflicts.
@@ -137,7 +139,10 @@ class OdooClient:
         result = await self.execute_kw(
             model, "create", [values], company_id=company_id, context=context
         )
-        return int(result[0] if isinstance(result, list) else result)
+        created = result[0] if isinstance(result, list) and result else result
+        if isinstance(created, bool) or not isinstance(created, int):
+            raise OdooUnavailable(f"unexpected response creating {model}")
+        return created
 
     async def write(
         self,
