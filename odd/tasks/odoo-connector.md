@@ -29,7 +29,7 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 - [x] T2 Domain + application: entities, ports, domain errors, use cases (CreateCustomer, UpdateCustomer, GetCustomer, SearchCustomers, CreateSaleOrder, ConfirmSaleOrder, HandleOdooEvent) with fake-repo unit tests. Route: delegated (writer).
 - [x] T3 Odoo client: transport port + jsonrpc (httpx, retries/backoff on network errors only) + xmlrpc (`asyncio.to_thread`), uid cache + re-auth, `execute_kw` + helpers, fault mapping, company context. respx tests. Route: delegated (writer).
 - [x] T3a Review follow-ups (R3-001..R3-005). Route: delegated (writer).
-- [ ] T4 Odoo repository adapters (customer, product, sale order) + json2 transport + transport factory. Route: delegated (writer).
+- [x] T4 Odoo repository adapters (customer, product, sale order) + json2 transport + transport factory. Route: delegated (writer).
 - [ ] T5 API: routers, schemas, DI wiring, error handlers (401/404/422/502), `X-API-Key`, `/health`. TestClient tests. Route: delegated (writer).
 - [ ] T6 Idempotency: `Idempotency-Key` on POSTs, SQLite store. Route: delegated (writer).
 - [ ] T7 Webhooks: `/webhooks/odoo`, HMAC SHA256 verification, in-process event bus, BackgroundTasks. Route: delegated (writer).
@@ -70,5 +70,11 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 - T3a GREEN: 138 passed. Checks: pytest 138 passed; ruff check clean; ruff format --check clean; mypy src clean.
 - Decision: new `OdooPermissionError(ConnectorError)` (HTTP 403), not an `OdooAuthError` subclass, so the client never replays it. AccessError, HTTP 403, XML-RPC fault 4 map to it; AccessDenied, SessionExpiredException, HTTP 401 stay `OdooAuthError`.
 
+### T4 (route: delegated writer; commit: subject "feat(odoo): add json2 transport, transport factory and repository adapters"; T3a = 2694104)
+- RED: `uv run pytest -q` -> 5 collection errors (`ModuleNotFoundError` for json2, factory, customer/product/sale_order repository modules).
+- GREEN: 205 passed (json2 respx tests incl. positional->named translation, error mapping, retry policy; factory per protocol; repositories with a recording fake client).
+- Checks: pytest 205 passed; ruff check clean; ruff format --check clean; mypy src clean.
+- Design: json2 `authenticate` = `res.users/search` on the login, returns the user id; unsupported methods raise `OdooUnavailable` before any request. Repositories: `OdooCustomerRepository`, `OdooProductRepository`, `OdooSaleOrderRepository` (each takes an `OdooClient`); country code<->id cached in memory; product price from `lst_price`.
+
 ## Next step
-T4.
+T5.
