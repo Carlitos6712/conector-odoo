@@ -12,6 +12,7 @@ from typing import Annotated
 from fastapi import Depends, Request
 
 from conector_odoo.application.customers import (
+    BulkUpsertCustomers,
     CreateCustomer,
     ExportCustomers,
     GetCustomer,
@@ -123,6 +124,10 @@ def get_search_customers(repo: CustomerRepo) -> SearchCustomers:
 
 def get_export_customers(repo: CustomerRepo) -> ExportCustomers:
     return ExportCustomers(repo)
+
+
+def get_bulk_upsert_customers(repo: CustomerRepo) -> BulkUpsertCustomers:
+    return BulkUpsertCustomers(repo)
 
 
 def get_export_products(repo: ProductRepo) -> ExportProducts:

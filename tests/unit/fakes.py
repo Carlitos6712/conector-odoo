@@ -13,7 +13,7 @@ from conector_odoo.domain.entities import (
     SaleOrder,
     SaleOrderData,
 )
-from conector_odoo.domain.errors import OdooNotFound
+from conector_odoo.domain.errors import ConnectorError, OdooNotFound
 
 
 class FakeCustomerRepository:
@@ -24,9 +24,18 @@ class FakeCustomerRepository:
         self.export_calls: list[tuple[CustomerFilter, int | None]] = []
         self.export_error: BaseException | None = None
         self.export_error_after = 1  # batches delivered before ``export_error`` is raised
+        self.known_countries: set[str] = {"ES", "GB", "FR"}
+        self.find_calls: list[list[str]] = []
+        self.create_many_calls: list[list[CustomerData]] = []
+        self.create_many_error: ConnectorError | None = None  # raised instead of creating
+        self.applied_updates: list[tuple[int, dict[str, object]]] = []
+        self.apply_update_errors: dict[int, ConnectorError] = {}
 
     async def create(self, data: CustomerData) -> Customer:
         self.calls.append("create")
+        return self._store(data)
+
+    def _store(self, data: CustomerData) -> Customer:
         customer = Customer(
             id=self._next_id,
             name=data.name,
@@ -85,6 +94,33 @@ class FakeCustomerRepository:
             sent += 1
         if self.export_error is not None and sent <= self.export_error_after:
             raise self.export_error
+
+    async def find_by_emails(self, emails: list[str]) -> dict[str, Customer]:
+        self.find_calls.append(list(emails))
+        wanted = {e.lower() for e in emails}
+        found: dict[str, Customer] = {}
+        for customer in self.items.values():
+            key = (customer.email or "").strip().lower()
+            if key in wanted:
+                found.setdefault(key, customer)
+        return found
+
+    async def create_many(self, data: list[CustomerData]) -> list[int]:
+        self.create_many_calls.append(list(data))
+        if self.create_many_error is not None:
+            raise self.create_many_error
+        self.calls.append("create_many")
+        return [self._store(item).id or 0 for item in data]
+
+    async def apply_update(self, customer_id: int, update: CustomerUpdate) -> None:
+        self.applied_updates.append((customer_id, update.changes()))
+        error = self.apply_update_errors.get(customer_id)
+        if error is not None:
+            raise error
+        self.items[customer_id] = replace(self.items[customer_id], **update.changes())
+
+    async def known_country_codes(self, codes: set[str]) -> set[str]:
+        return {c for c in codes if c.upper() in self.known_countries}
 
     async def archive(self, customer_id: int) -> None:
         current = self.items.get(customer_id)

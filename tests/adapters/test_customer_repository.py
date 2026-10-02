@@ -330,3 +330,120 @@ async def test_iter_batches_propagates_mid_stream_errors(
         async for batch in repo.iter_batches(CustomerFilter()):
             seen.extend(c.id or 0 for c in batch)
     assert seen == [5]
+
+
+async def test_find_by_emails_uses_one_case_insensitive_or_search(
+    repo: OdooCustomerRepository, client: FakeOdooClient
+) -> None:
+    client.script(
+        "res.partner",
+        "search_read",
+        [
+            partner(id=9, email="Ada@X.io"),
+            partner(id=5, email="ada@x.io"),
+            partner(id=7, email="b_@x.io"),
+        ],
+    )
+    client.script("res.country", "read", [{"id": 68, "code": "ES"}])
+    found = await repo.find_by_emails(["ada@x.io", "b_@x.io"])
+    assert set(found) == {"ada@x.io", "b_@x.io"}
+    assert found["ada@x.io"].id == 9  # first row wins (rows come ordered by id asc from Odoo)
+    assert found["ada@x.io"].country_code == "ES"
+    calls = client.calls_to("res.partner", "search_read")
+    assert len(calls) == 1
+    assert calls[0]["domain"] == [
+        "|",
+        ["email", "=ilike", "ada@x.io"],
+        ["email", "=ilike", "b\\_@x.io"],
+    ]
+    assert calls[0]["order"] == "id asc"
+    assert calls[0]["fields"] == PARTNER_FIELDS
+    assert len(client.calls_to("res.country", "read")) == 1
+
+
+async def test_find_by_emails_chunks_large_lookups_without_per_email_calls(
+    repo: OdooCustomerRepository, client: FakeOdooClient
+) -> None:
+    emails = [f"u{i}@x.io" for i in range(250)]
+    client.script("res.partner", "search_read", [], [], [])
+    assert await repo.find_by_emails(emails) == {}
+    calls = client.calls_to("res.partner", "search_read")
+    assert len(calls) == 3  # 100 + 100 + 50
+    assert calls[0]["domain"].count("|") == 99
+    assert calls[2]["domain"].count("|") == 49
+
+
+async def test_find_by_emails_single_email_has_no_or_operator(
+    repo: OdooCustomerRepository, client: FakeOdooClient
+) -> None:
+    client.script("res.partner", "search_read", [])
+    await repo.find_by_emails(["a@x.io"])
+    assert client.calls_to("res.partner", "search_read")[0]["domain"] == [
+        ["email", "=ilike", "a@x.io"]
+    ]
+
+
+async def test_find_by_emails_empty_makes_no_call(
+    repo: OdooCustomerRepository, client: FakeOdooClient
+) -> None:
+    assert await repo.find_by_emails([]) == {}
+    assert client.calls == []
+
+
+async def test_create_many_resolves_countries_and_creates_in_one_call(
+    repo: OdooCustomerRepository, client: FakeOdooClient
+) -> None:
+    client.script("res.country", "search_read", [{"id": 68, "code": "ES"}])
+    client.script("res.partner", "create_many", [11, 12])
+    ids = await repo.create_many(
+        [
+            CustomerData(name="A", email="a@x.io", country_code="es"),
+            CustomerData(name="B", country_code="ES", is_company=True),
+        ]
+    )
+    assert ids == [11, 12]
+    assert len(client.calls_to("res.country", "search_read")) == 1  # cached across items
+    assert client.calls_to("res.partner", "create_many") == [
+        {
+            "vals_list": [
+                {"name": "A", "email": "a@x.io", "country_id": 68, "is_company": False},
+                {"name": "B", "country_id": 68, "is_company": True},
+            ],
+            "chunk_size": 100,
+        }
+    ]
+
+
+async def test_create_many_with_nothing_makes_no_call(
+    repo: OdooCustomerRepository, client: FakeOdooClient
+) -> None:
+    assert await repo.create_many([]) == []
+    assert client.calls == []
+
+
+async def test_known_country_codes_uses_one_lookup_and_the_cache(
+    repo: OdooCustomerRepository, client: FakeOdooClient
+) -> None:
+    client.script("res.country", "search_read", [{"id": 68, "code": "ES"}])
+    assert await repo.known_country_codes({"ES", "ZZ"}) == {"ES"}
+    call = client.calls_to("res.country", "search_read")[0]
+    assert call["domain"] == [["code", "in", ["ES", "ZZ"]]]
+    assert await repo.known_country_codes({"ES"}) == {"ES"}  # cached: no second call
+    assert len(client.calls_to("res.country", "search_read")) == 1
+    assert await repo.known_country_codes(set()) == set()
+
+
+async def test_apply_update_writes_without_reading_back(
+    repo: OdooCustomerRepository, client: FakeOdooClient
+) -> None:
+    client.script("res.partner", "write", True)
+    await repo.apply_update(5, CustomerUpdate(city="Sevilla"))
+    assert client.calls_to("res.partner", "write") == [{"ids": [5], "values": {"city": "Sevilla"}}]
+    assert client.calls_to("res.partner", "read") == []
+
+
+async def test_apply_update_with_no_changes_makes_no_call(
+    repo: OdooCustomerRepository, client: FakeOdooClient
+) -> None:
+    await repo.apply_update(5, CustomerUpdate())
+    assert client.calls == []

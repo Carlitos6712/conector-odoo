@@ -11,10 +11,13 @@ from uuid import UUID
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from conector_odoo.domain.entities import (
+    BulkStatus,
     Customer,
     CustomerData,
     CustomerUpdate,
+    CustomerUpsert,
     Product,
+    RejectedItem,
     SaleOrder,
     SaleOrderData,
     SaleOrderLine,
@@ -105,6 +108,70 @@ class CustomerOut(BaseModel):
             is_company=customer.is_company,
             active=customer.active,
         )
+
+
+class BulkCustomerItem(_Strict):
+    """One item of ``POST /customers/bulk``.
+
+    Structure is validated here (types, lengths, required name); semantic problems that only
+    affect one item (bad email) become ``RejectedItem`` results instead of rejecting the whole
+    payload, so one bad row never fails a large import.
+    """
+
+    name: str = Field(min_length=1, max_length=255)
+    # Not the ``Email`` type on purpose: format is checked per item in ``to_domain``.
+    email: str | None = None
+    phone: str | None = Field(default=None, max_length=64)
+    street: str | None = Field(default=None, max_length=255)
+    city: str | None = Field(default=None, max_length=128)
+    zip: str | None = Field(default=None, max_length=32)
+    country_code: CountryCode | None = None
+    vat: str | None = Field(default=None, max_length=64)
+    is_company: bool | None = None
+
+    def to_domain(self) -> CustomerUpsert | RejectedItem:
+        email = (self.email or "").strip() or None
+        if email is not None:
+            try:
+                _validate_email(email)
+            except ValueError:
+                # The input value is never echoed back (it may hold personal data).
+                return RejectedItem("email: not a valid email address")
+        return CustomerUpsert(
+            name=self.name,
+            email=email,
+            phone=self.phone,
+            street=self.street,
+            city=self.city,
+            zip=self.zip,
+            country_code=self.country_code,
+            vat=self.vat,
+            is_company=self.is_company,
+        )
+
+
+class BulkCustomersIn(_Strict):
+    """Envelope of ``POST /customers/bulk``: create-or-update by email in one request."""
+
+    items: list[BulkCustomerItem] = Field(min_length=1)
+    match_by: Literal["email"] = "email"
+
+    def to_domain(self) -> list[CustomerUpsert | RejectedItem]:
+        return [item.to_domain() for item in self.items]
+
+
+class BulkItemResultOut(BaseModel):
+    index: int
+    status: BulkStatus
+    id: int | None
+    error: str | None
+
+
+class BulkCustomersOut(BaseModel):
+    created: int
+    updated: int
+    failed: int
+    results: list[BulkItemResultOut]
 
 
 class ProductOut(BaseModel):

@@ -90,6 +90,7 @@ All settings are environment variables (or entries in `.env`).
 | `ODOO_COMPANY_ID` | unset | Default company injected in the Odoo context (`allowed_company_ids`). |
 | `ODOO_MAX_CONCURRENCY` | `8` | Max Odoo calls in flight at once (1-64). Also the HTTP connection pool size for `jsonrpc`/`json2`. |
 | `ODOO_BATCH_SIZE` | `500` | Default page size for keyset iteration and chunked Odoo operations (1-5000). |
+| `BULK_MAX_ITEMS` | `1000` | Max items accepted by one `POST /customers/bulk` request (1-10000). |
 | `CONNECTOR_API_KEY` | unset | Key clients send in `X-API-Key`, at least 16 characters. If unset, the data endpoints are unauthenticated and a warning is logged at startup. |
 | `WEBHOOK_SECRET` | required | Shared secret to verify Odoo webhooks, at least 16 characters. |
 | `WEBHOOK_TOLERANCE_SECONDS` | `300` | Max clock skew between the signed timestamp and the connector clock. |
@@ -141,6 +142,10 @@ curl -H "X-API-Key: $KEY" "http://localhost:8000/customers?email=ada@example.com
 curl -H "X-API-Key: $KEY" http://localhost:8000/customers/42
 curl -X PATCH http://localhost:8000/customers/42 \
   -H "X-API-Key: $KEY" -H "Content-Type: application/json" -d '{"phone": "+44 20 7946 0000"}'
+# bulk create-or-update by email (see "Bulk upsert")
+curl -X POST http://localhost:8000/customers/bulk \
+  -H "X-API-Key: $KEY" -H "Content-Type: application/json" -H "Idempotency-Key: bulk-001" \
+  -d '{"items": [{"name": "Ada Lovelace", "email": "ada@example.com", "city": "London"}]}'
 
 # products (read only)
 curl -H "X-API-Key: $KEY" "http://localhost:8000/products?limit=20"
@@ -180,8 +185,8 @@ Errors are JSON: `{"error": "<code>", "detail": "<message>"}`.
 
 ### Idempotency
 
-`Idempotency-Key` (optional, max 255 characters) is accepted on `POST /customers`, `POST /sale-orders`
-and `POST /sale-orders/{id}/confirm`.
+`Idempotency-Key` (optional, max 255 characters) is accepted on `POST /customers`,
+`POST /customers/bulk`, `POST /sale-orders` and `POST /sale-orders/{id}/confirm`.
 
 - Same key and same request: the first response is stored and replayed with `Idempotent-Replayed: true`.
 - Same key, different request: 422 `idempotency_key_reused`.
@@ -278,6 +283,42 @@ response (401/403/502...). Once streaming has started the status is already `200
 a failure ends the stream with one last line `{"error": "odoo_unavailable", "detail": "..."}` (secrets
 scrubbed, failure logged). Clients must check the last line: an object with an `error` key means the
 export is incomplete.
+
+### Bulk upsert
+
+`POST /customers/bulk` creates or updates up to `BULK_MAX_ITEMS` customers (default 1000) in one
+request, matched by `email`:
+
+```bash
+curl -X POST http://localhost:8000/customers/bulk \
+  -H "X-API-Key: $KEY" -H "Content-Type: application/json" -H "Idempotency-Key: bulk-001" \
+  -d '{"items": [{"name": "Ada", "email": "ada@example.com"}, {"name": "Grace", "email": "grace@example.com", "city": "London"}]}'
+```
+
+The body is `{"match_by": "email", "items": [...]}` (`match_by` defaults to `email`; other values
+are 422). Existing customers are matched case-insensitively with one batched lookup — never one
+call per item — and updated with only the fields that differ; everything else is created with
+Odoo multi-create in chunks. Over `BULK_MAX_ITEMS` is 422 before anything runs.
+
+The answer is `200` with per-item results, so one bad row never fails a large import:
+
+```json
+{
+  "created": 1, "updated": 1, "failed": 1,
+  "results": [
+    {"index": 0, "status": "created", "id": 42, "error": null},
+    {"index": 1, "status": "updated", "id": 7, "error": null},
+    {"index": 2, "status": "failed", "id": null, "error": "email: not a valid email address"}
+  ]
+}
+```
+
+Rejected input (invalid email, blank name, unknown `country_code`, duplicate email inside the
+payload) and per-record failures are reported per item; the batch never aborts. If a create chunk
+fails after earlier chunks were created, the already-created ids are kept as `created` and the rest
+are `failed` with a "verify in Odoo before retrying" error (secrets are scrubbed from every message).
+Items without an email are always created (they cannot be matched). The endpoint honors
+`Idempotency-Key` like the other POSTs.
 
 ## Development
 

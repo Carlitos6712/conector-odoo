@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Path, Query, Request, Response
 from fastapi.responses import StreamingResponse
 
 from conector_odoo.application.customers import (
+    BulkUpsertCustomers,
     CreateCustomer,
     ExportCustomers,
     GetCustomer,
@@ -11,17 +12,25 @@ from conector_odoo.application.customers import (
     UpdateCustomer,
 )
 from conector_odoo.application.pagination import MAX_BATCH_SIZE, MAX_PAGE_SIZE
+from conector_odoo.config import Settings
 from conector_odoo.domain.entities import CustomerFilter, CustomerQuery
+from conector_odoo.domain.errors import OdooValidationError
 from conector_odoo.infrastructure.api.dependencies import (
+    get_bulk_upsert_customers,
     get_create_customer,
     get_export_customers,
     get_get_customer,
     get_search_customers,
+    get_settings,
     get_update_customer,
 )
+from conector_odoo.infrastructure.api.errors import scrub
 from conector_odoo.infrastructure.api.idempotency import IDEMPOTENCY_RESPONSES, GuardDep
 from conector_odoo.infrastructure.api.ndjson import ndjson_response
 from conector_odoo.infrastructure.api.schemas import (
+    BulkCustomersIn,
+    BulkCustomersOut,
+    BulkItemResultOut,
     CustomerCreate,
     CustomerOut,
     CustomerPatch,
@@ -87,6 +96,43 @@ async def export_customers(
     # Declared before ``/{customer_id}`` so "export" is never parsed as an id.
     batches = use_case.execute(CustomerFilter(email=email, name=name, active=active), batch_size)
     return await ndjson_response(batches, CustomerOut.from_domain, request, "customers.ndjson")
+
+
+@router.post(
+    "/bulk",
+    status_code=200,
+    response_model=BulkCustomersOut,
+    responses=IDEMPOTENCY_RESPONSES,
+)
+async def bulk_upsert_customers(
+    body: BulkCustomersIn,
+    use_case: Annotated[BulkUpsertCustomers, Depends(get_bulk_upsert_customers)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    guard: GuardDep,
+) -> Response:
+    """Create or update many customers matched by email; per-item results, never a partial 500."""
+    if len(body.items) > settings.bulk_max_items:
+        # Checked before anything runs: no lookups, no writes, no idempotency key claimed.
+        raise OdooValidationError(f"items: at most {settings.bulk_max_items} items per request")
+
+    async def action() -> BulkCustomersOut:
+        result = await use_case.execute(body.to_domain(), body.match_by)
+        return BulkCustomersOut(
+            created=result.created,
+            updated=result.updated,
+            failed=result.failed,
+            results=[
+                BulkItemResultOut(
+                    index=item.index,
+                    status=item.status,
+                    id=item.id,
+                    error=scrub(item.error, settings) if item.error is not None else None,
+                )
+                for item in result.results
+            ],
+        )
+
+    return await guard.run(body, action, 200)
 
 
 @router.get("/{customer_id}", response_model=CustomerOut, responses={404: {"model": ErrorOut}})

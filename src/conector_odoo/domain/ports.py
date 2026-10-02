@@ -29,6 +29,30 @@ class CustomerRepository(Protocol):
 
     async def archive(self, customer_id: int) -> None: ...
 
+    async def find_by_emails(self, emails: list[str]) -> dict[str, Customer]:
+        """Find existing customers by email in a few batched lookups (never one per email).
+
+        Matching is case-insensitive and exact. Keys of the result are the lowercased emails;
+        when several customers share an email the first one (lowest id) wins.
+        """
+        ...
+
+    async def create_many(self, data: list[CustomerData]) -> list[int]:
+        """Create customers in chunks; returns the new ids in input order.
+
+        Raises ``BatchPartiallyApplied`` (carrying the ids created so far) when a later chunk
+        fails.
+        """
+        ...
+
+    async def apply_update(self, customer_id: int, update: CustomerUpdate) -> None:
+        """Write only the provided fields, without reading the record back."""
+        ...
+
+    async def known_country_codes(self, codes: set[str]) -> set[str]:
+        """Return the subset of ISO country ``codes`` that exist (one batched lookup)."""
+        ...
+
     def iter_batches(
         self, filters: CustomerFilter, batch_size: int | None = None
     ) -> AsyncIterator[list[Customer]]:

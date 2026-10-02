@@ -40,6 +40,7 @@ FIELDS = [
     "is_company",
     "active",
 ]
+EMAIL_LOOKUP_CHUNK = 100  # emails per OR-domain search_read
 _PLAIN_FIELDS = ("name", "email", "phone", "street", "city", "zip", "vat", "is_company")
 
 
@@ -96,6 +97,65 @@ class OdooCustomerRepository:
             MODEL, domain, FIELDS, limit=query.limit, offset=query.offset, order="id asc"
         )
         return await self._hydrate(rows)
+
+    async def find_by_emails(self, emails: list[str]) -> dict[str, Customer]:
+        """Case-insensitive exact lookup, ``EMAIL_LOOKUP_CHUNK`` emails per ``search_read``.
+
+        Odoo's ``in`` operator is case-sensitive and partner emails keep the case they were typed
+        with, so each email becomes an escaped ``=ilike`` term and a chunk is one OR-domain.
+        Only active partners match (Odoo's default); archived ones are ignored.
+        """
+        found: dict[str, Customer] = {}
+        unique = list(dict.fromkeys(e.strip().lower() for e in emails if e.strip()))
+        for start in range(0, len(unique), EMAIL_LOOKUP_CHUNK):
+            chunk = unique[start : start + EMAIL_LOOKUP_CHUNK]
+            terms: list[Any] = [["email", "=ilike", escape_like(e)] for e in chunk]
+            domain: list[Any] = ["|"] * (len(chunk) - 1) + terms
+            rows = await self._client.search_read(MODEL, domain, FIELDS, order="id asc")
+            for customer in await self._hydrate(rows):
+                key = (customer.email or "").strip().lower()
+                found.setdefault(key, customer)
+        return found
+
+    async def create_many(self, data: list[CustomerData]) -> list[int]:
+        if not data:
+            return []
+        values = [
+            await self._to_values(
+                {
+                    "name": item.name,
+                    "email": item.email,
+                    "phone": item.phone,
+                    "street": item.street,
+                    "city": item.city,
+                    "zip": item.zip,
+                    "country_code": item.country_code,
+                    "vat": item.vat,
+                    "is_company": item.is_company,
+                }
+            )
+            for item in data
+        ]
+        return await self._client.create_many(MODEL, values)
+
+    async def apply_update(self, customer_id: int, update: CustomerUpdate) -> None:
+        values = await self._to_values(update.changes())
+        if values:
+            await self._client.write(MODEL, [customer_id], values)
+
+    async def known_country_codes(self, codes: set[str]) -> set[str]:
+        wanted = {code.upper() for code in codes}
+        unresolved = sorted(wanted - self._code_to_id.keys())
+        if unresolved:
+            rows = await self._client.search_read(
+                "res.country", [["code", "in", unresolved]], ["code"]
+            )
+            for row in rows:
+                code = text_or_none(row.get("code"))
+                if code:
+                    self._code_to_id[code.upper()] = int(row["id"])
+                    self._id_to_code[int(row["id"])] = code.upper()
+        return wanted & self._code_to_id.keys()
 
     async def iter_batches(
         self, filters: CustomerFilter, batch_size: int | None = None

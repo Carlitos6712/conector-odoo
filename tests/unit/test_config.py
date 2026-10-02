@@ -184,3 +184,14 @@ def test_batching_settings_accept_the_bounds(
 ) -> None:
     _set_env(monkeypatch, **{name: value})
     assert getattr(Settings(_env_file=None), attr) == expected  # type: ignore[call-arg]
+
+
+def test_bulk_max_items_default_and_bounds(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_env(monkeypatch)
+    assert Settings(_env_file=None).bulk_max_items == 1000  # type: ignore[call-arg]
+    for bad in ("0", "10001"):
+        _set_env(monkeypatch, BULK_MAX_ITEMS=bad)
+        with pytest.raises(ValidationError):
+            Settings(_env_file=None)  # type: ignore[call-arg]
+    _set_env(monkeypatch, BULK_MAX_ITEMS="10000")
+    assert Settings(_env_file=None).bulk_max_items == 10000  # type: ignore[call-arg]

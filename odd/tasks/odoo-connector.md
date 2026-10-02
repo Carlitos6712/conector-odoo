@@ -41,7 +41,7 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 - [x] T9 Dockerfile, docker-compose.yml, README (setup, env, curl, API key, addon install, mermaid). Route: delegated (writer).
 - [x] T10 Odoo client batching: keyset `iter_search_read`, chunked `read_many`/`create_many`/`write_many`, `BatchPartiallyApplied`, concurrency semaphore + httpx limits, settings `odoo_max_concurrency`/`odoo_batch_size`. Route: delegated writer.
 - [x] T11 Streaming NDJSON export for customers and products. Route: delegated writer.
-- [ ] T12 Bulk customer upsert endpoint. Route: delegated writer.
+- [x] T12 Bulk customer upsert endpoint (`POST /customers/bulk`, per-item results, `BULK_MAX_ITEMS`). Route: delegated writer (resumed after session interruption).
 
 ## Acceptance criteria
 - All PROMPT.md endpoints exist and are tested; `uv run pytest`, `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy src` pass.
@@ -146,9 +146,15 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 - GREEN: 570 passed (use cases: batches in order, filters/batch size passed down, eager batch-size validation, errors propagate; adapters: keyset domain with filters and escaped email, configured default batch size, country lookup once per batch with no N+1, mid-stream error; API: multi-batch NDJSON in order with exact shape, filters passed down, empty export, `/customers/export` not captured by `/{customer_id}`, batch_size 422 for 0/-1/5001/abc and bounds 1/5000 accepted, api key enforced on both routes, error before first byte maps to 403, mid-stream failure appends a scrubbed error line and is logged, unexpected failure hides details, lazy one-batch-at-a-time pulling and source closed). Checks: pytest 570 passed; ruff check clean; ruff format --check clean; mypy src clean.
 - Decisions: use cases return `AsyncIterator[list[Entity]]` (batches), not a flat entity iterator, so the router writes one chunk per batch instead of one ASGI send per row. The router fetches the first batch before building the `StreamingResponse` so early failures use the normal handlers; later failures end the stream with `{"error", "detail"}`. Extra optional `active` filter on customers (`CustomerFilter.active`; explicit value also matches archived partners). `/export` routes are declared before `/{id}`. Repositories take `batch_size` from `ODOO_BATCH_SIZE`.
 
+### T12 (route: delegated writer, finished after session interruption)
+- RED on resume: 16 failed / 596 passed — 15 API tests (`tests/api/test_bulk_customers_api.py`, endpoint not wired) + 1 config test (`Settings` lacked `bulk_max_items`). Domain (`CustomerUpsert`, `BulkItemResult`, `BulkUpsertResult`, `RejectedItem`), application (`BulkUpsertCustomers`) and adapter (`find_by_emails`, `create_many`, `apply_update`, `known_country_codes`) layers were already written and green.
+- GREEN: 612 passed. Checks: pytest 612 passed; ruff check clean; ruff format --check clean; mypy src clean.
+- Implemented: `BULK_MAX_ITEMS` (default 1000, bounds 1-10000) in `pagination.py` + `config.py`; `BulkCustomerItem` / `BulkCustomersIn` / `BulkItemResultOut` / `BulkCustomersOut` schemas; `get_bulk_upsert_customers` wiring; `POST /customers/bulk` with the `Idempotency-Key` guard (status 200), item-limit check before anything runs, and per-item errors scrubbed via `scrub()`.
+- Decisions: route declared before `/{customer_id}` (static paths first, like `/export`); email format is validated per item (`RejectedItem("email: not a valid email address")`) instead of schema-level `Email`, so one bad row never 422s the whole payload; `match_by` is a schema literal (other values fail the envelope with 422); the over-limit check raises `OdooValidationError` before the guard claims the key (no lookups, no writes, key stays usable); `BulkCustomersOut` is built in the router so errors pass through `scrub()` (secrets in Odoo messages never reach the client).
+- README: new "Bulk upsert" section (curl + response example + semantics), `BULK_MAX_ITEMS` row in the env table, bulk added to the curl block and the idempotency endpoint list. `.env.example` completed with every variable from the README table.
+
 ### Pending for user
-- `.env.example` should also list `ODOO_MAX_CONCURRENCY` (default 8), `ODOO_BATCH_SIZE` (default 500) and `BULK_MAX_ITEMS` (default 1000).
-- `.env.example` needs updating (new settings: `IDEMPOTENCY_IN_PROGRESS_TIMEOUT_SECONDS`, `IDEMPOTENCY_TTL_HOURS`, `IDEMPOTENCY_PURGE_INTERVAL_SECONDS`, `WEBHOOK_TOLERANCE_SECONDS`, `WEBHOOK_REDELIVERY_AFTER_SECONDS`; 16-character minimum for `ODOO_API_KEY`, `CONNECTOR_API_KEY`, `WEBHOOK_SECRET`). Subagents have no access to `.env*` files.
+- None: `.env.example` was completed (all 17 variables incl. `ODOO_MAX_CONCURRENCY`, `ODOO_BATCH_SIZE`, `BULK_MAX_ITEMS`, the idempotency/webhook settings and the 16-character minimums noted in comments).
 
 ## Next step
-Final review of T7a-T9, user updates `.env.example`, then the delivery decision (push/PR) by the user.
+All tasks T1-T12 are done. Open items: (1) delivery decision (push/remote) by the user, (2) never tested against a live Odoo, (3) the two advisory findings from the final review of the previous session remain open (addon acks on 202 before handlers run — an event whose handler fails waits for redelivery; misleading manual-setup snippet in `odoo_addon/connector_webhook/README.md`).

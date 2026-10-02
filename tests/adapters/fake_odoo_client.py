@@ -103,6 +103,19 @@ class FakeOdooClient:
             model, "create", values=values, company_id=company_id
         )
 
+    async def create_many(
+        self,
+        model: str,
+        vals_list: list[dict[str, Any]],
+        *,
+        chunk_size: int = 100,
+        company_id: int | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> list[int]:
+        return self._call(  # type: ignore[no-any-return]
+            model, "create_many", vals_list=vals_list, chunk_size=chunk_size
+        )
+
     async def write(
         self,
         model: str,

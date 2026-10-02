@@ -8,8 +8,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from conector_odoo.application.pagination import (
     DEFAULT_BATCH_SIZE,
+    DEFAULT_BULK_MAX_ITEMS,
     DEFAULT_MAX_CONCURRENCY,
     MAX_BATCH_SIZE,
+    MAX_BULK_MAX_ITEMS,
     MAX_CONCURRENCY,
 )
 from conector_odoo.infrastructure.idempotency.store import DEFAULT_IN_PROGRESS_TIMEOUT_SECONDS
@@ -41,6 +43,8 @@ class Settings(BaseSettings):
     odoo_max_concurrency: int = Field(default=DEFAULT_MAX_CONCURRENCY, ge=1, le=MAX_CONCURRENCY)
     # Default page size of keyset iteration and chunked Odoo operations.
     odoo_batch_size: int = Field(default=DEFAULT_BATCH_SIZE, ge=1, le=MAX_BATCH_SIZE)
+    # Max items accepted by a single bulk upsert payload.
+    bulk_max_items: int = Field(default=DEFAULT_BULK_MAX_ITEMS, ge=1, le=MAX_BULK_MAX_ITEMS)
 
     connector_api_key: SecretStr | None = None
     webhook_secret: SecretStr
