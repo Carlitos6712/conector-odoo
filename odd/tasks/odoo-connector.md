@@ -26,7 +26,7 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 
 ## Tasks
 - [x] T1 Scaffold: pyproject (uv), ruff/mypy/pytest config, `config.py` (settings), `.gitignore`, `.env.example`, logging setup. Route: delegated (writer).
-- [ ] T2 Domain + application: entities, ports, domain errors, use cases (CreateCustomer, UpdateCustomer, GetCustomer, SearchCustomers, CreateSaleOrder, ConfirmSaleOrder, HandleOdooEvent) with fake-repo unit tests. Route: delegated (writer).
+- [x] T2 Domain + application: entities, ports, domain errors, use cases (CreateCustomer, UpdateCustomer, GetCustomer, SearchCustomers, CreateSaleOrder, ConfirmSaleOrder, HandleOdooEvent) with fake-repo unit tests. Route: delegated (writer).
 - [ ] T3 Odoo client: transport port + jsonrpc (httpx, retries/backoff on network errors only) + xmlrpc (`asyncio.to_thread`), uid cache + re-auth, `execute_kw` + helpers, fault mapping, company context. respx tests. Route: delegated (writer).
 - [ ] T4 Odoo repository adapters (customer, product, sale order) + json2 transport + transport factory. Route: delegated (writer).
 - [ ] T5 API: routers, schemas, DI wiring, error handlers (401/404/422/502), `X-API-Key`, `/health`. TestClient tests. Route: delegated (writer).
@@ -51,5 +51,10 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 - Checks: pytest 11 passed; ruff check clean; ruff format --check clean; mypy src clean.
 - Review tier: not assessed (writer task; native review per orchestrator).
 
+### T2 (route: delegated writer; commit: subject "feat(domain): add entities, ports and use cases"; T1 = 429c6b9)
+- RED: `uv run pytest -q` -> 3 collection errors (modules `application.customers`, `application.sale_orders`, `application.event_bus`/`events` missing).
+- GREEN: 40 passed (customer/sale-order use cases with in-memory fakes, event bus isolation, HandleOdooEvent).
+- Checks: pytest 40 passed; ruff check clean; ruff format --check clean; mypy src clean.
+
 ## Next step
-T2.
+T3.
