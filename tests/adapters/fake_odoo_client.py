@@ -58,7 +58,9 @@ class FakeOdooClient:
         company_id: int | None = None,
         context: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
-        return self._call(model, "read", ids=ids, fields=fields)  # type: ignore[no-any-return]
+        return self._call(  # type: ignore[no-any-return]
+            model, "read", ids=ids, fields=fields, company_id=company_id
+        )
 
     async def create(
         self,

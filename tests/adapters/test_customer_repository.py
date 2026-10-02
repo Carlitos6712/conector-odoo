@@ -1,7 +1,7 @@
 import pytest
 
 from conector_odoo.domain.entities import Customer, CustomerData, CustomerQuery, CustomerUpdate
-from conector_odoo.domain.errors import OdooNotFound, OdooValidationError
+from conector_odoo.domain.errors import OdooNotFound, OdooUnavailable, OdooValidationError
 from conector_odoo.infrastructure.odoo.customer_repository import OdooCustomerRepository
 from tests.adapters.fake_odoo_client import FakeOdooClient
 
@@ -56,7 +56,11 @@ async def test_get_maps_false_to_none_and_resolves_country_code(
     assert customer == Customer(
         id=5, name="Ada", email="ada@x.io", city="Madrid", country_code="ES"
     )
-    assert client.calls_to("res.partner", "read")[0] == {"ids": [5], "fields": PARTNER_FIELDS}
+    assert client.calls_to("res.partner", "read")[0] == {
+        "ids": [5],
+        "fields": PARTNER_FIELDS,
+        "company_id": None,
+    }
 
 
 async def test_get_returns_none_for_empty_read(
@@ -198,3 +202,41 @@ async def test_archive_sets_active_false(
     client.script("res.partner", "write", True)
     await repo.archive(5)
     assert client.calls_to("res.partner", "write") == [{"ids": [5], "values": {"active": False}}]
+
+
+@pytest.mark.parametrize(
+    ("email", "pattern"),
+    [
+        ("john_doe@x.io", "john\\_doe@x.io"),
+        ("100%@x.io", "100\\%@x.io"),
+        ("a\\b@x.io", "a\\\\b@x.io"),
+    ],
+)
+async def test_search_escapes_like_wildcards_in_the_email_pattern(
+    repo: OdooCustomerRepository, client: FakeOdooClient, email: str, pattern: str
+) -> None:
+    client.script("res.partner", "search_read", [])
+    await repo.search(CustomerQuery(email=email))
+    assert client.calls_to("res.partner", "search_read")[0]["domain"] == [
+        ["email", "=ilike", pattern]
+    ]
+
+
+async def test_search_name_is_passed_raw_because_odoo_escapes_ilike_itself(
+    repo: OdooCustomerRepository, client: FakeOdooClient
+) -> None:
+    client.script("res.partner", "search_read", [])
+    await repo.search(CustomerQuery(name="50%_off"))
+    assert client.calls_to("res.partner", "search_read")[0]["domain"] == [
+        ["name", "ilike", "50%_off"]
+    ]
+
+
+async def test_create_read_back_failure_reports_the_created_customer_id(
+    repo: OdooCustomerRepository, client: FakeOdooClient
+) -> None:
+    client.script("res.partner", "create", 5)
+    client.script("res.partner", "read", OdooUnavailable("boom"))
+    with pytest.raises(OdooUnavailable) as info:
+        await repo.create(CustomerData(name="Ada"))
+    assert "customer 5 was created" in str(info.value)

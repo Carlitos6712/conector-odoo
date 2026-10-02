@@ -57,22 +57,41 @@ def body(call: respx.models.Call) -> Any:
     return json.loads(call.request.content)
 
 
-@respx.mock
-async def test_authenticate_searches_the_login_and_returns_the_user_id(harness: Harness) -> None:
-    route = respx.post(f"{URL}/json/2/res.users/search").mock(
-        return_value=httpx.Response(200, json=[42])
+def mock_identity(uid: object = 42, users: object = None) -> tuple[respx.Route, respx.Route]:
+    """Mock ``res.users/context_get`` (key owner) and ``res.users/search`` (login lookup)."""
+    context = respx.post(f"{URL}/json/2/res.users/context_get").mock(
+        return_value=httpx.Response(200, json={"lang": "en_US", "tz": "UTC", "uid": uid})
     )
+    search = respx.post(f"{URL}/json/2/res.users/search").mock(
+        return_value=httpx.Response(200, json=[42] if users is None else users)
+    )
+    return context, search
+
+
+@respx.mock
+async def test_authenticate_returns_the_user_id_when_key_owner_matches_the_login(
+    harness: Harness,
+) -> None:
+    context, search = mock_identity(uid=42)
     assert await harness.transport.authenticate() == 42
-    request = route.calls[0].request
+    request = context.calls[0].request
     assert request.headers["authorization"] == f"bearer {KEY}"
     assert request.headers["x-odoo-database"] == "db"
     assert request.headers["content-type"] == "application/json; charset=utf-8"
-    assert body(route.calls[0]) == {"domain": [["login", "=", "bot"]], "limit": 1}
+    assert body(search.calls[0]) == {"domain": [["login", "=", "bot"]], "limit": 1}
 
 
 @respx.mock
-async def test_authenticate_without_matching_user_is_auth_error(harness: Harness) -> None:
-    respx.post(f"{URL}/json/2/res.users/search").mock(return_value=httpx.Response(200, json=[]))
+async def test_authenticate_rejects_a_key_that_belongs_to_another_user(harness: Harness) -> None:
+    mock_identity(uid=7, users=[42])
+    with pytest.raises(OdooAuthError) as info:
+        await harness.transport.authenticate()
+    assert KEY not in str(info.value)
+
+
+@respx.mock
+async def test_authenticate_without_matching_login_is_auth_error(harness: Harness) -> None:
+    mock_identity(uid=42, users=[])
     with pytest.raises(OdooAuthError) as info:
         await harness.transport.authenticate()
     assert KEY not in str(info.value)
@@ -80,9 +99,24 @@ async def test_authenticate_without_matching_user_is_auth_error(harness: Harness
 
 @respx.mock
 async def test_authenticate_with_rejected_key_is_auth_error(harness: Harness) -> None:
+    respx.post(f"{URL}/json/2/res.users/context_get").mock(return_value=httpx.Response(401))
     respx.post(f"{URL}/json/2/res.users/search").mock(return_value=httpx.Response(401))
     with pytest.raises(OdooAuthError):
         await harness.transport.authenticate()
+
+
+@pytest.mark.parametrize("context", [{"lang": "en_US"}, [], "x", {"uid": "7"}, {"uid": True}])
+@respx.mock
+async def test_authenticate_without_a_usable_uid_in_context_falls_back_to_the_login_lookup(
+    harness: Harness, context: object, caplog: pytest.LogCaptureFixture
+) -> None:
+    respx.post(f"{URL}/json/2/res.users/context_get").mock(
+        return_value=httpx.Response(200, json=context)
+    )
+    respx.post(f"{URL}/json/2/res.users/search").mock(return_value=httpx.Response(200, json=[42]))
+    with caplog.at_level("WARNING"):
+        assert await harness.transport.authenticate() == 42
+    assert "could not verify" in caplog.text
 
 
 @pytest.mark.parametrize(

@@ -21,10 +21,20 @@ Remaining ``kwargs`` (``context`` included) are forwarded as named arguments. An
 is refused with ``OdooUnavailable`` before a request is made (the positional order of its
 parameters is unknown here), so add a translation before using a new method over json2.
 
-``authenticate`` has no uid concept: it validates the key with ``res.users/search`` on the
-configured login and returns the id of that user, which is always positive, so it cannot be
-confused with the "authentication failed" values (0/False) of the other protocols. No matching
-user means the key does not belong to the configured login: ``OdooAuthError``.
+``authenticate`` has no uid concept in JSON-2 (no session), so it proves two things:
+
+1. the key's own identity: ``POST res.users/context_get`` runs as the key's owner and (in the
+   Odoo versions we know) includes the owner's ``uid`` in the returned context dict;
+2. the configured login's id: ``POST res.users/search`` on ``[["login", "=", user]]``.
+
+The key is accepted only if both agree; a different owner or no such login raises
+``OdooAuthError``. This replaces the previous check, which accepted any key able to read
+``res.users``. UNCERTAINTY: the ``uid`` entry of the ``context_get`` response is not documented
+for Odoo 19. If it is absent or not an integer, ownership cannot be verified, so a warning is
+logged and the login lookup alone decides (the key is still validated by the HTTP 401 check
+and the lookup needs read access to ``res.users``). Verify against a real Odoo 19 instance.
+The returned id is always positive, so it cannot be confused with the "authentication failed"
+values (0/False) of the other protocols.
 
 Errors: JSON-2 answers with an HTTP status and ``{"name": "odoo.exceptions.X", "message": ...}``.
 401 -> ``OdooAuthError``; 403 -> ``OdooPermissionError``; other errors reuse
@@ -81,6 +91,10 @@ def _to_body(method: str, args: list[Any], kwargs: dict[str, Any] | None) -> dic
     return body
 
 
+def _is_id(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
 class Json2Transport:
     def __init__(
         self,
@@ -108,17 +122,28 @@ class Json2Transport:
         self._uid: int | None = None
 
     async def authenticate(self) -> int:
-        result = await self._call(
+        self._uid = None
+        context = await self._call("res.users", "context_get", {}, idempotent=True)
+        owner = context.get("uid") if isinstance(context, dict) else None
+        found = await self._call(
             "res.users",
             "search",
             {"domain": [["login", "=", self._user]], "limit": 1},
             idempotent=True,
         )
-        if not isinstance(result, list) or not result or not isinstance(result[0], int):
-            self._uid = None
+        if not isinstance(found, list) or not found or not _is_id(found[0]):
             raise OdooAuthError("Odoo rejected the credentials")
-        self._uid = int(result[0])
-        return self._uid
+        uid = int(found[0])
+        if _is_id(owner):
+            if owner != uid:
+                raise OdooAuthError("the API key does not belong to the configured user")
+        else:
+            logger.warning(
+                "json2 could not verify the API key owner: context_get returned no uid",
+                extra={"operation": "res.users.context_get"},
+            )
+        self._uid = uid
+        return uid
 
     async def execute_kw(
         self,

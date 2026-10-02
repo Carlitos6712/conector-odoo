@@ -4,12 +4,23 @@ Country handling: the domain exposes an ISO ``country_code`` while Odoo stores a
 ``res.country``. Writes resolve the code with one ``search_read`` on ``res.country`` (``code`` is
 the ISO alpha-2 code); reads resolve ids with one batched ``read`` of ``res.country``. Both
 directions are cached in memory for the lifetime of the repository (countries are static data).
+
+Search patterns: Odoo's ``ilike`` operator escapes ``\\``, ``%`` and ``_`` itself and wraps the
+value in ``%...%`` (substring match), so the name filter passes the user value unchanged
+(escaping it here would double-escape). ``=ilike`` is NOT escaped by Odoo: the value is handed
+to SQL ``ILIKE`` as the full pattern, so ``%`` and ``_`` would act as wildcards. The email
+filter therefore escapes them with ``escape_like`` and stays a case-insensitive exact match.
 """
 
 from typing import Any
 
 from conector_odoo.domain.entities import Customer, CustomerData, CustomerQuery, CustomerUpdate
-from conector_odoo.domain.errors import OdooNotFound, OdooUnavailable, OdooValidationError
+from conector_odoo.domain.errors import (
+    ConnectorError,
+    OdooNotFound,
+    OdooUnavailable,
+    OdooValidationError,
+)
 from conector_odoo.infrastructure.odoo.client import OdooClient
 from conector_odoo.infrastructure.odoo.mapping import many2one_id, text_or_none
 
@@ -27,6 +38,11 @@ FIELDS = [
     "active",
 ]
 _PLAIN_FIELDS = ("name", "email", "phone", "street", "city", "zip", "vat", "is_company")
+
+
+def escape_like(value: str) -> str:
+    """Escape ``\\``, ``%`` and ``_`` so the value matches literally in a SQL ``ILIKE`` pattern."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 class OdooCustomerRepository:
@@ -50,9 +66,14 @@ class OdooCustomerRepository:
             }
         )
         customer_id = await self._client.create(MODEL, values)
-        customer = await self.get(customer_id)
+        try:
+            customer = await self.get(customer_id)
+        except ConnectorError as exc:
+            raise OdooUnavailable(
+                f"customer {customer_id} was created but could not be read back"
+            ) from exc
         if customer is None:
-            raise OdooUnavailable("created customer could not be read back")
+            raise OdooUnavailable(f"customer {customer_id} was created but could not be read back")
         return customer
 
     async def update(self, customer_id: int, update: CustomerUpdate) -> Customer:
@@ -76,7 +97,7 @@ class OdooCustomerRepository:
     async def search(self, query: CustomerQuery) -> list[Customer]:
         domain: list[Any] = []
         if query.email:
-            domain.append(["email", "=ilike", query.email])
+            domain.append(["email", "=ilike", escape_like(query.email)])
         if query.name:
             domain.append(["name", "ilike", query.name])
         rows = await self._client.search_read(

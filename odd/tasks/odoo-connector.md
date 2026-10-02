@@ -30,6 +30,7 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 - [x] T3 Odoo client: transport port + jsonrpc (httpx, retries/backoff on network errors only) + xmlrpc (`asyncio.to_thread`), uid cache + re-auth, `execute_kw` + helpers, fault mapping, company context. respx tests. Route: delegated (writer).
 - [x] T3a Review follow-ups (R3-001..R3-005). Route: delegated (writer).
 - [x] T4 Odoo repository adapters (customer, product, sale order) + json2 transport + transport factory. Route: delegated (writer).
+- [x] T4a Review follow-ups (T4 review). Route: delegated (writer).
 - [ ] T5 API: routers, schemas, DI wiring, error handlers (401/404/422/502), `X-API-Key`, `/health`. TestClient tests. Route: delegated (writer).
 - [ ] T6 Idempotency: `Idempotency-Key` on POSTs, SQLite store. Route: delegated (writer).
 - [ ] T7 Webhooks: `/webhooks/odoo`, HMAC SHA256 verification, in-process event bus, BackgroundTasks. Route: delegated (writer).
@@ -75,6 +76,12 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 - GREEN: 205 passed (json2 respx tests incl. positional->named translation, error mapping, retry policy; factory per protocol; repositories with a recording fake client).
 - Checks: pytest 205 passed; ruff check clean; ruff format --check clean; mypy src clean.
 - Design: json2 `authenticate` = `res.users/search` on the login, returns the user id; unsupported methods raise `OdooUnavailable` before any request. Repositories: `OdooCustomerRepository`, `OdooProductRepository`, `OdooSaleOrderRepository` (each takes an `OdooClient`); country code<->id cached in memory; product price from `lst_price`.
+
+### T3a+T4 native review and T4a follow-ups (route: delegated writer)
+- T3a+T4 native review: medium, granted, lens review-reliability, approved and acknowledged (lineage review-bd56fe2f22a6f4cf); advisory findings fixed in T4a. T3a=2694104, T4=4e442b3.
+- T4a RED: 7 failed json2 authenticate tests + 9 failed repository tests (email wildcard escaping, company on read-back, created-id in read-back error, fake read recording company_id); client-over-json2 tests passed immediately (translation already correct, no fix needed).
+- T4a GREEN: 229 passed. Checks: pytest 229 passed; ruff check clean; ruff format --check clean; mypy src clean.
+- Decisions: email `=ilike` value escaped (`\`, `%`, `_`); name `ilike` left raw because Odoo escapes `ilike` itself (escaping would double-escape). Read-back after create uses the order company and, on failure, raises `OdooUnavailable("... <id> was created but could not be read back")`. json2 `authenticate` = `res.users/context_get` (key owner `uid`) compared with `res.users/search` on the login; mismatch -> `OdooAuthError`; missing `uid` in the context (undocumented for Odoo 19) logs a warning and falls back to the login lookup.
 
 ## Next step
 T5.

@@ -1,7 +1,7 @@
 import pytest
 
 from conector_odoo.domain.entities import SaleOrder, SaleOrderData, SaleOrderLine
-from conector_odoo.domain.errors import OdooNotFound
+from conector_odoo.domain.errors import OdooNotFound, OdooPermissionError, OdooUnavailable
 from conector_odoo.infrastructure.odoo.sale_order_repository import OdooSaleOrderRepository
 from tests.adapters.fake_odoo_client import FakeOdooClient
 
@@ -57,10 +57,15 @@ async def test_get_reads_order_and_lines(
         amount_total=120.0,
         company_id=2,
     )
-    assert client.calls_to("sale.order", "read")[0] == {"ids": [8], "fields": ORDER_FIELDS}
+    assert client.calls_to("sale.order", "read")[0] == {
+        "ids": [8],
+        "fields": ORDER_FIELDS,
+        "company_id": None,
+    }
     assert client.calls_to("sale.order.line", "read")[0] == {
         "ids": [11, 12],
         "fields": LINE_FIELDS,
+        "company_id": None,
     }
 
 
@@ -106,6 +111,30 @@ async def test_create_builds_order_lines_and_rereads(
         ],
     }
     assert call["company_id"] == 2
+
+
+async def test_create_reads_back_order_and_lines_with_the_company_context(
+    repo: OdooSaleOrderRepository, client: FakeOdooClient
+) -> None:
+    client.script("sale.order", "create", 8)
+    script_get(client)
+    await repo.create(SaleOrderData(customer_id=5, lines=(SaleOrderLine(3, 1.0),), company_id=2))
+    assert client.calls_to("sale.order", "read")[0]["company_id"] == 2
+    assert client.calls_to("sale.order.line", "read")[0]["company_id"] == 2
+
+
+@pytest.mark.parametrize(
+    "failure", [OdooUnavailable("boom"), OdooPermissionError("no"), OdooNotFound("gone")]
+)
+async def test_create_read_back_failure_reports_the_created_order_id(
+    repo: OdooSaleOrderRepository, client: FakeOdooClient, failure: Exception
+) -> None:
+    client.script("sale.order", "create", 8)
+    client.script("sale.order", "read", failure)
+    with pytest.raises(OdooUnavailable) as info:
+        await repo.create(SaleOrderData(customer_id=5, lines=(SaleOrderLine(3, 1.0),)))
+    assert "8" in str(info.value)
+    assert "created" in str(info.value)
 
 
 async def test_create_without_company_omits_company(

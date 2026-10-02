@@ -36,7 +36,11 @@ async def test_get_maps_product(repo: OdooProductRepository, client: FakeOdooCli
     assert await repo.get(3) == Product(
         id=3, name="Desk", default_code="D-1", list_price=99.5, uom_name="Units", active=True
     )
-    assert client.calls_to("product.product", "read")[0] == {"ids": [3], "fields": FIELDS}
+    assert client.calls_to("product.product", "read")[0] == {
+        "ids": [3],
+        "fields": FIELDS,
+        "company_id": None,
+    }
 
 
 async def test_get_maps_false_values(repo: OdooProductRepository, client: FakeOdooClient) -> None:
