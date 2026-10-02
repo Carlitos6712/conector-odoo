@@ -2,7 +2,9 @@
 
 Handlers are ``async def handler(event: OdooEvent) -> None`` coroutines subscribed to an event
 type on the in-process bus (``InMemoryEventBus``); one handler failing never affects the others
-or the HTTP response. To add your own, subscribe on the container's bus after startup, or extend
+or the HTTP response. Delivery is at-least-once (an event whose handlers failed or crashed is
+re-dispatched on Odoo's redelivery), so handlers MUST be idempotent. To add your own, subscribe on
+the container's bus after startup, or extend
 ``register_default_handlers``::
 
     bus = app.state.container.event_bus

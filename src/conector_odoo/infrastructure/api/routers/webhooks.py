@@ -24,13 +24,21 @@ Processing order (cheapest and least-trusting checks first):
 3. Invalid JSON or schema (``WebhookEventIn``) -> 422 ``validation_error``.
 4. Unknown ``event_type`` -> 202 ``{"status": "ignored"}`` and an INFO log "ignored unknown event"
    (acknowledged so Odoo does not retry; not dispatched, not deduplicated).
-5. Already-seen ``event_id`` -> 200 ``{"status": "duplicate"}`` (Odoo retries failed deliveries;
-   the id is recorded only after authentication and validation, so forged or malformed requests
-   cannot burn ids).
-6. Otherwise 202 ``{"status": "accepted"}``; the event is published on the in-process bus from a
-   ``BackgroundTask`` after the response is sent. Delivery to handlers is at-most-once: if the
-   process dies between the ack and the handler, the event is not redelivered. If the dedup store
-   fails the answer is 503 so Odoo retries.
+5. Dedup (two-phase, see ``infrastructure/webhooks/store.py``). The id is recorded only after
+   authentication and validation, so forged or malformed requests cannot burn ids:
+
+   * ``processed`` id -> 200 ``{"status": "duplicate"}``.
+   * ``received`` id newer than ``webhook_redelivery_after_seconds`` -> 200 ``duplicate``
+     (the first attempt may still be running).
+   * ``received`` id older than that -> the previous attempt died or failed: dispatched again
+     (``received_at`` refreshed), 202 ``accepted``.
+6. New id (or a re-dispatch) -> 202 ``{"status": "accepted"}`` with the id stored as ``received``;
+   a ``BackgroundTask`` publishes the event on the in-process bus after the response is sent and
+   marks the id ``processed`` only when every handler succeeded.
+
+Delivery to handlers is AT-LEAST-ONCE: a crash or a failing handler leaves the id ``received``,
+so Odoo's next redelivery after the window runs the handlers again. Handlers MUST therefore be
+idempotent. If the dedup store fails before dispatch the answer is 503 so Odoo retries.
 """
 
 import logging
@@ -82,12 +90,32 @@ async def _read_body(request: Request) -> bytes | None:
     return b"".join(chunks)
 
 
+async def _dispatch(
+    handle: HandleOdooEvent, store: SqliteWebhookEventStore, event_id: str, event: OdooEvent
+) -> None:
+    """Run the handlers and mark the event ``processed`` only if all of them succeeded."""
+    try:
+        succeeded = await handle.execute(event)
+    except Exception:
+        logger.exception("webhook event dispatch failed", extra={"event_id": event_id})
+        return
+    if not succeeded:
+        logger.warning(
+            "webhook event left received; a redelivery will retry it", extra={"event_id": event_id}
+        )
+        return
+    try:
+        await store.mark_processed(event_id)
+    except Exception:
+        logger.exception("could not mark webhook event processed", extra={"event_id": event_id})
+
+
 @router.post(
     "/odoo",
     status_code=202,
     response_model=WebhookAck,
     responses={
-        200: {"model": WebhookAck, "description": "Duplicate delivery (already received)."},
+        200: {"model": WebhookAck, "description": "Duplicate delivery (processed or in flight)."},
         401: {"model": ErrorOut, "description": "Missing or invalid signature/timestamp."},
         413: {"model": ErrorOut, "description": "Body larger than 1 MiB."},
         422: {"model": ErrorOut, "description": "Invalid event payload."},
@@ -142,13 +170,17 @@ async def receive_odoo_event(
         return JSONResponse({"status": "ignored", "event_id": event_id}, status_code=202)
 
     try:
-        is_new = await store.register(event_id)
+        claim = await store.claim(
+            event_id, redelivery_after_seconds=settings.webhook_redelivery_after_seconds
+        )
     except Exception:
         logger.exception("webhook event store unavailable")
         return _error(503, "webhook_store_unavailable", "could not record the event; retry later")
-    if not is_new:
+    if claim == "duplicate":
         logger.info("duplicate webhook ignored", extra={"event_id": event_id})
         return JSONResponse({"status": "duplicate", "event_id": event_id}, status_code=200)
+    if claim == "redeliver":
+        logger.info("redelivered webhook re-dispatched", extra={"event_id": event_id})
 
     event = OdooEvent(
         event_type=incoming.event_type,
@@ -157,5 +189,5 @@ async def receive_odoo_event(
         payload=incoming.payload,
         occurred_at=incoming.occurred_at,
     )
-    background.add_task(HandleOdooEvent(bus).execute, event)
+    background.add_task(_dispatch, HandleOdooEvent(bus), store, event_id, event)
     return JSONResponse({"status": "accepted", "event_id": event_id}, status_code=202)

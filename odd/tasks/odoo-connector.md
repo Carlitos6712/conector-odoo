@@ -36,6 +36,7 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 - [x] T6 Idempotency: `Idempotency-Key` on POSTs, SQLite store. Route: delegated (writer).
 - [x] T6a Review follow-ups (T6 4-lens review). Route: delegated (writer).
 - [x] T7 Webhooks: `/webhooks/odoo`, HMAC SHA256 verification, in-process event bus, BackgroundTasks. Route: delegated (writer).
+- [x] T7a Review follow-ups (T7 4-lens review). Route: delegated (writer).
 - [ ] T8 `odoo_addon/`: minimal module posting signed events for res.partner and sale.order. Route: delegated (writer).
 - [ ] T9 Dockerfile, docker-compose.yml, README (setup, env, curl, API key, addon install, mermaid). Route: delegated (writer).
 
@@ -113,8 +114,14 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 - GREEN: 438 passed (HMAC sign/verify vectors, boundary/malformed inputs, SQLite dedup store, default handlers, endpoint: valid/bare-hex/bad/missing/stale/tampered signature, duplicate, replay, invalid payload, unknown type, 413 incl. chunked, no API key needed, handler isolation, 503 on store failure). Checks: pytest 438 passed; ruff check clean; ruff format --check clean; mypy src clean.
 - Design: scheme `HMAC-SHA256(secret, f"{ts}.".encode() + raw_body)` hex, headers `X-Odoo-Timestamp` + `X-Odoo-Signature: sha256=<hex>` (documented in `routers/webhooks.py` and `infrastructure/webhooks/signature.py`). Dedup in table `webhook_events` of the idempotency SQLite file (own connection; purged by the lifespan loop via `MultiPurger`). Unknown `event_type` -> 202 `ignored` (logged, not dispatched). Event id recorded only after signature + schema validation. `Container` gains `event_bus` + `webhook_events`; `EventBus` port gains `subscribe`. Body read by streaming with a 1 MiB cap.
 
+### T6a+T7 native review and T7a follow-ups (route: delegated writer)
+- T6a+T7 native review: high, granted, 4 lenses, approved and acknowledged (lineage review-04ca3fec3f189390); advisory findings fixed in T7a. T6a=28cee70, T7=923d216.
+- T7a RED: 26 failed + 1 collection error (`infrastructure.sqlite` missing): 5000-digit timestamp raised, `claim`/`status`/`mark_processed` missing, bus returned None, naive/unparsable `created_at`, `clock` seam, new setting, generic purge log. MultiPurger isolation test was a characterization test (already green).
+- T7a GREEN: 467 passed. Checks: pytest 467 passed; ruff check clean; ruff format --check clean; mypy src clean.
+- Decisions: `verify` rejects timestamps over 12 digits before `int()`. Webhook dedup is two-phase (`received` -> `processed`; `claim` returns new/redeliver/duplicate; `webhook_redelivery_after_seconds`, default 60); the bus `publish` and `HandleOdooEvent.execute` now return `bool` (all handlers succeeded) so the background task marks `processed` only on full success; delivery is at-least-once, handlers must be idempotent. Existing `webhook_events` tables are migrated (`status` column, legacy rows = processed). Naive `created_at` = UTC, unparsable = abandoned (`unknown`, warning log). Stores take an injectable `clock`. Shared SQLite boilerplate in `infrastructure/sqlite.py` (`SqliteDatabase`, `prepare_private_file`). `DEFAULT_IN_PROGRESS_TIMEOUT_SECONDS` lives in `idempotency/store.py` and is imported by config and the store. Purge logs: "purged expired records" / "purge failed" with a `store` field.
+
 ### Pending for user
-- `.env.example` needs updating (new settings: `IDEMPOTENCY_IN_PROGRESS_TIMEOUT_SECONDS`, `IDEMPOTENCY_TTL_HOURS`, `IDEMPOTENCY_PURGE_INTERVAL_SECONDS`, `WEBHOOK_TOLERANCE_SECONDS`; 16-character minimum for `ODOO_API_KEY`, `CONNECTOR_API_KEY`, `WEBHOOK_SECRET`). Subagents have no access to `.env*` files.
+- `.env.example` needs updating (new settings: `IDEMPOTENCY_IN_PROGRESS_TIMEOUT_SECONDS`, `IDEMPOTENCY_TTL_HOURS`, `IDEMPOTENCY_PURGE_INTERVAL_SECONDS`, `WEBHOOK_TOLERANCE_SECONDS`, `WEBHOOK_REDELIVERY_AFTER_SECONDS`; 16-character minimum for `ODOO_API_KEY`, `CONNECTOR_API_KEY`, `WEBHOOK_SECRET`). Subagents have no access to `.env*` files.
 
 ## Next step
-T8.
+T8 (addon) and T9 (Docker + README), then final review of T7a-T9.

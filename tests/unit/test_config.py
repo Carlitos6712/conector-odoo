@@ -126,3 +126,18 @@ def test_idempotency_maintenance_defaults(monkeypatch: pytest.MonkeyPatch) -> No
 def test_webhook_tolerance_defaults_to_five_minutes(monkeypatch: pytest.MonkeyPatch) -> None:
     _set_env(monkeypatch)
     assert Settings(_env_file=None).webhook_tolerance_seconds == 300  # type: ignore[call-arg]
+
+
+def test_redelivery_window_default_and_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_env(monkeypatch)
+    assert Settings(_env_file=None).webhook_redelivery_after_seconds == 60.0  # type: ignore[call-arg]
+    monkeypatch.setenv("WEBHOOK_REDELIVERY_AFTER_SECONDS", "15")
+    assert Settings(_env_file=None).webhook_redelivery_after_seconds == 15.0  # type: ignore[call-arg]
+
+
+def test_in_progress_timeout_default_is_the_store_constant(monkeypatch: pytest.MonkeyPatch) -> None:
+    from conector_odoo.infrastructure.idempotency.store import DEFAULT_IN_PROGRESS_TIMEOUT_SECONDS
+
+    _set_env(monkeypatch)
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.idempotency_in_progress_timeout_seconds == DEFAULT_IN_PROGRESS_TIMEOUT_SECONDS

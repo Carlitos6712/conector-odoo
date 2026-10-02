@@ -1,3 +1,4 @@
+import logging
 import stat
 import sys
 from datetime import UTC, datetime, timedelta
@@ -144,3 +145,44 @@ async def test_existing_database_file_is_tightened_to_0600(tmp_path: Path) -> No
     path.chmod(0o644)
     await SqliteIdempotencyStore(str(path)).close()
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
+
+
+async def test_naive_created_at_is_read_as_utc(store: SqliteIdempotencyStore) -> None:
+    await store.begin("k1", SCOPE, "hash-a")
+    naive_old = (datetime.now(UTC) - timedelta(seconds=600)).replace(tzinfo=None).isoformat()
+    store._conn.execute("UPDATE idempotency_keys SET created_at = ?", (naive_old,))
+    record = await store.begin("k1", SCOPE, "hash-a")
+    assert record is not None
+    assert record.status == "unknown"
+
+
+async def test_fresh_naive_created_at_stays_in_progress(store: SqliteIdempotencyStore) -> None:
+    await store.begin("k1", SCOPE, "hash-a")
+    naive_now = datetime.now(UTC).replace(tzinfo=None).isoformat()
+    store._conn.execute("UPDATE idempotency_keys SET created_at = ?", (naive_now,))
+    record = await store.begin("k1", SCOPE, "hash-a")
+    assert record is not None
+    assert record.status == "in_progress"
+
+
+async def test_unparsable_created_at_is_abandoned_and_logged(
+    store: SqliteIdempotencyStore, caplog: pytest.LogCaptureFixture
+) -> None:
+    await store.begin("k1", SCOPE, "hash-a")
+    store._conn.execute("UPDATE idempotency_keys SET created_at = 'not-a-date'")
+    with caplog.at_level(logging.WARNING):
+        record = await store.begin("k1", SCOPE, "hash-a")
+    assert record is not None
+    assert record.status == "unknown"
+    assert any("unparsable created_at" in r.getMessage() for r in caplog.records)
+
+
+async def test_the_injectable_clock_drives_begin() -> None:
+    store = SqliteIdempotencyStore(":memory:", in_progress_timeout_seconds=5)
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    store.clock = lambda: start
+    await store.begin("k1", SCOPE, "hash-a")
+    store.clock = lambda: start + timedelta(seconds=6)
+    record = await store.begin("k1", SCOPE, "hash-a")
+    assert record is not None
+    assert record.status == "unknown"

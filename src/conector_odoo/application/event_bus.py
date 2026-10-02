@@ -16,12 +16,20 @@ class InMemoryEventBus:
     def subscribe(self, event_type: str, handler: EventHandler) -> None:
         self._handlers[event_type].append(handler)
 
-    async def publish(self, event: OdooEvent) -> None:
+    async def publish(self, event: OdooEvent) -> bool:
+        """Deliver ``event`` to every handler; ``True`` only if none of them raised.
+
+        Handlers stay isolated (one failure never skips the others); the result lets callers that
+        need at-least-once semantics tell a clean delivery from a partial one.
+        """
+        succeeded = True
         for handler in list(self._handlers.get(event.event_type, [])):
             try:
                 await handler(event)
             except Exception:
+                succeeded = False
                 logger.exception(
                     "event handler failed",
                     extra={"event_type": event.event_type, "record_id": event.record_id},
                 )
+        return succeeded

@@ -247,3 +247,50 @@ def test_store_is_closed_even_if_the_odoo_client_close_raises() -> None:
         store = container.idempotency
     with pytest.raises(Exception, match="closed"):
         asyncio.run(store.get("k", "s"))
+
+
+def test_expired_webhook_events_are_purged_at_startup(tmp_path: Path) -> None:
+    from conector_odoo.infrastructure.webhooks.store import SqliteWebhookEventStore
+
+    db = tmp_path / "w.sqlite3"
+    seed = SqliteWebhookEventStore(str(db))
+    asyncio.run(seed.claim("old-event", redelivery_after_seconds=60))
+    asyncio.run(seed.close())
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "UPDATE webhook_events SET received_at = ?",
+        ((datetime.now(UTC) - timedelta(hours=48)).isoformat(),),
+    )
+    conn.commit()
+    conn.close()
+    app = create_app(make_settings(idempotency_db_path=str(db), idempotency_ttl_hours=24))
+    with TestClient(app) as client:
+        store = client.app.state.container.webhook_events  # type: ignore[attr-defined]
+        deadline = time.monotonic() + 3
+        status = asyncio.run(store.status("old-event"))
+        while status is not None and time.monotonic() < deadline:
+            time.sleep(0.05)
+            status = asyncio.run(store.status("old-event"))
+    assert status is None
+
+
+def test_abandoned_in_progress_row_through_the_http_guard_is_409_unknown(env: Env) -> None:
+    from fastapi import Request
+
+    from conector_odoo.infrastructure.api.idempotency import request_hash
+    from conector_odoo.infrastructure.api.schemas import CustomerCreate
+
+    store = env.app.state.container.idempotency
+    digest = request_hash(
+        Request({"type": "http", "path_params": {}, "query_string": b"", "headers": []}),
+        CustomerCreate(**CUSTOMER),
+    )
+    # a claim from a crashed worker, made "now"; then the injectable clock moves past the timeout
+    assert asyncio.run(store.begin("abandoned", "POST /customers", digest)) is None
+    store.clock = lambda: datetime.now(UTC) + timedelta(seconds=301)
+    response = env.client.post(
+        "/customers", json=CUSTOMER, headers={"Idempotency-Key": "abandoned"}
+    )
+    assert response.status_code == 409
+    assert response.json() == UNKNOWN_BODY
+    assert env.customers.calls == []

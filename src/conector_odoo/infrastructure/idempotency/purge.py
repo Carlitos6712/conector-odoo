@@ -1,4 +1,4 @@
-"""Background retention for idempotency records."""
+"""Background retention: expired records are purged from every store sharing the database."""
 
 import asyncio
 import logging
@@ -36,7 +36,10 @@ async def purge_loop(store: _Purgeable, *, ttl_hours: float, interval_seconds: f
         try:
             removed = await store.purge_older_than(ttl_hours)
             if removed:
-                logger.info("purged idempotency records", extra={"removed": removed})
+                logger.info(
+                    "purged expired records",
+                    extra={"removed": removed, "store": type(store).__name__},
+                )
         except Exception:
-            logger.exception("idempotency purge failed")
+            logger.exception("purge failed", extra={"store": type(store).__name__})
         await asyncio.sleep(interval_seconds)

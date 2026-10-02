@@ -11,24 +11,26 @@ documents the storage side:
 * Retention: rows are removed by ``purge_older_than`` (the app lifespan runs it at startup and every
   ``idempotency_purge_interval_seconds`` with ``idempotency_ttl_hours``). Stored bodies contain
   customer data (PII), so the TTL bounds how long it lives at rest.
-* The database file is created with mode 0600 (and tightened if it already existed); a parent
-  directory created by this store is 0700.
 
-One connection guarded by a ``threading.Lock`` (``check_same_thread=False``) serialises access;
-the work is tiny, so each call runs in a worker thread only to keep the event loop free.
+Connection handling and file permissions live in ``infrastructure.sqlite``.
 """
 
 import asyncio
 import json
-import os
+import logging
 import sqlite3
-import threading
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
-from typing import Any
 
-from conector_odoo.infrastructure.idempotency.store import IdempotencyRecord, Status
+from conector_odoo.infrastructure.idempotency.store import (
+    DEFAULT_IN_PROGRESS_TIMEOUT_SECONDS,
+    IdempotencyRecord,
+    Status,
+)
+from conector_odoo.infrastructure.sqlite import SqliteDatabase
+
+logger = logging.getLogger(__name__)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS idempotency_keys (
@@ -47,13 +49,19 @@ _COLUMNS = "key, scope, request_hash, status, response_status, response_body, re
 
 
 class SqliteIdempotencyStore:
-    def __init__(self, path: str, *, in_progress_timeout_seconds: float = 300.0) -> None:
+    def __init__(
+        self,
+        path: str,
+        *,
+        in_progress_timeout_seconds: float = DEFAULT_IN_PROGRESS_TIMEOUT_SECONDS,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
         self._timeout = timedelta(seconds=in_progress_timeout_seconds)
-        if path != ":memory:":
-            prepare_private_file(Path(path))
-        self._lock = threading.Lock()
-        self._conn = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
-        self._conn.execute(_SCHEMA)
+        # ``begin`` uses the clock when no explicit ``now`` is given (swappable in tests).
+        self.clock: Callable[[], datetime] = clock or (lambda: datetime.now(UTC))
+        self._db = SqliteDatabase(path, _SCHEMA)
+        self._conn = self._db.conn
+        self._lock = self._db.lock
 
     async def begin(
         self, key: str, scope: str, request_hash: str, *, now: datetime | None = None
@@ -104,13 +112,10 @@ class SqliteIdempotencyStore:
             self._execute, "DELETE FROM idempotency_keys WHERE created_at < ?", (cutoff,)
         )
 
-    async def close(self) -> None:
-        await asyncio.to_thread(self._close)
-
     def _begin(
         self, key: str, scope: str, request_hash: str, now: datetime | None
     ) -> IdempotencyRecord | None:
-        moment = now or datetime.now(UTC)
+        moment = now or self.clock()
         with self._lock:
             while True:
                 try:
@@ -134,7 +139,11 @@ class SqliteIdempotencyStore:
             "SELECT created_at FROM idempotency_keys WHERE key = ? AND scope = ?",
             (record.key, record.scope),
         ).fetchone()
-        if row is None or datetime.fromisoformat(row[0]) > now - self._timeout:
+        if row is None:
+            return record
+        created_at = _parse_created_at(row[0])
+        # An unreadable timestamp cannot prove the claim is live, so it is treated as abandoned.
+        if created_at is not None and created_at > now - self._timeout:
             return record
         self._conn.execute(
             "UPDATE idempotency_keys SET status = 'unknown' "
@@ -164,21 +173,18 @@ class SqliteIdempotencyStore:
             response_headers=json.loads(row[6]) if row[6] else {},
         )
 
-    def _execute(self, sql: str, params: tuple[Any, ...]) -> int:
-        with self._lock:
-            return self._conn.execute(sql, params).rowcount
+    async def close(self) -> None:
+        await self._db.close()
 
-    def _close(self) -> None:
-        with self._lock:
-            self._conn.close()
+    def _execute(self, sql: str, params: tuple[object, ...]) -> int:
+        return self._db.execute(sql, params)
 
 
-def prepare_private_file(path: Path) -> None:
-    """Create the database file as 0600 (parent 0700 if created here); tighten an existing one."""
-    parent = path.parent
-    if not parent.exists():
-        parent.mkdir(parents=True, exist_ok=True)
-        parent.chmod(0o700)
-    if not path.exists():
-        os.close(os.open(path, os.O_RDWR | os.O_CREAT, 0o600))
-    path.chmod(0o600)
+def _parse_created_at(value: str) -> datetime | None:
+    """Parse a stored timestamp; naive values are UTC, unparsable ones return ``None``."""
+    try:
+        parsed = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        logger.warning("idempotency row has an unparsable created_at; treating it as abandoned")
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)

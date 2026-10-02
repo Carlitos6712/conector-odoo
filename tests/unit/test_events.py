@@ -75,3 +75,30 @@ async def test_handle_odoo_event_publishes_to_bus() -> None:
     event = _event(SALE_ORDER_CONFIRMED)
     await HandleOdooEvent(bus).execute(event)
     assert received == [event]
+
+
+async def test_publish_reports_whether_every_handler_succeeded() -> None:
+    bus = InMemoryEventBus()
+    assert await bus.publish(_event()) is True  # no handlers: nothing failed
+
+    async def good(event: OdooEvent) -> None:
+        return None
+
+    async def bad(event: OdooEvent) -> None:
+        raise RuntimeError("boom")
+
+    bus.subscribe(PARTNER_CREATED, good)
+    assert await bus.publish(_event()) is True
+    bus.subscribe(PARTNER_CREATED, bad)
+    assert await bus.publish(_event()) is False
+
+
+async def test_handle_odoo_event_returns_the_bus_outcome() -> None:
+    bus = InMemoryEventBus()
+
+    async def bad(event: OdooEvent) -> None:
+        raise RuntimeError("boom")
+
+    assert await HandleOdooEvent(bus).execute(_event()) is True
+    bus.subscribe(PARTNER_CREATED, bad)
+    assert await HandleOdooEvent(bus).execute(_event()) is False

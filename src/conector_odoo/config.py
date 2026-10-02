@@ -6,6 +6,8 @@ from typing import Literal
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from conector_odoo.infrastructure.idempotency.store import DEFAULT_IN_PROGRESS_TIMEOUT_SECONDS
+
 OdooProtocol = Literal["jsonrpc", "xmlrpc", "json2"]
 MIN_SECRET_LENGTH = 16
 
@@ -35,12 +37,15 @@ class Settings(BaseSettings):
 
     idempotency_db_path: str = "./data/idempotency.sqlite3"
     # An ``in_progress`` key older than this is treated as abandoned (outcome unknown).
-    idempotency_in_progress_timeout_seconds: float = 300.0
+    idempotency_in_progress_timeout_seconds: float = DEFAULT_IN_PROGRESS_TIMEOUT_SECONDS
     # Records older than this are purged (at startup and every purge interval).
     idempotency_ttl_hours: float = 24.0
     idempotency_purge_interval_seconds: float = 3600.0
     # Max clock skew (seconds) between Odoo's signed timestamp and ours; bounds replay windows.
     webhook_tolerance_seconds: int = 300
+    # A ``received`` webhook event older than this is re-dispatched when Odoo redelivers it
+    # (at-least-once); a newer one is treated as still in flight.
+    webhook_redelivery_after_seconds: float = 60.0
     log_level: str = "INFO"
 
     @field_validator("odoo_api_key", "connector_api_key", "webhook_secret")

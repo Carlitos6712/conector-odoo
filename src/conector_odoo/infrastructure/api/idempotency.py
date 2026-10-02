@@ -196,7 +196,9 @@ class IdempotencyGuard:
                 self._scope,
                 response.status_code if response is not None else None,
                 bytes(response.body).decode() if response is not None else None,
-                {},
+                # Error responses are never replayed (a retry gets 409 ``outcome_unknown``), so
+                # there is nothing to restore from headers: none are stored.
+                response_headers={},
             )
         except Exception:
             logger.exception("could not mark the idempotency key unknown; it stays in progress")

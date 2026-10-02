@@ -4,6 +4,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal, Protocol
 
+# An ``in_progress`` claim older than this is treated as abandoned (single source of truth; the
+# ``idempotency_in_progress_timeout_seconds`` setting and the SQLite store both default to it).
+DEFAULT_IN_PROGRESS_TIMEOUT_SECONDS = 300.0
+
 # ``unknown``: the write may or may not have been applied in Odoo (uncertain failure or an
 # abandoned ``in_progress`` claim). The key stays blocked until it is purged.
 Status = Literal["in_progress", "completed", "unknown"]

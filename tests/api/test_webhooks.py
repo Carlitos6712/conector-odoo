@@ -2,7 +2,7 @@ import logging
 import time
 import uuid
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -255,10 +255,10 @@ def test_handler_exception_does_not_affect_the_response(env: Env, recorder: Reco
 def test_event_store_failure_is_503_so_odoo_retries(env: Env, recorder: Recorder) -> None:
     store = env.app.state.container.webhook_events
 
-    async def broken(event_id: str) -> bool:
+    async def broken(*args: object, **kwargs: object) -> str:
         raise RuntimeError("database is locked")
 
-    store.register = broken
+    store.claim = broken
     response = post(env, payload())
     assert response.status_code == 503
     assert response.json()["error"] == "webhook_store_unavailable"
@@ -280,3 +280,111 @@ def test_default_handlers_are_registered_at_startup(env: Env) -> None:
     bus = env.app.state.container.event_bus
     assert bus._handlers["partner.created"]
     assert bus._handlers["sale_order.confirmed"]
+
+
+# --- at-least-once delivery: received -> processed -------------------------------------------
+
+
+def _store(env: Env) -> Any:
+    return env.app.state.container.webhook_events
+
+
+def _status(env: Env, event_id: str) -> str | None:
+    import asyncio
+
+    return asyncio.run(_store(env).status(event_id))
+
+
+def test_a_successfully_handled_event_is_marked_processed(env: Env, recorder: Recorder) -> None:
+    body = payload()
+    assert post(env, body).status_code == 202
+    assert _status(env, body["event_id"]) == "processed"
+
+
+def test_a_failing_handler_leaves_the_event_received(env: Env) -> None:
+    async def boom(event: OdooEvent) -> None:
+        raise RuntimeError("handler bug")
+
+    env.app.state.container.event_bus.subscribe("partner.created", boom)
+    body = payload()
+    assert post(env, body).status_code == 202
+    assert _status(env, body["event_id"]) == "received"
+
+
+def test_a_received_event_is_redispatched_once_the_redelivery_window_passed(env: Env) -> None:
+    calls: list[int] = []
+    fail = {"on": True}
+
+    async def flaky(event: OdooEvent) -> None:
+        calls.append(event.record_id)
+        if fail["on"]:
+            raise RuntimeError("temporary outage")
+
+    env.app.state.container.event_bus.subscribe("partner.created", flaky)
+    body = payload()
+    assert post(env, body).status_code == 202
+    assert _status(env, body["event_id"]) == "received"
+
+    # within the window the delivery counts as in flight: acknowledged, not dispatched again
+    inflight = post(env, body)
+    assert inflight.status_code == 200
+    assert inflight.json() == {"status": "duplicate", "event_id": body["event_id"]}
+    assert len(calls) == 1
+
+    # Odoo redelivers after the window and the handler recovered: dispatched again, now processed
+    fail["on"] = False
+    _store(env).clock = lambda: datetime.now(UTC) + timedelta(seconds=61)
+    retry = post(env, body)
+    assert retry.status_code == 202
+    assert retry.json() == {"status": "accepted", "event_id": body["event_id"]}
+    assert len(calls) == 2
+    assert _status(env, body["event_id"]) == "processed"
+
+    again = post(env, body)
+    assert again.status_code == 200
+    assert len(calls) == 2
+
+
+def test_a_processed_event_is_never_redispatched(env: Env, recorder: Recorder) -> None:
+    body = payload()
+    assert post(env, body).status_code == 202
+    _store(env).clock = lambda: datetime.now(UTC) + timedelta(days=1)
+    assert post(env, body).status_code == 200
+    assert len(recorder.events) == 1
+
+
+def test_redelivery_window_is_configurable() -> None:
+    gen = build_env(make_settings(webhook_redelivery_after_seconds=5))
+    env = next(gen)
+    try:
+        failing = {"on": True}
+        calls: list[int] = []
+
+        async def flaky(event: OdooEvent) -> None:
+            calls.append(1)
+            if failing["on"]:
+                raise RuntimeError("x")
+
+        env.app.state.container.event_bus.subscribe("partner.created", flaky)
+        body = payload()
+        post(env, body)
+        failing["on"] = False
+        _store(env).clock = lambda: datetime.now(UTC) + timedelta(seconds=6)
+        assert post(env, body).status_code == 202
+        assert len(calls) == 2
+    finally:
+        gen.close()
+
+
+def test_marking_processed_failing_is_logged_and_the_response_is_unaffected(
+    env: Env, recorder: Recorder, caplog: pytest.LogCaptureFixture
+) -> None:
+    async def broken(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("database is locked")
+
+    _store(env).mark_processed = broken
+    body = payload()
+    with caplog.at_level(logging.ERROR):
+        assert post(env, body).status_code == 202
+    assert any("could not mark" in r.getMessage() for r in caplog.records)
+    assert len(recorder.events) == 1

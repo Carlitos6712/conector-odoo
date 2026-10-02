@@ -15,6 +15,8 @@ import hashlib
 import hmac
 
 SIGNATURE_PREFIX = "sha256="
+# Unix seconds have 10 digits until the year 2286; 12 leaves headroom and bounds ``int()`` work.
+MAX_TIMESTAMP_DIGITS = 12
 
 
 def sign(secret: str, timestamp: int | str, body: bytes) -> str:
@@ -35,7 +37,7 @@ def verify(
 
     Never raises on malformed input: anything unparseable is simply invalid.
     """
-    if not (timestamp.isascii() and timestamp.isdigit()):
+    if not (timestamp.isascii() and timestamp.isdigit()) or len(timestamp) > MAX_TIMESTAMP_DIGITS:
         return False
     if abs(now - int(timestamp)) > tolerance:
         return False

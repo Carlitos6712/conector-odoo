@@ -56,3 +56,14 @@ def test_verify_rejects_malformed_timestamps(timestamp: str) -> None:
 @pytest.mark.parametrize("signature", ["", "sha256=", "sha1=abcd", "zz", "sha256=é", "é"])
 def test_verify_rejects_malformed_signatures_without_raising(signature: str) -> None:
     assert not verify(SECRET, str(NOW), BODY, signature, NOW, 300)
+
+
+@pytest.mark.parametrize("digits", [13, 400, 5000])
+def test_verify_rejects_oversized_timestamps_without_raising(digits: int) -> None:
+    timestamp = "1" * digits
+    assert not verify(SECRET, timestamp, BODY, sign(SECRET, timestamp, BODY), NOW, 300)
+
+
+def test_verify_accepts_the_longest_allowed_timestamp_when_in_tolerance() -> None:
+    timestamp = "9" * 12
+    assert verify(SECRET, timestamp, BODY, sign(SECRET, timestamp, BODY), int(timestamp), 300)
