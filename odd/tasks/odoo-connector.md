@@ -34,6 +34,7 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 - [x] T5 API: routers, schemas, DI wiring, error handlers (401/404/422/502), `X-API-Key`, `/health`. TestClient tests. Route: delegated (writer).
 - [x] T5a Review follow-ups (T5 4-lens review). Route: delegated (writer).
 - [x] T6 Idempotency: `Idempotency-Key` on POSTs, SQLite store. Route: delegated (writer).
+- [x] T6a Review follow-ups (T6 4-lens review). Route: delegated (writer).
 - [ ] T7 Webhooks: `/webhooks/odoo`, HMAC SHA256 verification, in-process event bus, BackgroundTasks. Route: delegated (writer).
 - [ ] T8 `odoo_addon/`: minimal module posting signed events for res.partner and sale.order. Route: delegated (writer).
 - [ ] T9 Dockerfile, docker-compose.yml, README (setup, env, curl, API key, addon install, mermaid). Route: delegated (writer).
@@ -100,6 +101,15 @@ idempotency (SQLite), webhooks (HMAC + event bus), `odoo_addon/`, Docker, README
 - RED: `uv run pytest -q tests/idempotency tests/api/test_idempotency_api.py` -> collection error (`ModuleNotFoundError: conector_odoo.infrastructure.idempotency`); after the first implementation pass, the in-progress test exposed a hash-vs-409 ordering mismatch in the test itself (fixed: the test now claims the key with the real request hash).
 - GREEN: 354 passed. Checks: pytest 354 passed; ruff check clean; ruff format --check clean; mypy src clean.
 - Design: `IdempotencyStore` Protocol in `infrastructure/idempotency/store.py`; `SqliteIdempotencyStore` (one connection + `threading.Lock`, calls via `asyncio.to_thread`, `:memory:` supported, extra `response_headers` column so a replayed 202 keeps its `Location`). `IdempotencyGuard` dependency (`infrastructure/api/idempotency.py`, `GuardDep`) wraps the POST handlers via `guard.run(body, action, status)`; no middleware. Failure (any exception) releases the key; 2xx and 202 created_but_unreadable are stored; cancellation keeps the key in progress (the write may have happened). Hash = sha256 of canonical JSON of body + path params + query params; hash mismatch is checked before the in-progress check. Container gains `idempotency`, closed in the lifespan; default path `./data/idempotency.sqlite3` (parent dir created). `purge_older_than(hours)` available, no scheduler.
+
+### T5a+T6 native review and T6a follow-ups (route: delegated writer)
+- T5a+T6 native review: high, granted, 4 lenses, approved and acknowledged (lineage review-ace08c5627d82149); advisory findings fixed in T6a. T5a=d36340a, T6=1ff2bba.
+- T6a RED: 18 failed (+1 collection error for the new `purge` module): unknown status/mark_unknown, stale `in_progress` -> unknown, file modes, settings (`odoo_api_key` min length, new idempotency settings), 503 on store failure, purge task + shutdown ordering, 202 log message, short-secret scrubbing. Cancellation and complete-failure tests were characterization tests (already green).
+- T6a GREEN: 380 passed. Checks: pytest 380 passed; ruff check clean; ruff format --check clean; mypy src clean.
+- Decisions: failures where the write may have happened (`OdooUnavailable`/any `ConnectorError` not in the no-write list, unexpected exceptions) mark the key `unknown` and store the error response; retry -> 409 `idempotency_outcome_unknown`. Only validation/not-found/auth/permission errors release the key. Abandoned `in_progress` rows (older than `idempotency_in_progress_timeout_seconds`) become `unknown` on `begin`. `scrub` masks every non-empty secret; `odoo_api_key` >= 16 chars. DB file 0600 (existing file tightened), new parent dir 0700. Lifespan purge task (`app.state.purge_task`) and per-resource try/finally on shutdown. Existing DBs created before this change keep the old CHECK constraint (no `unknown` status): delete the dev file (unreleased schema).
+
+### Pending for user
+- `.env.example` needs updating (new settings: `IDEMPOTENCY_IN_PROGRESS_TIMEOUT_SECONDS`, `IDEMPOTENCY_TTL_HOURS`, `IDEMPOTENCY_PURGE_INTERVAL_SECONDS`, `WEBHOOK_TOLERANCE_SECONDS`; 16-character minimum for `ODOO_API_KEY`, `CONNECTOR_API_KEY`, `WEBHOOK_SECRET`). Subagents have no access to `.env*` files.
 
 ## Next step
 T7.

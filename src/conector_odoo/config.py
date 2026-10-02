@@ -34,11 +34,17 @@ class Settings(BaseSettings):
     webhook_secret: SecretStr
 
     idempotency_db_path: str = "./data/idempotency.sqlite3"
+    # An ``in_progress`` key older than this is treated as abandoned (outcome unknown).
+    idempotency_in_progress_timeout_seconds: float = 300.0
+    # Records older than this are purged (at startup and every purge interval).
+    idempotency_ttl_hours: float = 24.0
+    idempotency_purge_interval_seconds: float = 3600.0
     log_level: str = "INFO"
 
-    @field_validator("connector_api_key", "webhook_secret")
+    @field_validator("odoo_api_key", "connector_api_key", "webhook_secret")
     @classmethod
     def _secret_is_long_enough(cls, value: SecretStr | None) -> SecretStr | None:
+        # Odoo API keys are 40 hex characters; every secret here is also scrubbed from messages.
         if value is not None and len(value.get_secret_value()) < MIN_SECRET_LENGTH:
             raise ValueError(f"must be at least {MIN_SECRET_LENGTH} characters long")
         return value

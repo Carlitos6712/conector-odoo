@@ -6,6 +6,7 @@ from contextlib import contextmanager
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
 from conector_odoo.application.pagination import MAX_PAGE_SIZE
 from conector_odoo.domain.entities import CustomerData, SaleOrderData
@@ -87,9 +88,12 @@ def test_connector_api_key_is_scrubbed_from_error_details(secured_env: Env) -> N
     assert "***" in response.json()["detail"]
 
 
-def test_scrub_ignores_secrets_shorter_than_eight_characters() -> None:
-    settings = make_settings(odoo_api_key="abc")
-    assert scrub("abcdef", settings) == "abcdef"
+def test_scrub_masks_every_configured_secret() -> None:
+    settings = make_settings(connector_api_key=API_KEY)
+    secrets = [ODOO_KEY, API_KEY, "whsec-test-secret-123"]
+    text = scrub("a " + " b ".join(secrets), settings)
+    assert not any(secret in text for secret in secrets)
+    assert text.count("***") == 3
 
 
 def test_routers_use_the_application_page_size_limit() -> None:
@@ -125,3 +129,22 @@ def test_startup_does_not_warn_when_the_connector_api_key_is_configured() -> Non
     with capture("conector_odoo.main") as records, TestClient(create_app(settings)):
         pass
     assert not any("unauthenticated" in r.getMessage() for r in records)
+
+
+def test_scrub_masks_even_very_short_secrets() -> None:
+    settings = make_settings().model_copy(update={"webhook_secret": SecretStr("abc")})
+    assert "abc" not in scrub("leaked abc here", settings)
+
+
+def test_created_but_unreadable_logs_a_warning_with_its_own_message(
+    env: Env, caplog: pytest.LogCaptureFixture
+) -> None:
+    async def create(data: CustomerData) -> None:
+        raise CreatedButUnreadable("res.partner", 7, "customer 7 was created but unreadable")
+
+    env.customers.create = create  # type: ignore[method-assign]
+    with caplog.at_level(logging.WARNING):
+        env.client.post("/customers", json={"name": "Ada"})
+    record = next(r for r in caplog.records if r.getMessage() == "created but unreadable")
+    assert record.levelno == logging.WARNING
+    assert not any(r.getMessage() == "request failed" for r in caplog.records)

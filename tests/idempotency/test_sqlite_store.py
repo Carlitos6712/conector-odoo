@@ -1,3 +1,5 @@
+import stat
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -82,3 +84,63 @@ async def test_in_memory_database_is_supported() -> None:
     store = SqliteIdempotencyStore(":memory:")
     assert await store.begin("k", SCOPE, "h") is None
     await store.close()
+
+
+async def test_mark_unknown_keeps_the_error_response_and_blocks_the_key(
+    store: SqliteIdempotencyStore,
+) -> None:
+    await store.begin("k1", SCOPE, "hash-a")
+    await store.mark_unknown("k1", SCOPE, 502, '{"error":"odoo_unavailable"}', {})
+    record = await store.begin("k1", SCOPE, "hash-a")
+    assert record is not None
+    assert record.status == "unknown"
+    assert record.response_status == 502
+    assert record.response_body == '{"error":"odoo_unavailable"}'
+
+
+async def test_stale_in_progress_rows_become_unknown_on_begin(
+    store: SqliteIdempotencyStore,
+) -> None:
+    await store.begin("k1", SCOPE, "hash-a")
+    later = datetime.now(UTC) + timedelta(seconds=301)
+    record = await store.begin("k1", SCOPE, "hash-a", now=later)
+    assert record is not None
+    assert record.status == "unknown"
+    persisted = await store.get("k1", SCOPE)
+    assert persisted is not None
+    assert persisted.status == "unknown"
+
+
+async def test_fresh_in_progress_rows_stay_in_progress(store: SqliteIdempotencyStore) -> None:
+    await store.begin("k1", SCOPE, "hash-a")
+    soon = datetime.now(UTC) + timedelta(seconds=10)
+    record = await store.begin("k1", SCOPE, "hash-a", now=soon)
+    assert record is not None
+    assert record.status == "in_progress"
+
+
+async def test_the_in_progress_timeout_is_configurable(tmp_path: Path) -> None:
+    store = SqliteIdempotencyStore(str(tmp_path / "i.sqlite3"), in_progress_timeout_seconds=5)
+    await store.begin("k1", SCOPE, "hash-a")
+    record = await store.begin("k1", SCOPE, "hash-a", now=datetime.now(UTC) + timedelta(seconds=6))
+    assert record is not None
+    assert record.status == "unknown"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX permissions")
+async def test_database_file_and_new_parent_directory_are_private(tmp_path: Path) -> None:
+    path = tmp_path / "fresh" / "idem.sqlite3"
+    store = SqliteIdempotencyStore(str(path))
+    await store.begin("k1", SCOPE, "hash-a")
+    await store.close()
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX permissions")
+async def test_existing_database_file_is_tightened_to_0600(tmp_path: Path) -> None:
+    path = tmp_path / "idem.sqlite3"
+    path.touch(mode=0o644)
+    path.chmod(0o644)
+    await SqliteIdempotencyStore(str(path)).close()
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600

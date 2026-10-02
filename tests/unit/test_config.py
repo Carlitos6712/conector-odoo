@@ -7,7 +7,7 @@ BASE_ENV = {
     "ODOO_URL": "https://odoo.example.com",
     "ODOO_DB": "prod",
     "ODOO_USER": "bot@example.com",
-    "ODOO_API_KEY": "key-123",
+    "ODOO_API_KEY": "key-1234567890123456",
     "WEBHOOK_SECRET": "hook-secret-0123456",
 }
 
@@ -49,8 +49,8 @@ def test_secrets_are_masked(monkeypatch: pytest.MonkeyPatch) -> None:
     _set_env(monkeypatch, CONNECTOR_API_KEY="conn-key-0123456789")
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
     assert isinstance(settings.odoo_api_key, SecretStr)
-    assert settings.odoo_api_key.get_secret_value() == "key-123"
-    assert "key-123" not in repr(settings)
+    assert settings.odoo_api_key.get_secret_value() == "key-1234567890123456"
+    assert "key-1234567890123456" not in repr(settings)
     assert "hook-secret-0123456" not in repr(settings)
     assert settings.connector_api_key is not None
     assert "conn-key-0123456789" not in str(settings.connector_api_key)
@@ -101,3 +101,23 @@ def test_idempotency_db_path_defaults_to_the_data_directory(
 ) -> None:
     _set_env(monkeypatch)
     assert Settings(_env_file=None).idempotency_db_path == "./data/idempotency.sqlite3"  # type: ignore[call-arg]
+
+
+def test_short_odoo_api_key_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_env(monkeypatch, ODOO_API_KEY="k" * 15)
+    with pytest.raises(ValidationError) as info:
+        Settings(_env_file=None)  # type: ignore[call-arg]
+    assert "k" * 15 not in str(info.value)
+
+
+def test_odoo_api_key_of_minimum_length_is_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_env(monkeypatch, ODOO_API_KEY="k" * 16)
+    Settings(_env_file=None)  # type: ignore[call-arg]
+
+
+def test_idempotency_maintenance_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_env(monkeypatch)
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.idempotency_in_progress_timeout_seconds == 300
+    assert settings.idempotency_ttl_hours == 24
+    assert settings.idempotency_purge_interval_seconds == 3600

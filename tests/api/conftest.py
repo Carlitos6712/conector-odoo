@@ -17,7 +17,7 @@ from conector_odoo.main import create_app
 from tests.unit.fakes import FakeCustomerRepository, FakeProductRepository, FakeSaleOrderRepository
 
 API_KEY = "connector-secret-key"
-ODOO_KEY = "odoo-secret-key"
+ODOO_KEY = "odoo-secret-key-0123"
 
 
 class FakeOdooClient:

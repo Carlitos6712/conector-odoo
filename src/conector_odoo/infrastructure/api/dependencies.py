@@ -46,7 +46,10 @@ def build_container(settings: Settings) -> Container:
         customers=OdooCustomerRepository(client),
         products=OdooProductRepository(client),
         orders=OdooSaleOrderRepository(client),
-        idempotency=SqliteIdempotencyStore(settings.idempotency_db_path),
+        idempotency=SqliteIdempotencyStore(
+            settings.idempotency_db_path,
+            in_progress_timeout_seconds=settings.idempotency_in_progress_timeout_seconds,
+        ),
     )
 
 

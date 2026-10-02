@@ -6,7 +6,7 @@ import pytest
 from fastapi import Request
 
 from conector_odoo.domain.entities import Customer, CustomerData
-from conector_odoo.domain.errors import CreatedButUnreadable, OdooUnavailable
+from conector_odoo.domain.errors import CreatedButUnreadable
 from conector_odoo.infrastructure.api.idempotency import request_hash
 from conector_odoo.infrastructure.api.schemas import CustomerCreate
 from conector_odoo.main import create_app
@@ -52,23 +52,6 @@ def test_a_key_longer_than_255_characters_is_422(env: Env) -> None:
     assert env.customers.calls == []
     ok = env.client.post("/customers", json=CUSTOMER, headers={"Idempotency-Key": "k" * 255})
     assert ok.status_code == 201
-
-
-def test_failed_requests_release_the_key_so_the_client_can_retry(env: Env) -> None:
-    original = env.customers.create
-    attempts = {"n": 0}
-
-    async def flaky(data: CustomerData) -> Customer:
-        attempts["n"] += 1
-        if attempts["n"] == 1:
-            raise OdooUnavailable("down")
-        return await original(data)
-
-    env.customers.create = flaky  # type: ignore[method-assign]
-    assert env.client.post("/customers", json=CUSTOMER, headers=KEY).status_code == 502
-    retry = env.client.post("/customers", json=CUSTOMER, headers=KEY)
-    assert retry.status_code == 201
-    assert "idempotent-replayed" not in retry.headers
 
 
 def test_validation_failures_do_not_consume_the_key(env: Env) -> None:

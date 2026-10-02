@@ -15,7 +15,7 @@ def make_settings(**overrides: Any) -> Settings:
         "odoo_url": "https://odoo.test",
         "odoo_db": "db",
         "odoo_user": "bot",
-        "odoo_api_key": "secret-key",
+        "odoo_api_key": "secret-key-0123456789",
         "webhook_secret": "whsec-factory-secret",
     }
     values.update(overrides)
@@ -33,7 +33,7 @@ def test_build_transport_selects_by_protocol(protocol: str, expected: type) -> N
 
 def test_build_transport_passes_secret_and_tuning() -> None:
     transport = build_transport(make_settings(odoo_timeout_seconds=7.5, odoo_max_retries=4))
-    assert transport._api_key == "secret-key"  # type: ignore[attr-defined]
+    assert transport._api_key == "secret-key-0123456789"  # type: ignore[attr-defined]
     assert transport._timeout == 7.5  # type: ignore[attr-defined]
     assert transport._max_retries == 4  # type: ignore[attr-defined]
 

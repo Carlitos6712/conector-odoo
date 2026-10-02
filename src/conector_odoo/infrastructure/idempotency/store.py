@@ -4,7 +4,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal, Protocol
 
-Status = Literal["in_progress", "completed"]
+# ``unknown``: the write may or may not have been applied in Odoo (uncertain failure or an
+# abandoned ``in_progress`` claim). The key stays blocked until it is purged.
+Status = Literal["in_progress", "completed", "unknown"]
 
 
 @dataclass(frozen=True)
@@ -19,15 +21,32 @@ class IdempotencyRecord:
 
 
 class IdempotencyStore(Protocol):
-    async def begin(self, key: str, scope: str, request_hash: str) -> IdempotencyRecord | None:
+    async def begin(
+        self, key: str, scope: str, request_hash: str, *, now: datetime | None = None
+    ) -> IdempotencyRecord | None:
         """Atomically claim ``(key, scope)``.
 
         Returns ``None`` when this call inserted the ``in_progress`` record (the caller owns the
-        key), or the already existing record otherwise.
+        key), or the already existing record otherwise. An ``in_progress`` record older than the
+        store's in-progress timeout is abandoned: it is converted to ``unknown`` and returned
+        (never silently re-run). ``now`` is a test seam.
         """
         ...
 
-    async def get(self, key: str, scope: str) -> IdempotencyRecord | None: ...
+    async def get(self, key: str, scope: str) -> IdempotencyRecord | None:
+        """Read a record without claiming or mutating it (inspection helper for tests/tools)."""
+        ...
+
+    async def mark_unknown(
+        self,
+        key: str,
+        scope: str,
+        response_status: int | None,
+        response_body: str | None,
+        response_headers: dict[str, str],
+    ) -> None:
+        """Keep the key blocked because the write may have happened; store the error response."""
+        ...
 
     async def complete(
         self,

@@ -30,18 +30,19 @@ _MAPPING: tuple[tuple[type[ConnectorError], int, str], ...] = (
 )
 
 
-# Secrets shorter than this are not scrubbed: replacing a tiny string would mangle the message.
-_MIN_SCRUB_LENGTH = 8
-
 # Where a freshly created record can be fetched, by Odoo model (used for the 202 ``Location``).
 _RESOURCE_PATHS = {"res.partner": "/customers", "sale.order": "/sale-orders"}
 
 
 def scrub(text: str, settings: Settings) -> str:
-    """Mask configured secrets in a message before it leaves the process."""
+    """Mask every configured secret in a message before it leaves the process.
+
+    Settings enforce a minimum secret length, so masking every non-empty value cannot mangle
+    ordinary text; a short secret that leaked would be worse than a mangled message.
+    """
     secrets = [settings.odoo_api_key, settings.webhook_secret, settings.connector_api_key]
     for secret in secrets:
-        if secret is not None and len(secret.get_secret_value()) >= _MIN_SCRUB_LENGTH:
+        if secret is not None and secret.get_secret_value():
             text = text.replace(secret.get_secret_value(), "***")
     return text
 
@@ -56,9 +57,11 @@ def _request_id(request: Request) -> str | None:
     return request_id
 
 
-def _log_failure(request: Request, exc: Exception, status: int, detail: str) -> None:
+def _log_failure(
+    request: Request, exc: Exception, status: int, detail: str, message: str = "request failed"
+) -> None:
     logger.warning(
-        "request failed",
+        message,
         extra={
             "error_type": type(exc).__name__,
             "status_code": status,
@@ -71,8 +74,15 @@ def _log_failure(request: Request, exc: Exception, status: int, detail: str) -> 
 
 async def _connector_error(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, ConnectorError)
+    # ``IdempotencyGuard`` converts CreatedButUnreadable itself (through the same builder); this
+    # branch stays for routes outside the guard: the 202 must never degrade into a 5xx.
     if isinstance(exc, CreatedButUnreadable):
         return created_but_unreadable_response(request, exc)
+    return connector_error_response(request, exc)
+
+
+def connector_error_response(request: Request, exc: ConnectorError) -> JSONResponse:
+    """Map a domain error to its HTTP response (shared with ``IdempotencyGuard``)."""
     detail = scrub(str(exc), request.app.state.settings)
     status, code = next(
         ((s, c) for kind, s, c in _MAPPING if isinstance(exc, kind)), (502, "connector_error")
@@ -89,7 +99,7 @@ def created_but_unreadable_response(request: Request, exc: CreatedButUnreadable)
     path) tells the client the write happened and where to fetch it.
     """
     detail = scrub(str(exc), request.app.state.settings)
-    _log_failure(request, exc, 202, detail)
+    _log_failure(request, exc, 202, detail, message="created but unreadable")
     headers: dict[str, str] = {}
     base = _RESOURCE_PATHS.get(exc.model)
     if base is not None:

@@ -1,26 +1,18 @@
 """SQLite-backed ``IdempotencyStore`` (stdlib ``sqlite3`` behind ``asyncio.to_thread``).
 
-Idempotency semantics (enforced by ``infrastructure.api.idempotency.IdempotencyGuard``):
+The HTTP contract lives next to ``infrastructure.api.idempotency.IdempotencyGuard``; this module
+documents the storage side:
 
-* ``Idempotency-Key`` is optional on ``POST /customers``, ``POST /sale-orders`` and
-  ``POST /sale-orders/{id}/confirm`` (max 255 characters, otherwise 422). Without it the
-  request behaves exactly as before.
-* The key is scoped by ``"METHOD path"`` (for example ``"POST /customers"``): the same key on
-  another endpoint is an independent request.
-* First request: an ``in_progress`` row is inserted atomically (``INSERT``; the primary key
-  makes concurrent claims race-free). On a 2xx result, including the ``202 created_but_unreadable``
-  answer (the record exists in Odoo), the status, body and headers are stored as ``completed``.
-  Any other outcome deletes the row so the client may retry.
-* Same key, same request hash, ``completed``: the stored response is replayed with
-  ``Idempotent-Replayed: true``.
-* Same key, different request hash: 422 ``idempotency_key_reused``.
-* Same key while ``in_progress``: 409 ``idempotency_in_progress``.
-* The request hash is the SHA-256 of the canonical JSON of the validated body, path params and
-  query params.
-
-Rows left ``in_progress`` by a crash (or a cancelled request, which is deliberately not released
-because the write may have happened) block the key with 409 until ``purge_older_than`` removes
-them; call it periodically (no scheduler is built in).
+* Rows move ``in_progress`` -> ``completed`` (replayable response) or -> ``unknown`` (the write may
+  have been applied; the key stays blocked). ``release`` deletes the row (no write happened).
+* ``begin`` inserts atomically (the primary key makes concurrent claims race-free). An
+  ``in_progress`` row older than ``in_progress_timeout_seconds`` was abandoned by a crashed or
+  cancelled request and is converted to ``unknown`` rather than re-run.
+* Retention: rows are removed by ``purge_older_than`` (the app lifespan runs it at startup and every
+  ``idempotency_purge_interval_seconds`` with ``idempotency_ttl_hours``). Stored bodies contain
+  customer data (PII), so the TTL bounds how long it lives at rest.
+* The database file is created with mode 0600 (and tightened if it already existed); a parent
+  directory created by this store is 0700.
 
 One connection guarded by a ``threading.Lock`` (``check_same_thread=False``) serialises access;
 the work is tiny, so each call runs in a worker thread only to keep the event loop free.
@@ -28,8 +20,10 @@ the work is tiny, so each call runs in a worker thread only to keep the event lo
 
 import asyncio
 import json
+import os
 import sqlite3
 import threading
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -41,7 +35,7 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
     key TEXT NOT NULL,
     scope TEXT NOT NULL,
     request_hash TEXT NOT NULL,
-    status TEXT NOT NULL CHECK (status IN ('in_progress', 'completed')),
+    status TEXT NOT NULL CHECK (status IN ('in_progress', 'completed', 'unknown')),
     response_status INTEGER,
     response_body TEXT,
     response_headers TEXT,
@@ -53,15 +47,18 @@ _COLUMNS = "key, scope, request_hash, status, response_status, response_body, re
 
 
 class SqliteIdempotencyStore:
-    def __init__(self, path: str) -> None:
+    def __init__(self, path: str, *, in_progress_timeout_seconds: float = 300.0) -> None:
+        self._timeout = timedelta(seconds=in_progress_timeout_seconds)
         if path != ":memory:":
-            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            _prepare_private_file(Path(path))
         self._lock = threading.Lock()
         self._conn = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
         self._conn.execute(_SCHEMA)
 
-    async def begin(self, key: str, scope: str, request_hash: str) -> IdempotencyRecord | None:
-        return await asyncio.to_thread(self._begin, key, scope, request_hash)
+    async def begin(
+        self, key: str, scope: str, request_hash: str, *, now: datetime | None = None
+    ) -> IdempotencyRecord | None:
+        return await asyncio.to_thread(self._begin, key, scope, request_hash, now)
 
     async def get(self, key: str, scope: str) -> IdempotencyRecord | None:
         return await asyncio.to_thread(self._get, key, scope)
@@ -81,6 +78,21 @@ class SqliteIdempotencyStore:
             (response_status, response_body, json.dumps(response_headers), key, scope),
         )
 
+    async def mark_unknown(
+        self,
+        key: str,
+        scope: str,
+        response_status: int | None,
+        response_body: str | None,
+        response_headers: dict[str, str],
+    ) -> None:
+        await asyncio.to_thread(
+            self._execute,
+            "UPDATE idempotency_keys SET status = 'unknown', response_status = ?, "
+            "response_body = ?, response_headers = ? WHERE key = ? AND scope = ?",
+            (response_status, response_body, json.dumps(response_headers), key, scope),
+        )
+
     async def release(self, key: str, scope: str) -> None:
         await asyncio.to_thread(
             self._execute, "DELETE FROM idempotency_keys WHERE key = ? AND scope = ?", (key, scope)
@@ -95,7 +107,10 @@ class SqliteIdempotencyStore:
     async def close(self) -> None:
         await asyncio.to_thread(self._close)
 
-    def _begin(self, key: str, scope: str, request_hash: str) -> IdempotencyRecord | None:
+    def _begin(
+        self, key: str, scope: str, request_hash: str, now: datetime | None
+    ) -> IdempotencyRecord | None:
+        moment = now or datetime.now(UTC)
         with self._lock:
             while True:
                 try:
@@ -103,14 +118,30 @@ class SqliteIdempotencyStore:
                         "INSERT INTO idempotency_keys "
                         "(key, scope, request_hash, status, created_at) "
                         "VALUES (?, ?, ?, 'in_progress', ?)",
-                        (key, scope, request_hash, datetime.now(UTC).isoformat()),
+                        (key, scope, request_hash, moment.isoformat()),
                     )
                     return None
                 except sqlite3.IntegrityError:
                     existing = self._select(key, scope)
                     if existing is not None:
-                        return existing
+                        return self._expire_if_abandoned(existing, moment)
                     # deleted between the failed insert and the select: claim it again
+
+    def _expire_if_abandoned(self, record: IdempotencyRecord, now: datetime) -> IdempotencyRecord:
+        if record.status != "in_progress":
+            return record
+        row = self._conn.execute(
+            "SELECT created_at FROM idempotency_keys WHERE key = ? AND scope = ?",
+            (record.key, record.scope),
+        ).fetchone()
+        if row is None or datetime.fromisoformat(row[0]) > now - self._timeout:
+            return record
+        self._conn.execute(
+            "UPDATE idempotency_keys SET status = 'unknown' "
+            "WHERE key = ? AND scope = ? AND status = 'in_progress'",
+            (record.key, record.scope),
+        )
+        return replace(record, status="unknown")
 
     def _get(self, key: str, scope: str) -> IdempotencyRecord | None:
         with self._lock:
@@ -122,7 +153,7 @@ class SqliteIdempotencyStore:
         ).fetchone()
         if row is None:
             return None
-        status: Status = "completed" if row[3] == "completed" else "in_progress"
+        status: Status = row[3] if row[3] in ("completed", "unknown") else "in_progress"
         return IdempotencyRecord(
             key=row[0],
             scope=row[1],
@@ -140,3 +171,14 @@ class SqliteIdempotencyStore:
     def _close(self) -> None:
         with self._lock:
             self._conn.close()
+
+
+def _prepare_private_file(path: Path) -> None:
+    """Create the database file as 0600 (parent 0700 if created here); tighten an existing one."""
+    parent = path.parent
+    if not parent.exists():
+        parent.mkdir(parents=True, exist_ok=True)
+        parent.chmod(0o700)
+    if not path.exists():
+        os.close(os.open(path, os.O_RDWR | os.O_CREAT, 0o600))
+    path.chmod(0o600)
