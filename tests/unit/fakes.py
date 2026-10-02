@@ -1,10 +1,12 @@
 """In-memory fake repositories shared by unit tests."""
 
+from collections.abc import AsyncIterator
 from dataclasses import replace
 
 from conector_odoo.domain.entities import (
     Customer,
     CustomerData,
+    CustomerFilter,
     CustomerQuery,
     CustomerUpdate,
     Product,
@@ -19,6 +21,9 @@ class FakeCustomerRepository:
         self.items: dict[int, Customer] = {}
         self._next_id = 1
         self.calls: list[str] = []
+        self.export_calls: list[tuple[CustomerFilter, int | None]] = []
+        self.export_error: BaseException | None = None
+        self.export_error_after = 1  # batches delivered before ``export_error`` is raised
 
     async def create(self, data: CustomerData) -> Customer:
         self.calls.append("create")
@@ -60,6 +65,27 @@ class FakeCustomerRepository:
         ]
         return found[query.offset : query.offset + query.limit]
 
+    async def iter_batches(
+        self, filters: CustomerFilter, batch_size: int | None = None
+    ) -> AsyncIterator[list[Customer]]:
+        self.export_calls.append((filters, batch_size))
+        rows = [
+            c
+            for c in self.items.values()
+            if (filters.email is None or c.email == filters.email)
+            and (filters.name is None or filters.name.lower() in c.name.lower())
+            and (filters.active is None or c.active == filters.active)
+        ]
+        size = batch_size or 2
+        sent = 0
+        for start in range(0, len(rows), size):
+            if self.export_error is not None and sent >= self.export_error_after:
+                raise self.export_error
+            yield rows[start : start + size]
+            sent += 1
+        if self.export_error is not None and sent <= self.export_error_after:
+            raise self.export_error
+
     async def archive(self, customer_id: int) -> None:
         current = self.items.get(customer_id)
         if current is None:
@@ -70,9 +96,26 @@ class FakeCustomerRepository:
 class FakeProductRepository:
     def __init__(self, products: list[Product] | None = None) -> None:
         self.items = {p.id: p for p in products or []}
+        self.export_calls: list[int | None] = []
+        self.export_error: BaseException | None = None
+        self.export_error_after = 1
 
     async def get(self, product_id: int) -> Product | None:
         return self.items.get(product_id)
+
+    # Before ``list``: that method name shadows the builtin inside the class body.
+    async def iter_batches(self, batch_size: int | None = None) -> AsyncIterator[list[Product]]:
+        self.export_calls.append(batch_size)
+        rows = list(self.items.values())
+        size = batch_size or 2
+        sent = 0
+        for start in range(0, len(rows), size):
+            if self.export_error is not None and sent >= self.export_error_after:
+                raise self.export_error
+            yield rows[start : start + size]
+            sent += 1
+        if self.export_error is not None and sent <= self.export_error_after:
+            raise self.export_error
 
     async def list(self, limit: int, offset: int) -> list[Product]:
         return list(self.items.values())[offset : offset + limit]

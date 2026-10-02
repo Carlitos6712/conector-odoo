@@ -146,6 +146,10 @@ curl -X PATCH http://localhost:8000/customers/42 \
 curl -H "X-API-Key: $KEY" "http://localhost:8000/products?limit=20"
 curl -H "X-API-Key: $KEY" http://localhost:8000/products/7
 
+# streaming exports (NDJSON, see "Large data volumes")
+curl -N -H "X-API-Key: $KEY" "http://localhost:8000/customers/export?batch_size=1000" | jq -c .
+curl -N -H "X-API-Key: $KEY" http://localhost:8000/products/export -o products.ndjson
+
 # sale orders
 curl -X POST http://localhost:8000/sale-orders \
   -H "X-API-Key: $KEY" -H "Content-Type: application/json" -H "Idempotency-Key: order-2024-0001" \
@@ -253,6 +257,27 @@ The Odoo client is built to move many records without loading everything at once
 - **Concurrency limit.** `ODOO_MAX_CONCURRENCY` caps in-flight Odoo calls across the whole process
   (semaphore) and sizes the HTTP connection pool. Raise it for throughput if Odoo has spare workers;
   lower it to protect a small Odoo instance. Excess calls wait, they are not rejected.
+
+### Streaming export
+
+`GET /customers/export?email=&name=&active=&batch_size=` and `GET /products/export?batch_size=`
+(both need `X-API-Key` when configured) stream every matching record as
+[NDJSON](https://github.com/ndjson/ndjson-spec): `Content-Type: application/x-ndjson`, one
+`CustomerOut` / `ProductOut` object per line, `Content-Disposition: attachment;
+filename="customers.ndjson"` (`products.ndjson`). The connector pulls Odoo with keyset pagination and
+writes one batch at a time, so memory stays bounded however many rows exist. `batch_size` is 1-5000
+(default `ODOO_BATCH_SIZE`); `active=true|false` on customers also matches archived partners
+(by default Odoo returns active ones only). Country codes are resolved with one lookup per batch.
+
+```bash
+curl -N -H "X-API-Key: $KEY" "http://localhost:8000/customers/export?name=acme" | jq -c '{id, email}'
+```
+
+Error handling: a failure before the first byte (auth, permission, Odoo down) is a normal error
+response (401/403/502...). Once streaming has started the status is already `200` and cannot change, so
+a failure ends the stream with one last line `{"error": "odoo_unavailable", "detail": "..."}` (secrets
+scrubbed, failure logged). Clients must check the last line: an object with an `error` key means the
+export is incomplete.
 
 ## Development
 

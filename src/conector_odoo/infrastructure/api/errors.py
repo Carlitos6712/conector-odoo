@@ -82,6 +82,13 @@ async def _connector_error(request: Request, exc: Exception) -> JSONResponse:
     return connector_error_response(request, exc)
 
 
+def error_status_and_code(exc: ConnectorError) -> tuple[int, str]:
+    """HTTP status and ``error`` code for a domain error (shared with streaming exports)."""
+    return next(
+        ((s, c) for kind, s, c in _MAPPING if isinstance(exc, kind)), (502, "connector_error")
+    )
+
+
 def connector_error_response(request: Request, exc: ConnectorError) -> JSONResponse:
     """Map a domain error to its HTTP response (shared with ``IdempotencyGuard``)."""
     detail = scrub(str(exc), request.app.state.settings)
@@ -95,9 +102,7 @@ def connector_error_response(request: Request, exc: ConnectorError) -> JSONRespo
             "failed_chunk": exc.failed_chunk,
         }
         return JSONResponse(partial, status_code=502)
-    status, code = next(
-        ((s, c) for kind, s, c in _MAPPING if isinstance(exc, kind)), (502, "connector_error")
-    )
+    status, code = error_status_and_code(exc)
     _log_failure(request, exc, status, detail)
     return JSONResponse(_body(code, detail), status_code=status)
 

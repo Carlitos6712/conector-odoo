@@ -13,12 +13,13 @@ from fastapi import Depends, Request
 
 from conector_odoo.application.customers import (
     CreateCustomer,
+    ExportCustomers,
     GetCustomer,
     SearchCustomers,
     UpdateCustomer,
 )
 from conector_odoo.application.event_bus import InMemoryEventBus
-from conector_odoo.application.products import GetProduct, ListProducts
+from conector_odoo.application.products import ExportProducts, GetProduct, ListProducts
 from conector_odoo.application.sale_orders import ConfirmSaleOrder, CreateSaleOrder, GetSaleOrder
 from conector_odoo.config import Settings
 from conector_odoo.domain.ports import CustomerRepository, ProductRepository, SaleOrderRepository
@@ -50,8 +51,8 @@ def build_container(settings: Settings) -> Container:
     register_default_handlers(event_bus)
     return Container(
         odoo_client=client,
-        customers=OdooCustomerRepository(client),
-        products=OdooProductRepository(client),
+        customers=OdooCustomerRepository(client, batch_size=settings.odoo_batch_size),
+        products=OdooProductRepository(client, batch_size=settings.odoo_batch_size),
         orders=OdooSaleOrderRepository(client),
         idempotency=SqliteIdempotencyStore(
             settings.idempotency_db_path,
@@ -118,6 +119,14 @@ def get_get_customer(repo: CustomerRepo) -> GetCustomer:
 
 def get_search_customers(repo: CustomerRepo) -> SearchCustomers:
     return SearchCustomers(repo)
+
+
+def get_export_customers(repo: CustomerRepo) -> ExportCustomers:
+    return ExportCustomers(repo)
+
+
+def get_export_products(repo: ProductRepo) -> ExportProducts:
+    return ExportProducts(repo)
 
 
 def get_get_product(repo: ProductRepo) -> GetProduct:

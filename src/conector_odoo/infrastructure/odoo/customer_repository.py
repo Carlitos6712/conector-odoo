@@ -12,9 +12,17 @@ to SQL ``ILIKE`` as the full pattern, so ``%`` and ``_`` would act as wildcards.
 filter therefore escapes them with ``escape_like`` and stays a case-insensitive exact match.
 """
 
+from collections.abc import AsyncIterator
 from typing import Any
 
-from conector_odoo.domain.entities import Customer, CustomerData, CustomerQuery, CustomerUpdate
+from conector_odoo.application.pagination import DEFAULT_BATCH_SIZE
+from conector_odoo.domain.entities import (
+    Customer,
+    CustomerData,
+    CustomerFilter,
+    CustomerQuery,
+    CustomerUpdate,
+)
 from conector_odoo.domain.errors import OdooNotFound, OdooValidationError
 from conector_odoo.infrastructure.odoo.client import OdooClient
 from conector_odoo.infrastructure.odoo.mapping import many2one_id, read_back, text_or_none
@@ -41,8 +49,9 @@ def escape_like(value: str) -> str:
 
 
 class OdooCustomerRepository:
-    def __init__(self, client: OdooClient) -> None:
+    def __init__(self, client: OdooClient, batch_size: int = DEFAULT_BATCH_SIZE) -> None:
         self._client = client
+        self._batch_size = batch_size
         self._code_to_id: dict[str, int] = {}
         self._id_to_code: dict[int, str] = {}
 
@@ -82,15 +91,32 @@ class OdooCustomerRepository:
         return (await self._hydrate(rows))[0]
 
     async def search(self, query: CustomerQuery) -> list[Customer]:
-        domain: list[Any] = []
-        if query.email:
-            domain.append(["email", "=ilike", escape_like(query.email)])
-        if query.name:
-            domain.append(["name", "ilike", query.name])
+        domain = self._domain(query.email, query.name)
         rows = await self._client.search_read(
             MODEL, domain, FIELDS, limit=query.limit, offset=query.offset, order="id asc"
         )
         return await self._hydrate(rows)
+
+    async def iter_batches(
+        self, filters: CustomerFilter, batch_size: int | None = None
+    ) -> AsyncIterator[list[Customer]]:
+        """Keyset-paginated export; country codes are resolved with one lookup per batch."""
+        domain = self._domain(filters.email, filters.name)
+        if filters.active is not None:
+            domain.append(["active", "=", filters.active])  # explicit: includes archived
+        async for rows in self._client.iter_search_read(
+            MODEL, domain, FIELDS, batch_size=batch_size or self._batch_size
+        ):
+            yield await self._hydrate(rows)
+
+    @staticmethod
+    def _domain(email: str | None, name: str | None) -> list[Any]:
+        domain: list[Any] = []
+        if email:
+            domain.append(["email", "=ilike", escape_like(email)])
+        if name:
+            domain.append(["name", "ilike", name])
+        return domain
 
     async def archive(self, customer_id: int) -> None:
         await self._client.write(MODEL, [customer_id], {"active": False})

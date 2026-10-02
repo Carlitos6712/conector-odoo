@@ -69,3 +69,22 @@ async def test_list_filters_sellable_and_pages(
     assert call["domain"] == [["sale_ok", "=", True]]
     assert (call["limit"], call["offset"], call["order"]) == (2, 4, "id asc")
     assert call["fields"] == FIELDS
+
+
+async def test_iter_batches_streams_sellable_products(
+    repo: OdooProductRepository, client: FakeOdooClient
+) -> None:
+    client.script("product.product", "iter_search_read", [row(), row(id=4)], [row(id=5)])
+    batches = [b async for b in repo.iter_batches(batch_size=2)]
+    assert [[p.id for p in b] for b in batches] == [[3, 4], [5]]
+    call = client.calls_to("product.product", "iter_search_read")[0]
+    assert call == {"domain": [["sale_ok", "=", True]], "fields": FIELDS, "batch_size": 2}
+
+
+async def test_iter_batches_defaults_to_the_configured_batch_size(
+    client: FakeOdooClient,
+) -> None:
+    repo = OdooProductRepository(client, batch_size=77)  # type: ignore[arg-type]
+    client.script("product.product", "iter_search_read")
+    assert [b async for b in repo.iter_batches()] == []
+    assert client.calls_to("product.product", "iter_search_read")[0]["batch_size"] == 77

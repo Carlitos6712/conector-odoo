@@ -1,6 +1,8 @@
 """Product use cases (read-only)."""
 
-from conector_odoo.application.pagination import MAX_PAGE_SIZE
+from collections.abc import AsyncIterator
+
+from conector_odoo.application.pagination import MAX_PAGE_SIZE, validate_batch_size
 from conector_odoo.domain.entities import Product
 from conector_odoo.domain.errors import OdooNotFound, OdooValidationError
 from conector_odoo.domain.ports import ProductRepository
@@ -27,3 +29,14 @@ class ListProducts:
         if offset < 0:
             raise OdooValidationError("offset must not be negative")
         return await self._products.list(limit, offset)
+
+
+class ExportProducts:
+    """Stream all sellable products as batches (bounded memory, for exports)."""
+
+    def __init__(self, products: ProductRepository) -> None:
+        self._products = products
+
+    def execute(self, batch_size: int | None = None) -> AsyncIterator[list[Product]]:
+        validate_batch_size(batch_size)  # eager: fails before any streaming starts
+        return self._products.iter_batches(batch_size)

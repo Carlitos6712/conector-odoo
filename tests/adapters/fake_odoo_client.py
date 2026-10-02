@@ -1,5 +1,6 @@
 """Recording fake with the ``OdooClient`` surface used by the repository adapters."""
 
+from collections.abc import AsyncIterator
 from typing import Any
 
 
@@ -48,6 +49,34 @@ class FakeOdooClient:
             order=order,
             company_id=company_id,
         )
+
+    async def iter_search_read(
+        self,
+        model: str,
+        domain: list[Any],
+        fields: list[str] | None = None,
+        *,
+        batch_size: int = 500,
+        company_id: int | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> AsyncIterator[list[dict[str, Any]]]:
+        """Scripted per ``(model, "iter_search_read")``: every scripted item is one batch."""
+        self.calls.append(
+            (
+                model,
+                "iter_search_read",
+                {"domain": domain, "fields": fields, "batch_size": batch_size},
+            )
+        )
+        queue = self.responses.get((model, "iter_search_read"))
+        if queue is None:
+            raise AssertionError(f"unscripted call {model}.iter_search_read")
+        batches = list(queue)
+        queue.clear()
+        for item in batches:
+            if isinstance(item, BaseException):
+                raise item
+            yield item
 
     async def read(
         self,

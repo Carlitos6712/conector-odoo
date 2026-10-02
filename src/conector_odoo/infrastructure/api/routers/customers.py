@@ -1,22 +1,26 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Query, Response
+from fastapi import APIRouter, Depends, Path, Query, Request, Response
+from fastapi.responses import StreamingResponse
 
 from conector_odoo.application.customers import (
     CreateCustomer,
+    ExportCustomers,
     GetCustomer,
     SearchCustomers,
     UpdateCustomer,
 )
-from conector_odoo.application.pagination import MAX_PAGE_SIZE
-from conector_odoo.domain.entities import CustomerQuery
+from conector_odoo.application.pagination import MAX_BATCH_SIZE, MAX_PAGE_SIZE
+from conector_odoo.domain.entities import CustomerFilter, CustomerQuery
 from conector_odoo.infrastructure.api.dependencies import (
     get_create_customer,
+    get_export_customers,
     get_get_customer,
     get_search_customers,
     get_update_customer,
 )
 from conector_odoo.infrastructure.api.idempotency import IDEMPOTENCY_RESPONSES, GuardDep
+from conector_odoo.infrastructure.api.ndjson import ndjson_response
 from conector_odoo.infrastructure.api.schemas import (
     CustomerCreate,
     CustomerOut,
@@ -57,6 +61,32 @@ async def search_customers(
 ) -> list[CustomerOut]:
     query = CustomerQuery(email=email, name=name, limit=limit, offset=offset)
     return [CustomerOut.from_domain(c) for c in await use_case.execute(query)]
+
+
+@router.get(
+    "/export",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "content": {"application/x-ndjson": {}},
+            "description": (
+                "One CustomerOut JSON object per line. If the export fails after streaming "
+                'started, the last line is {"error": ..., "detail": ...}.'
+            ),
+        }
+    },
+)
+async def export_customers(
+    request: Request,
+    use_case: Annotated[ExportCustomers, Depends(get_export_customers)],
+    email: str | None = None,
+    name: str | None = None,
+    active: bool | None = None,
+    batch_size: Annotated[int | None, Query(ge=1, le=MAX_BATCH_SIZE)] = None,
+) -> StreamingResponse:
+    # Declared before ``/{customer_id}`` so "export" is never parsed as an id.
+    batches = use_case.execute(CustomerFilter(email=email, name=name, active=active), batch_size)
+    return await ndjson_response(batches, CustomerOut.from_domain, request, "customers.ndjson")
 
 
 @router.get("/{customer_id}", response_model=CustomerOut, responses={404: {"model": ErrorOut}})

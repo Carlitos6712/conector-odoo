@@ -1,6 +1,12 @@
 import pytest
 
-from conector_odoo.domain.entities import Customer, CustomerData, CustomerQuery, CustomerUpdate
+from conector_odoo.domain.entities import (
+    Customer,
+    CustomerData,
+    CustomerFilter,
+    CustomerQuery,
+    CustomerUpdate,
+)
 from conector_odoo.domain.errors import (
     CreatedButUnreadable,
     OdooNotFound,
@@ -246,3 +252,81 @@ async def test_create_read_back_failure_reports_the_created_customer_id(
         await repo.create(CustomerData(name="Ada"))
     assert (info.value.model, info.value.record_id) == ("res.partner", 5)
     assert "customer 5 was created" in str(info.value)
+
+
+async def test_iter_batches_streams_keyset_batches_with_filters(
+    repo: OdooCustomerRepository, client: FakeOdooClient
+) -> None:
+    client.script(
+        "res.partner",
+        "iter_search_read",
+        [partner(), partner(id=6)],
+        [partner(id=7)],
+    )
+    client.script("res.country", "read", [{"id": 68, "code": "ES"}])
+    batches = [
+        b
+        async for b in repo.iter_batches(
+            CustomerFilter(email="a_b@x.io", name="Ad", active=False), batch_size=2
+        )
+    ]
+    assert [[c.id for c in b] for b in batches] == [[5, 6], [7]]
+    assert all(c.country_code == "ES" for b in batches for c in b)
+    call = client.calls_to("res.partner", "iter_search_read")[0]
+    assert call["domain"] == [
+        ["email", "=ilike", "a\\_b@x.io"],
+        ["name", "ilike", "Ad"],
+        ["active", "=", False],
+    ]
+    assert call["batch_size"] == 2
+    assert call["fields"] == PARTNER_FIELDS
+
+
+async def test_iter_batches_uses_the_configured_default_batch_size(
+    client: FakeOdooClient,
+) -> None:
+    repo = OdooCustomerRepository(client, batch_size=123)  # type: ignore[arg-type]
+    client.script("res.partner", "iter_search_read", [partner(country_id=False)])
+    async for _ in repo.iter_batches(CustomerFilter()):
+        pass
+    call = client.calls_to("res.partner", "iter_search_read")[0]
+    assert call["batch_size"] == 123
+    assert call["domain"] == []
+
+
+async def test_iter_batches_resolves_countries_once_per_batch_without_n_plus_one(
+    repo: OdooCustomerRepository, client: FakeOdooClient
+) -> None:
+    client.script(
+        "res.partner",
+        "iter_search_read",
+        [partner(id=1), partner(id=2, country_id=[69, "France"]), partner(id=3)],
+        [partner(id=4), partner(id=5, country_id=[70, "Italy"])],
+        [partner(id=6)],
+    )
+    client.script(
+        "res.country",
+        "read",
+        [{"id": 68, "code": "ES"}, {"id": 69, "code": "FR"}],
+        [{"id": 70, "code": "IT"}],
+    )
+    codes = [c.country_code async for b in repo.iter_batches(CustomerFilter()) for c in b]
+    assert codes == ["ES", "FR", "ES", "ES", "IT", "ES"]
+    reads = client.calls_to("res.country", "read")
+    assert [r["ids"] for r in reads] == [[68, 69], [70]]
+
+
+async def test_iter_batches_propagates_mid_stream_errors(
+    repo: OdooCustomerRepository, client: FakeOdooClient
+) -> None:
+    client.script(
+        "res.partner",
+        "iter_search_read",
+        [partner(country_id=False)],
+        OdooUnavailable("down"),
+    )
+    seen: list[int] = []
+    with pytest.raises(OdooUnavailable):
+        async for batch in repo.iter_batches(CustomerFilter()):
+            seen.extend(c.id or 0 for c in batch)
+    assert seen == [5]

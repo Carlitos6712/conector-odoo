@@ -1,11 +1,12 @@
 """Ports (async Protocols) implemented by infrastructure adapters."""
 
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Protocol
 
 from conector_odoo.domain.entities import (
     Customer,
     CustomerData,
+    CustomerFilter,
     CustomerQuery,
     CustomerUpdate,
     Product,
@@ -28,9 +29,24 @@ class CustomerRepository(Protocol):
 
     async def archive(self, customer_id: int) -> None: ...
 
+    def iter_batches(
+        self, filters: CustomerFilter, batch_size: int | None = None
+    ) -> AsyncIterator[list[Customer]]:
+        """Stream every matching customer in id order, ``batch_size`` at a time.
+
+        ``batch_size=None`` leaves the choice to the adapter. Only one batch is held in memory.
+        """
+        ...
+
 
 class ProductRepository(Protocol):
     async def get(self, product_id: int) -> Product | None: ...
+
+    # Declared before ``list``: inside this class body the name ``list`` would otherwise shadow
+    # the builtin in later annotations.
+    def iter_batches(self, batch_size: int | None = None) -> AsyncIterator[list[Product]]:
+        """Stream every sellable product in id order, ``batch_size`` at a time."""
+        ...
 
     async def list(self, limit: int, offset: int) -> list[Product]: ...
 

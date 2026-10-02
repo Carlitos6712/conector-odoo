@@ -4,8 +4,10 @@
 which is what a sale order line uses by default. ``uom_name`` is the display name of ``uom_id``.
 """
 
+from collections.abc import AsyncIterator
 from typing import Any
 
+from conector_odoo.application.pagination import DEFAULT_BATCH_SIZE
 from conector_odoo.domain.entities import Product
 from conector_odoo.domain.errors import OdooNotFound
 from conector_odoo.infrastructure.odoo.client import OdooClient
@@ -16,8 +18,9 @@ FIELDS = ["name", "default_code", "lst_price", "uom_id", "active"]
 
 
 class OdooProductRepository:
-    def __init__(self, client: OdooClient) -> None:
+    def __init__(self, client: OdooClient, batch_size: int = DEFAULT_BATCH_SIZE) -> None:
         self._client = client
+        self._batch_size = batch_size
 
     async def get(self, product_id: int) -> Product | None:
         try:
@@ -25,6 +28,13 @@ class OdooProductRepository:
         except OdooNotFound:
             return None
         return self._to_product(rows[0]) if rows else None
+
+    # Defined before ``list``: inside the class body that name would shadow the builtin.
+    async def iter_batches(self, batch_size: int | None = None) -> AsyncIterator[list[Product]]:
+        async for rows in self._client.iter_search_read(
+            MODEL, [["sale_ok", "=", True]], FIELDS, batch_size=batch_size or self._batch_size
+        ):
+            yield [self._to_product(row) for row in rows]
 
     async def list(self, limit: int, offset: int) -> list[Product]:
         rows = await self._client.search_read(

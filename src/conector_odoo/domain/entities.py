@@ -66,6 +66,15 @@ class CustomerQuery:
 
 
 @dataclass(frozen=True, slots=True)
+class CustomerFilter:
+    """Filters for exporting customers. ``active=None`` keeps the Odoo default (active only)."""
+
+    email: str | None = None
+    name: str | None = None
+    active: bool | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class Product:
     id: int
     name: str
