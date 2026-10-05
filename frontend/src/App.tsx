@@ -7,6 +7,7 @@ import { RequireAuth } from "@/auth/RequireAuth";
 import { AppLayout } from "@/components/AppLayout";
 import { ConnectionWizardPage } from "@/features/connections/ConnectionWizardPage";
 import { ConnectionsPage } from "@/features/connections/ConnectionsPage";
+import { MappingEditorPage } from "@/features/mappings/MappingEditorPage";
 import { MappingVersionsPage } from "@/features/mappings/MappingVersionsPage";
 import { MappingsPage } from "@/features/mappings/MappingsPage";
 import { ImportPage } from "@/features/resources/ImportPage";
@@ -39,6 +40,8 @@ export function App() {
           <Route path="/resources/new" element={<ResourceEditorPage />} />
           <Route path="/resources/:profileId/:name/edit" element={<ResourceEditorPage />} />
           <Route path="/mappings" element={<MappingsPage />} />
+          <Route path="/mappings/new" element={<MappingEditorPage />} />
+          <Route path="/mappings/:name/edit" element={<MappingEditorPage />} />
           <Route path="/mappings/:name/versions" element={<MappingVersionsPage />} />
           {NAV_ITEMS.filter(
             (item) => !["connections", "resources", "mappings"].includes(item.key),
