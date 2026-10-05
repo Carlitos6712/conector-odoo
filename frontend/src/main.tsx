@@ -6,13 +6,22 @@ import { BrowserRouter } from "react-router-dom";
 import { App } from "@/App";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { createI18n } from "@/i18n";
+import {
+  applyTheme,
+  readLanguage,
+  readTheme,
+  watchSystemTheme,
+} from "@/features/settings/preferences";
 import "@/index.css";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
 });
 
-const i18n = await createI18n();
+applyTheme(readTheme());
+watchSystemTheme();
+
+const i18n = await createI18n(readLanguage());
 document.documentElement.lang = i18n.language;
 document.title = i18n.t("app.name");
 
