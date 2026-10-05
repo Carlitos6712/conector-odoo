@@ -9,6 +9,7 @@ import { ConnectionWizardPage } from "@/features/connections/ConnectionWizardPag
 import { ConnectionsPage } from "@/features/connections/ConnectionsPage";
 import { JobWizardPage } from "@/features/jobs/JobWizardPage";
 import { JobsPage } from "@/features/jobs/JobsPage";
+import { RunsPage } from "@/features/runs/RunsPage";
 import { MappingEditorPage } from "@/features/mappings/MappingEditorPage";
 import { MappingVersionsPage } from "@/features/mappings/MappingVersionsPage";
 import { MappingsPage } from "@/features/mappings/MappingsPage";
@@ -48,10 +49,10 @@ export function App() {
           <Route path="/jobs" element={<JobsPage />} />
           <Route path="/jobs/new" element={<JobWizardPage />} />
           <Route path="/jobs/:id/edit" element={<JobWizardPage />} />
-          {/* F6 replaces this placeholder with the run detail page. */}
+          <Route path="/runs" element={<RunsPage />} />
           <Route path="/runs/:id" element={<PlaceholderPage section="runs" />} />
           {NAV_ITEMS.filter(
-            (item) => !["connections", "resources", "mappings", "jobs"].includes(item.key),
+            (item) => !["connections", "resources", "mappings", "jobs", "runs"].includes(item.key),
           ).map((item) => (
             <Route
               key={item.key}
