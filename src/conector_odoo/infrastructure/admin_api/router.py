@@ -8,7 +8,7 @@ must be added there, and the route-table tests fail if any route answers an anon
 from fastapi import APIRouter, Depends, FastAPI
 
 from conector_odoo.infrastructure.admin_api.deps import authorize
-from conector_odoo.infrastructure.admin_api.routers import auth, users
+from conector_odoo.infrastructure.admin_api.routers import auth, profiles, resources, users
 
 PREFIX = "/admin/api"
 
@@ -20,4 +20,6 @@ def include_admin_api(app: FastAPI) -> None:
 
     protected = APIRouter(prefix=PREFIX, dependencies=[Depends(authorize)])
     protected.include_router(users.router)
+    protected.include_router(profiles.router)
+    protected.include_router(resources.router)
     app.include_router(protected)

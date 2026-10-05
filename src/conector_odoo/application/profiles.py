@@ -19,10 +19,13 @@ from conector_odoo.domain.profiles import (
     AuthMethod,
     ConnectionProfile,
     ConnectionTestResult,
+    ProbeStep,
     ProfileType,
     Secrets,
     StoredProfile,
 )
+
+_MIN_MASKED_LENGTH = 4  # shorter values would mangle ordinary text when masked
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,4 +182,16 @@ class TestConnection:
 
     async def _run(self, profile: ConnectionProfile, secrets: Secrets) -> ConnectionTestResult:
         steps = await self._probes[profile.type].probe(profile, secrets)
-        return ConnectionTestResult.from_steps(steps)
+        return ConnectionTestResult.from_steps([_masked(step, secrets) for step in steps])
+
+
+def _masked(step: ProbeStep, secrets: Secrets) -> ProbeStep:
+    """Defense in depth: a probe message that echoes a credential never leaves the use case."""
+    values = [v for v in secrets.as_dict().values() if len(v) >= _MIN_MASKED_LENGTH]
+
+    def mask(text: str | None) -> str | None:
+        for value in values:
+            text = None if text is None else text.replace(value, "***")
+        return text
+
+    return replace(step, detail=mask(step.detail) or "", hint=mask(step.hint))
