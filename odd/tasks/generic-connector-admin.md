@@ -45,7 +45,7 @@ Frontend
 - [x] F8 Settings
 Delivery
 - [x] D1 Playwright e2e vs SUWE fake
-- [ ] D2 README + architecture diagram
+- [x] D2 README + architecture diagram
 - [ ] D3 docker-compose multi-stage with Node
 
 ## Acceptance
@@ -141,8 +141,12 @@ Delivery
 - F8: 0bbe170 feat(frontend): add settings page with account, preferences, user management and about sections
 - F8 docs: 4f862c8 docs(odd): record F8 progress
 - D1: 23eb6f9 test(e2e): add in-memory fake Odoo JSON-RPC server for the e2e suite
-- D1: 7042d4e test(e2e): add Playwright suite for the sync flow, operator read-only role and login error
+- D1: 7042d4e test(e2e): add Playwright suite for the sync flow, operator read-only role and login error- D1 docs: a4bd537 docs(odd): record D1 progress
+- D2: 7c9c0ad docs(readme): rewrite README for the admin UI and move the data API reference to docs
+- D2: 77295cf docs(architecture): add component and sync run diagrams
 Convention: a `docs(odd)` tracker commit cannot contain its own hash, so it is listed by the NEXT tracker commit (F6's tracker commit is listed by F7's); find any of them with `git log --grep 'docs(odd)'`.
+
+- D2: delegated direct (single writer; trigger: 2+ non-trivial docs files). Docs only, no TDD applicable; every command and env var checked against code.
 
 ## Progress / verification
 Baseline: 612 passed on branch start.
@@ -230,5 +234,7 @@ F8 design notes: (1) Nav: `Ajustes` is visible to every role (`adminOnly` remove
 D1: `uv run pytest` 1634 passed (1619 + 15 fake Odoo tests); ruff check/format clean; mypy src clean (130 files); frontend untouched. Playwright suite in `e2e/` (own package, @playwright/test 1.63.0 pinned, Chromium): 3 tests, passed 3 consecutive full runs (about 10 s each) plus 2 earlier green runs, no retries needed; with an unreachable SUWE (`E2E_SUWE_URL=http://localhost:9`) the 2 SUWE-dependent tests skip with a console warning and the wrong-password test still passes. Flow (01-sync-flow): admin login -> REST connection (Bearer dummy) + draft test with url_valid/reachable/tls/auth steps ok -> Odoo connection (fake) -> resource `clients` created by hand (list `/organization/clients`, id `uuid`, items_path `items`, PAGE pagination, total_pages_path `total_pages`) + preview -> mapping clients -> res.partner (name, ref<-uuid, vat<-tax_id, city, street<-address) + dry-run 5/5 ok -> job manual with upsert on `ref` -> "Guardar y simular" (37 created, nothing written to Odoo) -> run now -> completed, detail counters = live client count (read from the fake, not hard-coded) -> run listed in /runs -> Odoo refs equal the SUWE uuid set -> second run: 0 created, nothing duplicated. 02-roles-and-login: wrong password error; operator created from Ajustes sees the read-only banner, no create/delete/test/run/simulate controls and no Usuarios section.
 D1 decisions: (1) Odoo is an in-repo fake (`tests/e2e_support/fake_odoo.py`, FastAPI, JSON-RPC subset the adapter calls) even though a dev Odoo 18 runs on :8069, because the suite writes dozens of partners and must start from an empty model; started by Playwright webServer on :8169. (2) Backend on :8100 via `e2e/scripts/start-backend.mjs`: fresh DBs under git-ignored `e2e/.state/` (wiped at start because Playwright kills servers with SIGKILL, so exit hooks cannot clean up), fresh Fernet key, bootstrap admin, `ADMIN_COOKIE_SECURE=false`, scheduler off. (3) SUWE fake is external (Docker `api_mock-api-mock-1`, uvicorn main:app :8000 and main:oidc :9000, observed with docker ps/ss); tests skip loudly when it is unreachable. (4) The clients carry no email, so the upsert key is `ref` (mapped from uuid). (5) Selectors use accessible roles/labels only; two real-UI quirks handled: the login request must finish before navigating (`signIn` waits for the shell), and `getByLabel("Campo del destino")` also matches the radio, so the combobox role is used. (6) No Makefile exists, so no make target; npm scripts in `e2e/package.json`. Not covered: OpenAPI import step (resource created manually, as the real fixture lacks pagination), own-password change e2e, webhook/cron triggers, browsers other than Chromium.
 
+D2: README rewritten (310 lines): architecture (2 Mermaid diagrams, also in docs/architecture.md), quick start, env table from config.py, security, walkthrough with SUWE blocker, adding a target API, testing, known limitations. Legacy data API/webhook/bulk reference moved verbatim to docs/data-api.md. .env.example gained the missing FRONTEND_DIST_DIR, SYNC_*, ADMIN_* variables. Verified: keygen snippet runs, `pytest -m integration` runs, npm scripts exist in frontend/ and e2e/. Not verified: Mermaid rendering (no renderer available; syntax re-read), the full frontend dev flow in a browser. Docker section is a marked placeholder for D3. Cross-cutting a11y pass not done in D2.
+
 ## Next step
-D2 README + architecture diagram (setup, security, adding a target API, link to `e2e/README.md`) and the cross-cutting a11y pass; then D3 docker-compose multi-stage with Node.
+D3 docker-compose multi-stage with Node (replace the README `### Docker` placeholder; set FRONTEND_DIST_DIR, ENCRYPTION_KEY, ADMIN_BOOTSTRAP_*); cross-cutting a11y pass still open.
