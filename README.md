@@ -1,333 +1,310 @@
 # conector-odoo
 
-A FastAPI service that connects your applications to Odoo in both directions:
+A FastAPI service that syncs Odoo with arbitrary REST APIs, managed from a web admin UI. You define
+**connections** (Odoo or REST), **resources** (REST collections), **mappings** (field rules with
+transforms) and **jobs** (manual, cron or webhook triggered); the service runs them idempotently and
+keeps a history of runs and per-record errors. The first target is the SUWE API.
 
-- **FastAPI -> Odoo**: a typed REST API over `res.partner` (customers), `product.product` and
-  `sale.order`, backed by Odoo RPC (JSON-RPC, XML-RPC or JSON-2) with API-key authentication.
-- **Odoo -> FastAPI**: HMAC-signed webhooks pushed by a small Odoo addon (`odoo_addon/`) when partners
-  change or sale orders are confirmed.
+The original capabilities are untouched: a typed FastAPI -> Odoo data API (`X-API-Key`) for customers,
+products and sale orders, and HMAC-signed Odoo -> connector webhooks. See [docs/data-api.md](docs/data-api.md).
 
-Python 3.12 (3.11+), FastAPI, Pydantic v2, httpx, SQLite (idempotency), managed with
-[uv](https://docs.astral.sh/uv/).
+Stack: Python 3.11+ (3.12 in Docker), FastAPI, Pydantic v2, httpx, SQLite, React 19 + Vite + Tailwind
+(admin UI, Spanish by default, English available), managed with [uv](https://docs.astral.sh/uv/) and npm.
 
 ## Architecture
 
+Hexagonal: the sync runner only knows the ports `RecordSource` / `RecordSink`; the REST and Odoo
+adapters implement them. More detail and a module map: [docs/architecture.md](docs/architecture.md).
+
 ```mermaid
 flowchart LR
-    client[Client application]
-    subgraph connector[conector-odoo]
-        api["infrastructure/api<br/>routers, schemas, API key,<br/>Idempotency-Key guard"]
-        app["application<br/>use cases, event bus"]
-        domain["domain<br/>entities, ports, errors"]
-        odoo["infrastructure/odoo<br/>client, jsonrpc / xmlrpc / json2,<br/>repositories"]
-        wh["infrastructure/webhooks<br/>HMAC verify, event store, handlers"]
-        idem[("SQLite<br/>idempotency + webhook events")]
-    end
-    odooapp[Odoo]
-    addon["odoo_addon<br/>connector_webhook"]
+    spa["React SPA<br/>(frontend/)"]
+    admin["Admin API<br/>/admin/api"]
+    data["Data API<br/>X-API-Key"]
+    hook["Webhook intake<br/>/webhooks/odoo (HMAC)"]
+    sched["Scheduler<br/>(in-process cron)"]
+    app["Application<br/>sync runner, mappings,<br/>jobs, profiles"]
+    ports{{"Ports<br/>RecordSource / RecordSink"}}
+    rest["REST adapter"]
+    odoo["Odoo adapter"]
+    admindb[("admin.db<br/>SQLite")]
+    idemdb[("idempotency.sqlite3")]
+    ext["External REST API"]
+    odooapp["Odoo"]
 
-    client -- "REST + X-API-Key" --> api
-    api --> app --> domain
-    odoo -. implements ports .-> domain
-    app --> odoo -- "RPC + API key" --> odooapp
-    api --- idem
-    odooapp --- addon
-    addon -- "signed POST /webhooks/odoo" --> wh
-    wh --- idem
-    wh --> app
+    spa --> admin --> app
+    sched --> app
+    hook -- "event bus" --> app
+    data --> app
+    app --> ports
+    rest -. implements .-> ports
+    odoo -. implements .-> ports
+    rest --> ext
+    odoo --> odooapp
+    app --> admindb
+    data --- idemdb
+    hook --- idemdb
 ```
 
-Layers (dependencies point inwards):
+One sync run:
 
-- `domain`: plain dataclasses (`Customer`, `Product`, `SaleOrder`, `OdooEvent`), the repository and
-  event-bus ports, and domain errors. No framework imports.
-- `application`: use cases (`CreateCustomer`, `ConfirmSaleOrder`, `HandleOdooEvent`, ...) and the
-  in-process event bus. They only know the ports.
-- `infrastructure/odoo`: the Odoo client (uid cache, re-auth, retries on network errors only, company
-  context), the three transports and the repository adapters.
-- `infrastructure/api`: FastAPI routers, Pydantic schemas, error handlers, `X-API-Key` auth and the
-  `Idempotency-Key` guard.
-- `infrastructure/webhooks` and `infrastructure/idempotency`: signature verification, the SQLite
-  stores and background purge.
+```mermaid
+sequenceDiagram
+    autonumber
+    participant T as Trigger (manual, cron, webhook)
+    participant R as Sync runner
+    participant S as Source endpoint
+    participant M as Mapping engine
+    participant X as xref table
+    participant K as Sink endpoint
+    T->>R: start run (job, options)
+    loop each batch of the source
+        R->>S: iter_batches (batch_size, filter)
+        S-->>R: records
+        R->>M: apply mapping (record)
+        M-->>R: fields (or rule errors: this record fails)
+        R->>X: look up pair, compare content hash
+        alt hash unchanged
+            R->>R: skip
+        else new record
+            R->>K: find_by(upsert key) or create(idempotency key)
+        else known pair
+            R->>K: update
+        end
+        R->>X: save pair and hash
+        R->>R: save counters, checkpoint, heartbeat
+    end
+    R-->>T: run status (succeeded, partial, failed, cancelled)
+```
 
-## Setup
+Idempotency: a create carries the key `sync:{job_id}:{source_id}:{content_hash}`, the cross-reference
+(xref) table pairs source and destination ids, and a record whose content hash did not change is
+skipped. Re-running an unchanged job writes nothing. A bad record is stored in the run's error list
+and the run continues.
 
-### With uv
+## Quick start (local development)
+
+Prerequisites: Python with [uv](https://docs.astral.sh/uv/), Node 20+. The service needs an Odoo
+instance for the `ODOO_*` settings (they are required even if you only use the admin UI).
 
 ```bash
+# 1. Backend
 uv sync
-cp .env.example .env          # then edit it (see the variable table below)
+cp .env.example .env
+uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Edit `.env`: set `ODOO_URL`, `ODOO_DB`, `ODOO_USER`, `ODOO_API_KEY`, `WEBHOOK_SECRET`, paste the
+generated key into `ENCRYPTION_KEY`, and add the first admin plus plain-HTTP cookies for local use:
+
+```bash
+ADMIN_BOOTSTRAP_USER=admin
+ADMIN_BOOTSTRAP_PASSWORD=choose-a-password-of-12-or-more-chars
+ADMIN_COOKIE_SECURE=false
+```
+
+```bash
 uv run uvicorn conector_odoo.main:create_app --factory --host 0.0.0.0 --port 8000
 ```
 
-Interactive API docs: <http://localhost:8000/docs>.
-
-### With Docker Compose
-
 ```bash
-cp .env.example .env          # edit it; ODOO_URL must be reachable from the container
-docker compose up -d --build
-curl http://localhost:8000/health
+# 2. Frontend dev server (hot reload; proxies /admin/api to the backend)
+cd frontend
+npm ci
+npm run dev                   # http://localhost:5173 ; VITE_BACKEND_URL overrides http://localhost:8000
 ```
 
-Odoo is external: the compose file only runs the connector. The SQLite database lives in the named
-volume `connector-data` mounted at `/app/data`. The image runs as a non-root user and its healthcheck
-calls `/health`, which answers 503 (container `unhealthy`) while Odoo is unreachable.
+Sign in with the bootstrap user. The first admin is created only when no admin exists, so the two
+`ADMIN_BOOTSTRAP_*` variables can be removed afterwards. More users: **Ajustes** > **Usuarios**.
+
+To serve the UI from the backend itself (no dev server): `npm run build` in `frontend/`, then open
+<http://localhost:8000/>. The backend serves `FRONTEND_DIST_DIR` (default `./frontend/dist`, relative
+to the working directory); if it is missing, the API still works and one warning is logged.
+
+API docs of the data API: <http://localhost:8000/docs>.
+
+### Docker
+
+> **D3 pending.** The current `Dockerfile` and `docker-compose.yml` build only the Python service
+> (data API and `/admin/api`, no frontend, no `ENCRYPTION_KEY`/`ADMIN_*` guidance). The multi-stage
+> build with Node and the compose instructions for the full stack will be written by task D3.
 
 ## Configuration
 
-All settings are environment variables (or entries in `.env`).
+Environment variables or entries in `.env` (source: `src/conector_odoo/config.py`). Secrets must be
+at least 16 characters where noted.
+
+### Odoo (data API and webhook handlers)
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `ODOO_URL` | required | Base URL of Odoo, e.g. `https://odoo.example.com`. |
+| `ODOO_URL` | required | Base URL of Odoo. |
 | `ODOO_DB` | required | Odoo database name. |
-| `ODOO_USER` | required | Login of the Odoo user that owns the API key. |
-| `ODOO_API_KEY` | required | Odoo API key, at least 16 characters. Used instead of a password. |
-| `ODOO_PROTOCOL` | `jsonrpc` | `jsonrpc`, `xmlrpc` or `json2` (json2 needs Odoo 19). |
-| `ODOO_TIMEOUT_SECONDS` | `10.0` | Per-request timeout towards Odoo. |
+| `ODOO_USER` | required | Login of the user that owns the API key. |
+| `ODOO_API_KEY` | required | Odoo API key, 16+ characters. |
+| `ODOO_PROTOCOL` | `jsonrpc` | `jsonrpc`, `xmlrpc` or `json2` (Odoo 19). |
+| `ODOO_TIMEOUT_SECONDS` | `10.0` | Per-request timeout. |
 | `ODOO_MAX_RETRIES` | `2` | Retries on network errors for idempotent calls (never for `create`). |
-| `ODOO_COMPANY_ID` | unset | Default company injected in the Odoo context (`allowed_company_ids`). |
-| `ODOO_MAX_CONCURRENCY` | `8` | Max Odoo calls in flight at once (1-64). Also the HTTP connection pool size for `jsonrpc`/`json2`. |
-| `ODOO_BATCH_SIZE` | `500` | Default page size for keyset iteration and chunked Odoo operations (1-5000). |
-| `BULK_MAX_ITEMS` | `1000` | Max items accepted by one `POST /customers/bulk` request (1-10000). |
-| `CONNECTOR_API_KEY` | unset | Key clients send in `X-API-Key`, at least 16 characters. If unset, the data endpoints are unauthenticated and a warning is logged at startup. |
-| `WEBHOOK_SECRET` | required | Shared secret to verify Odoo webhooks, at least 16 characters. |
-| `WEBHOOK_TOLERANCE_SECONDS` | `300` | Max clock skew between the signed timestamp and the connector clock. |
-| `WEBHOOK_REDELIVERY_AFTER_SECONDS` | `60` | A received-but-unprocessed event is re-dispatched when Odoo redelivers it after this long. |
-| `IDEMPOTENCY_DB_PATH` | `./data/idempotency.sqlite3` | SQLite file for idempotency keys and webhook events (the Docker image sets `/app/data/idempotency.sqlite3`). |
-| `IDEMPOTENCY_IN_PROGRESS_TIMEOUT_SECONDS` | `300` | An in-progress key older than this is treated as abandoned (outcome unknown). |
-| `IDEMPOTENCY_TTL_HOURS` | `24` | Stored keys and webhook events older than this are purged. |
-| `IDEMPOTENCY_PURGE_INTERVAL_SECONDS` | `3600` | How often the purge runs. |
-| `LOG_LEVEL` | `INFO` | Log level (JSON logs; secrets are redacted). |
+| `ODOO_COMPANY_ID` | unset | Default company in the Odoo context. |
+| `ODOO_MAX_CONCURRENCY` | `8` | Max Odoo calls in flight (1-64). |
+| `ODOO_BATCH_SIZE` | `500` | Page size of keyset iteration (1-5000). |
+| `BULK_MAX_ITEMS` | `1000` | Max items per `POST /customers/bulk` (1-10000). |
+| `CONNECTOR_API_KEY` | unset | Key clients send in `X-API-Key` (16+). If unset, data endpoints are unauthenticated and a warning is logged. |
 
-`.env.example` must list every variable above (the repository owner keeps it in sync).
+### Webhooks and idempotency
 
-### Create an Odoo API key
-
-1. In Odoo, open the user's Preferences > Account Security > **New API Key**.
-2. Give it a description, confirm with your password, and copy the key (it is shown once).
-3. Put it in `ODOO_API_KEY`; Odoo accepts it in place of the password, so the connector never needs
-   one. Use a dedicated user with the minimum access rights it needs (contacts, products, sales).
-
-### Protocols
-
-| `ODOO_PROTOCOL` | Endpoint | Notes |
+| Variable | Default | Description |
 | --- | --- | --- |
-| `jsonrpc` (default) | `/jsonrpc` | Works on every supported Odoo. |
-| `xmlrpc` | `/xmlrpc/2/common` and `/xmlrpc/2/object` | Runs the blocking `xmlrpc.client` in a worker thread. |
-| `json2` | `/json/2/<model>/<method>` | Odoo 19+. Bearer API key plus the `X-Odoo-Database` header, no session. |
+| `WEBHOOK_SECRET` | required | HMAC secret for `/webhooks/odoo`, 16+ characters. |
+| `WEBHOOK_TOLERANCE_SECONDS` | `300` | Max clock skew of the signed timestamp. |
+| `WEBHOOK_REDELIVERY_AFTER_SECONDS` | `60` | A received-but-unprocessed event is re-dispatched after this long. |
+| `IDEMPOTENCY_DB_PATH` | `./data/idempotency.sqlite3` | SQLite file for idempotency keys and webhook events. |
+| `IDEMPOTENCY_IN_PROGRESS_TIMEOUT_SECONDS` | `300` | An older in-progress key is treated as abandoned. |
+| `IDEMPOTENCY_TTL_HOURS` | `24` | Keys and events older than this are purged. |
+| `IDEMPOTENCY_PURGE_INTERVAL_SECONDS` | `3600` | Purge interval. |
 
-JSON-2 has no uid. At startup the connector verifies the key with `res.users/context_get` (owner `uid`
-in the context) against the `ODOO_USER` login. The `uid` entry of that response is not documented for
-Odoo 19: if it is missing the connector logs a warning and falls back to the login lookup alone.
-Verify this against your instance.
+### Admin UI and sync
 
-## API
-
-Base URL `http://localhost:8000`. Data endpoints need `X-API-Key` when `CONNECTOR_API_KEY` is set;
-`/health` and `/webhooks/odoo` never do.
-
-```bash
-KEY=your-connector-api-key
-
-# health (public)
-curl http://localhost:8000/health
-
-# customers
-curl -X POST http://localhost:8000/customers \
-  -H "X-API-Key: $KEY" -H "Content-Type: application/json" -H "Idempotency-Key: create-ada-001" \
-  -d '{"name": "Ada Lovelace", "email": "ada@example.com", "country_code": "GB", "is_company": false}'
-curl -H "X-API-Key: $KEY" "http://localhost:8000/customers?email=ada@example.com&limit=10&offset=0"
-curl -H "X-API-Key: $KEY" http://localhost:8000/customers/42
-curl -X PATCH http://localhost:8000/customers/42 \
-  -H "X-API-Key: $KEY" -H "Content-Type: application/json" -d '{"phone": "+44 20 7946 0000"}'
-# bulk create-or-update by email (see "Bulk upsert")
-curl -X POST http://localhost:8000/customers/bulk \
-  -H "X-API-Key: $KEY" -H "Content-Type: application/json" -H "Idempotency-Key: bulk-001" \
-  -d '{"items": [{"name": "Ada Lovelace", "email": "ada@example.com", "city": "London"}]}'
-
-# products (read only)
-curl -H "X-API-Key: $KEY" "http://localhost:8000/products?limit=20"
-curl -H "X-API-Key: $KEY" http://localhost:8000/products/7
-
-# streaming exports (NDJSON, see "Large data volumes")
-curl -N -H "X-API-Key: $KEY" "http://localhost:8000/customers/export?batch_size=1000" | jq -c .
-curl -N -H "X-API-Key: $KEY" http://localhost:8000/products/export -o products.ndjson
-
-# sale orders
-curl -X POST http://localhost:8000/sale-orders \
-  -H "X-API-Key: $KEY" -H "Content-Type: application/json" -H "Idempotency-Key: order-2024-0001" \
-  -d '{"customer_id": 42, "lines": [{"product_id": 7, "quantity": 2, "price_unit": 19.9}]}'
-curl -H "X-API-Key: $KEY" http://localhost:8000/sale-orders/15
-curl -X POST "http://localhost:8000/sale-orders/15/confirm" \
-  -H "X-API-Key: $KEY" -H "Idempotency-Key: confirm-15"
-```
-
-`company_id` (query parameter on `GET /sale-orders/{id}` and `POST /sale-orders/{id}/confirm`, body field
-on `POST /sale-orders`) selects the Odoo company context for that call.
-
-### Errors
-
-Errors are JSON: `{"error": "<code>", "detail": "<message>"}`.
-
-| Status | `error` | Meaning |
+| Variable | Default | Description |
 | --- | --- | --- |
-| 401 | `unauthorized` / `odoo_auth_error` / `invalid_signature` | Missing or wrong `X-API-Key`, Odoo rejected the connector's key, or a bad webhook signature. |
-| 403 | `permission_denied` | The Odoo user lacks access rights for the operation. |
-| 404 | `not_found` | The record does not exist. |
-| 409 | `idempotency_in_progress` / `idempotency_outcome_unknown` | See idempotency below. |
-| 422 | `validation_error` / `idempotency_key_reused` | Invalid input (also Odoo validation errors), or the key was reused with another request. |
-| 202 | `created_but_unreadable` | The record WAS created in Odoo but could not be read back; the body carries `id` and `model`, and `Location` points to the resource. Do not retry the create. |
-| 502 | `odoo_unavailable` / `connector_error` | Odoo unreachable, timed out or returned a server error. |
-| 502 | `batch_partially_applied` | A chunked create failed after earlier chunks were created. The body adds `created_ids` (what exists in Odoo, in input order) and `failed_chunk`; do not blindly retry. |
-| 503 | `idempotency_store_unavailable` / `webhook_store_unavailable` | The local SQLite store failed; the action was not executed. `/health` also answers 503 `degraded` when Odoo is down. |
+| `ENCRYPTION_KEY` | unset | Fernet key for connection secrets. Without it, storing or reading a secret fails with a clear error. |
+| `ADMIN_DB_PATH` | `./data/admin.db` | SQLite file for connections, mappings, jobs, runs and users (migrated at startup). |
+| `FRONTEND_DIST_DIR` | `./frontend/dist` | Built UI served at `/`. |
+| `SYNC_SCHEDULER_ENABLED` | `true` | Run cron jobs in-process. Set `false` to disable. |
+| `SYNC_SCHEDULER_REFRESH_SECONDS` | `60.0` | How often the scheduler reloads the job list (> 0). |
+| `ADMIN_BOOTSTRAP_USER` / `ADMIN_BOOTSTRAP_PASSWORD` | unset | First admin, created only when no admin exists. Set both or neither; password 12+ characters. |
+| `ADMIN_COOKIE_NAME` | `admin_session` | Session cookie name. |
+| `ADMIN_COOKIE_SECURE` | `true` | Send the cookie over HTTPS only. Set `false` for plain-HTTP development. |
+| `ADMIN_COOKIE_SAMESITE` | `lax` | `lax` or `strict`. |
+| `ADMIN_SESSION_TTL_SECONDS` | `43200` | Absolute session lifetime (12 h, min 60). |
+| `ADMIN_SESSION_IDLE_SECONDS` | `7200` | Idle timeout (2 h, min 60). |
+| `ADMIN_LOGIN_MAX_FAILURES` | `5` | Failed logins per username before lockout. |
+| `ADMIN_LOGIN_LOCKOUT_SECONDS` | `900` | Lockout duration. |
+| `ADMIN_ARGON2_TIME_COST` / `ADMIN_ARGON2_MEMORY_KIB` / `ADMIN_ARGON2_PARALLELISM` | `3` / `65536` / `4` | Argon2id cost. Lower only on tiny hosts or in tests. |
+| `LOG_LEVEL` | `INFO` | JSON logs; secrets are redacted. |
 
-### Idempotency
+## Security
 
-`Idempotency-Key` (optional, max 255 characters) is accepted on `POST /customers`,
-`POST /customers/bulk`, `POST /sale-orders` and `POST /sale-orders/{id}/confirm`.
+| Area | What is done |
+| --- | --- |
+| Passwords | argon2id hashes; minimum 12 characters; no default account. |
+| Sessions | Server-side. Only the SHA-256 of the cookie token is stored. Absolute TTL 12 h, idle 2 h. A new token on every login; password change, role change or user deletion revokes the user's sessions. |
+| Cookie | `admin_session`: HttpOnly, `SameSite=Lax`, `Secure` by default, `Path=/admin/api`; responses are `Cache-Control: no-store`. |
+| CSRF | A per-session token returned by login and `/auth/me` must be sent as `X-CSRF-Token` on every non-GET request. |
+| Roles | `admin` (everything) and `operator` (read-only). One router-level guard denies by default; a test walks the OpenAPI route table and fails if a route answers anonymous callers, lets an operator mutate, or skips CSRF. Anything that contacts a remote system with stored credentials (test, preview, discover, import, dry-run) is a POST, so operators cannot trigger it. Every user may change their own password. |
+| Lockout | 5 failed logins per username lock it for 15 minutes (429 + `Retry-After`). Unknown usernames are throttled the same way and verify against a dummy hash, so message, status and timing match. |
+| Secret vault | Connection secrets are encrypted with Fernet (`ENCRYPTION_KEY`) before they reach SQLite. They are write-only: the API returns `has_secret` flags, never values. No key is generated implicitly. |
+| Webhooks | `X-Odoo-Signature` = HMAC-SHA256 over `timestamp.body`, constant-time compare, timestamp tolerance, event-id deduplication. |
+| OpenAPI import | http/https only, 5 MB cap, YAML via `safe_load`, local `$ref` only. Redirects are followed by hand: max 3 hops, same host only, never https to http. |
 
-- Same key and same request: the first response is stored and replayed with `Idempotent-Replayed: true`.
-- Same key, different request: 422 `idempotency_key_reused`.
-- A request still running: 409 `idempotency_in_progress`.
-- If the write may have been applied (Odoo timeout, 5xx, unexpected error), the key is marked
-  `unknown`: a retry gets 409 `idempotency_outcome_unknown`. Check Odoo, then use a new key. The
-  connector never blindly re-runs a `create`.
-- Errors that guarantee nothing was written (validation, not found, auth, permission) release the key
-  so you can retry with it.
-- Keys are scoped per endpoint and purged after `IDEMPOTENCY_TTL_HOURS`.
+Key loss: if `ENCRYPTION_KEY` is lost or changed, every stored secret becomes undecryptable
+(`VaultDecryptionError`) and each connection must be re-entered. Back the key up separately from the
+database. There is no key-rotation tool: rotating means re-entering all secrets under the new key.
 
-## Webhooks (Odoo -> connector)
+Not done, by design or yet:
 
-`POST /webhooks/odoo` is authenticated by an HMAC signature, not by `X-API-Key`. Headers:
+- **No per-IP throttling**; lockout is per username only.
+- **TLS is expected at a reverse proxy.** The service speaks plain HTTP. The `Secure` cookie default
+  means the UI only works over HTTPS (or on localhost) unless you set `ADMIN_COOKIE_SECURE=false`.
+- **No SSRF blocklist.** An admin can point a connection or an OpenAPI import at any host, including
+  internal ones; the first URL is the admin's choice. Only admins can do this.
+- No account unlock action or locked-account indicator in the UI.
 
-```
-X-Odoo-Timestamp: <unix seconds>
-X-Odoo-Signature: sha256=<lowercase hex>
-signature = HMAC-SHA256(WEBHOOK_SECRET, f"{timestamp}." + raw_body)
-```
+## Usage walkthrough
 
-The body is JSON: `{"event_id": "<uuid>", "event_type": "partner.created", "model": "res.partner",
-"record_id": 7, "occurred_at": "<ISO-8601>", "payload": {...}}`. Event types: `partner.created`,
-`partner.updated`, `sale_order.confirmed` (others are acknowledged and ignored). The signature covers
-the raw bytes, so sign exactly what you send. Requests more than `WEBHOOK_TOLERANCE_SECONDS` away from
-the connector's clock are rejected (401).
+Follow the sidebar order in the UI. Operators see everything but cannot change anything.
 
-Send a signed test event:
+1. **Connections.** Create a REST connection (base URL, auth: API key, Bearer, OAuth2 client
+   credentials or OIDC) and an Odoo connection (URL, database, login, API key). The wizard tests each
+   step (URL, reachability, TLS, auth) before you save. Secrets are write-only.
+2. **Resources.** A resource describes one REST collection: list endpoint, `items_path`, `id_field`
+   and pagination (`none`, `page`, `offset` or `cursor`). Create it by hand or import candidates from
+   an OpenAPI 3.x / Swagger 2.0 document, then check it with the live preview. Odoo models need no
+   catalog entry; they are discovered from the instance (any model, fields via `fields_get`).
+3. **Mappings.** One rule per target field. An expression is `direct` (a source field), `constant`,
+   `concat` or `transform` (an input plus ordered steps). Steps: `trim`, `upper`, `lower`, `title`,
+   `to_string`, `to_number`, `to_int`, `to_bool`, `replace`, `default`, `date_format`, `to_cents`,
+   `from_cents`, `lookup`, `coalesce`, `substring`. Every save creates a version; the editor offers
+   suggestions and a dry run against live sample records.
+4. **Jobs.** A job pairs two resources and a mapping, plus an upsert key (for example `field:ref`),
+   a direction (`a_to_b`, `b_to_a`, `bidirectional`, the last two need a reverse mapping), a conflict
+   rule and a batch size. Triggers: manual, schedule (5-field numeric cron, **UTC**) or webhook
+   (event types such as `partner.updated`). "Save and simulate" saves the job, then dry-runs it.
+5. **Runs.** History with counters, status, per-record errors (payloads redacted), the checkpoint and
+   actions: cancel, resume, retry failed records. The dashboard highlights failures and stale runs.
 
-```bash
-SECRET=your-webhook-secret
-BODY='{"event_id":"'$(python3 -c 'import uuid;print(uuid.uuid4())')'","event_type":"partner.created","model":"res.partner","record_id":7,"occurred_at":"2026-01-01T00:00:00+00:00","payload":{"name":"Ada"}}'
-TS=$(date +%s)
-SIG=$(printf '%s.%s' "$TS" "$BODY" | openssl dgst -sha256 -hmac "$SECRET" -hex | sed 's/^.* //')
-curl -i -X POST http://localhost:8000/webhooks/odoo \
-  -H "Content-Type: application/json" -H "X-Odoo-Timestamp: $TS" -H "X-Odoo-Signature: sha256=$SIG" \
-  --data-binary "$BODY"
-```
+### Example: SUWE clients -> Odoo partners
 
-Python equivalent of the signature: `hmac.new(secret.encode(), f"{ts}.".encode() + body, "sha256").hexdigest()`.
+The Playwright suite automates exactly this flow ([e2e/README.md](e2e/README.md)): a REST connection to
+the SUWE API (Bearer dummy token against the fake), a resource `clients` (list
+`/organization/clients`, `id_field` `uuid`, `items_path` `items`, `page` pagination with
+`total_pages_path` `total_pages`), a mapping to `res.partner` (`name`, `ref` <- `uuid`, `vat` <-
+`tax_id`, `city`, `street` <- `address`) and a manual job with upsert key `ref`. A second run creates
+nothing.
 
-Responses: 202 `accepted` (dispatched to the in-process event bus), 200 `duplicate`, 202 `ignored`
-(unknown type), 401, 413 (body over 1 MiB), 422.
+**Open blocker for production.** The SUWE fake accepts no credentials, and its fake OIDC server has no
+`client_credentials` or `password` grant (it answers `unsupported_grant_type`), so a machine-to-machine
+token flow could not be verified. The real SUWE (Authentik) service-token flow is unconfirmed. Options:
 
-**Delivery is at-least-once.** The event id is stored as `received` before dispatch and marked
-`processed` only after every handler succeeded. If a handler fails or the process dies, Odoo's redelivery
-after `WEBHOOK_REDELIVERY_AFTER_SECONDS` runs the handlers again; redeliveries of processed (or still
-in-flight) events are acknowledged with 200. Handlers must therefore be idempotent. Add your own with
-`app.state.container.event_bus.subscribe("partner.created", handler)`.
+- (a) a `client_credentials` grant or service account on the real SUWE;
+- (b) a static API key or long-lived token issued by SUWE (works today as API key or Bearer);
+- (c) a refresh-token flow after one interactive login (not implemented).
 
-### Odoo addon
+## Adding a target API
 
-`odoo_addon/connector_webhook/` posts the events above from Odoo 17+ (partner created/updated, sale
-order confirmed). Install steps, system parameters and version caveats are in
-[odoo_addon/connector_webhook/README.md](odoo_addon/connector_webhook/README.md).
+1. **Connection**: choose type REST, enter the base URL and an auth method, run the wizard test.
+2. **Resource**: set the list endpoint, `items_path`, `id_field`, and the pagination strategy with its
+   parameter names. Optional get/create/update endpoints are needed only when the API is written to.
+   Verify with the preview.
+3. **Mapping**: pick source and target sides, add rules, and run the dry run until it is clean.
+4. **Job**: choose direction, upsert key and trigger. Use "Save and simulate", then run it.
+5. Check the run, fix the errors listed, and use "retry failed" for retryable ones.
 
-## Large data volumes
+### For developers
 
-The Odoo client is built to move many records without loading everything at once.
+| To add | Where |
+| --- | --- |
+| A mapping transform | A dataclass in `domain/mapping.py` (add it to the `Step` union), its name and parameters in the registry of `domain/mapping_codec.py`, evaluation in `_apply_step` of `domain/mapping_engine.py`, checks in `domain/mapping_validation.py`, then the frontend editor (`frontend/src/features/mappings/`) and i18n keys in `es.ts` and `en.ts`. |
+| An auth type | A member of `AuthMethod` in `domain/profiles.py`, an `Authenticator` in `infrastructure/rest/auth.py` wired in `build_authenticator`, the probe in `infrastructure/profiles/rest_probe.py`, and the connection wizard. |
+| A pagination strategy | `PaginationStrategy` in `domain/resources.py`, the loop in `infrastructure/rest/endpoint.py`, validation in `domain/resource_codec.py`, the resource form. |
+| A new kind of system (not REST/Odoo) | Implement `RecordSource` / `RecordSink` (see `domain/ports.py`) and build it in `infrastructure/endpoints.py`. |
+| A new admin route | Add the router in `infrastructure/admin_api/routers/` and include it in the `protected` group of `admin_api/router.py` (deny by default). `tests/admin_api/test_roles.py` enforces the role matrix. |
 
-- **Keyset pagination.** `OdooClient.iter_search_read` walks a model in batches ordered by `id`:
-  each batch is `search_read(domain + [id > last_id], limit=batch_size, order="id asc")`. Unlike
-  `offset`, the cost of a batch does not grow with its position and concurrent inserts or deletes
-  cannot shift the window. Only one batch is in memory at a time. `batch_size` is 1-5000 (default
-  `ODOO_BATCH_SIZE`).
-- **Chunked operations.** `read_many` (keeps input order, skips missing ids), `write_many` and
-  `create_many` split big lists into chunks (500, 500 and 100 by default). `create_many` uses Odoo
-  multi-create (one `create` call per chunk with a list of values).
-- **No blind retries.** Each `create` chunk is a separate non-idempotent call: it is never retried.
-  If a later chunk fails, the client raises `BatchPartiallyApplied` carrying the ids already created
-  and the failed chunk index. Over HTTP this is a `502` `batch_partially_applied` response with
-  `created_ids`; the records in `created_ids` exist in Odoo.
-- **Concurrency limit.** `ODOO_MAX_CONCURRENCY` caps in-flight Odoo calls across the whole process
-  (semaphore) and sizes the HTTP connection pool. Raise it for throughput if Odoo has spare workers;
-  lower it to protect a small Odoo instance. Excess calls wait, they are not rejected.
+Layer rule: `domain` imports no framework; every new capability enters through a port.
 
-### Streaming export
-
-`GET /customers/export?email=&name=&active=&batch_size=` and `GET /products/export?batch_size=`
-(both need `X-API-Key` when configured) stream every matching record as
-[NDJSON](https://github.com/ndjson/ndjson-spec): `Content-Type: application/x-ndjson`, one
-`CustomerOut` / `ProductOut` object per line, `Content-Disposition: attachment;
-filename="customers.ndjson"` (`products.ndjson`). The connector pulls Odoo with keyset pagination and
-writes one batch at a time, so memory stays bounded however many rows exist. `batch_size` is 1-5000
-(default `ODOO_BATCH_SIZE`); `active=true|false` on customers also matches archived partners
-(by default Odoo returns active ones only). Country codes are resolved with one lookup per batch.
-
-```bash
-curl -N -H "X-API-Key: $KEY" "http://localhost:8000/customers/export?name=acme" | jq -c '{id, email}'
-```
-
-Error handling: a failure before the first byte (auth, permission, Odoo down) is a normal error
-response (401/403/502...). Once streaming has started the status is already `200` and cannot change, so
-a failure ends the stream with one last line `{"error": "odoo_unavailable", "detail": "..."}` (secrets
-scrubbed, failure logged). Clients must check the last line: an object with an `error` key means the
-export is incomplete.
-
-### Bulk upsert
-
-`POST /customers/bulk` creates or updates up to `BULK_MAX_ITEMS` customers (default 1000) in one
-request, matched by `email`:
-
-```bash
-curl -X POST http://localhost:8000/customers/bulk \
-  -H "X-API-Key: $KEY" -H "Content-Type: application/json" -H "Idempotency-Key: bulk-001" \
-  -d '{"items": [{"name": "Ada", "email": "ada@example.com"}, {"name": "Grace", "email": "grace@example.com", "city": "London"}]}'
-```
-
-The body is `{"match_by": "email", "items": [...]}` (`match_by` defaults to `email`; other values
-are 422). Existing customers are matched case-insensitively with one batched lookup — never one
-call per item — and updated with only the fields that differ; everything else is created with
-Odoo multi-create in chunks. Over `BULK_MAX_ITEMS` is 422 before anything runs.
-
-The answer is `200` with per-item results, so one bad row never fails a large import:
-
-```json
-{
-  "created": 1, "updated": 1, "failed": 1,
-  "results": [
-    {"index": 0, "status": "created", "id": 42, "error": null},
-    {"index": 1, "status": "updated", "id": 7, "error": null},
-    {"index": 2, "status": "failed", "id": null, "error": "email: not a valid email address"}
-  ]
-}
-```
-
-Rejected input (invalid email, blank name, unknown `country_code`, duplicate email inside the
-payload) and per-record failures are reported per item; the batch never aborts. If a create chunk
-fails after earlier chunks were created, the already-created ids are kept as `created` and the rest
-are `failed` with a "verify in Odoo before retrying" error (secrets are scrubbed from every message).
-Items without an email are always created (they cannot be matched). The endpoint honors
-`Idempotency-Key` like the other POSTs.
-
-## Development
+## Testing
 
 ```bash
 uv sync
-uv run pytest -q
-uv run ruff check .
-uv run ruff format --check .
+uv run pytest -q                      # backend; tests marked `integration` skip when the SUWE fake is down
+uv run pytest -m integration          # only the tests that need the SUWE fake on :8000
+uv run ruff check . && uv run ruff format --check .
 uv run mypy src
+
+cd frontend
+npm test                              # vitest (jsdom + Testing Library)
+npm run lint && npm run typecheck && npm run build
 ```
 
-The project follows strict TDD (failing test first) and Conventional Commits.
+End-to-end (Playwright, real UI against the built frontend, fake Odoo, external SUWE fake):
+[e2e/README.md](e2e/README.md). The project follows strict TDD and Conventional Commits.
+
+## Known limitations
+
+- REST `GET` requests are **not retried on 429 or 5xx**, by design: only network errors are retried,
+  and only for idempotent calls or calls that carry an idempotency key.
+- **No automatic incremental sync.** There is no automatic `since`; every run re-reads the source and
+  relies on the content hash to skip unchanged records. `since` exists only as a manual job filter.
+- The resource **catalog is REST-only**; Odoo models are addressed by technical name.
+- **Dry run works for saved jobs only** (the mapping editor also dry-runs on sample records).
+- A mapping stores resource names, not connections: pick the connection again when editing a mapping.
+- Mapping `None` values are omitted, never sent as `null`; clearing a remote field needs an explicit
+  constant or default.
+- Resume skips up to the checkpoint id (sources have no remote cursor); the reverse pass of a
+  bidirectional job ignores the job filter.
+- The scheduler is in-process: missed ticks are not caught up after a restart, and a multi-instance
+  deployment would run each job once per instance. Use a single replica.
+- The connection list shows test results from the current page session only; draft tests on edit
+  need secrets retyped.
+- The UI has no app-version or scheduler status panel, and the frontend has not had a colour-contrast
+  audit.
