@@ -5,6 +5,7 @@ import { setUnauthorizedHandler } from "@/api/client";
 import { SESSION_KEY } from "@/auth/api";
 import { RequireAuth } from "@/auth/RequireAuth";
 import { AppLayout } from "@/components/AppLayout";
+import { ConnectionsPage } from "@/features/connections/ConnectionsPage";
 import { NAV_ITEMS } from "@/nav";
 import { LoginPage } from "@/pages/LoginPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
@@ -24,7 +25,8 @@ export function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route element={<RequireAuth />}>
         <Route element={<AppLayout />}>
-          {NAV_ITEMS.map((item) => (
+          <Route path="/connections" element={<ConnectionsPage />} />
+          {NAV_ITEMS.filter((item) => item.key !== "connections").map((item) => (
             <Route
               key={item.key}
               path={item.path}

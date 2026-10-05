@@ -4,6 +4,8 @@ import type { Translation } from "@/i18n/types";
 export const en: Translation = {
   app: { name: "Connector", skipToContent: "Skip to content" },
   common: {
+    cancel: "Cancel",
+    delete: "Delete",
     loading: "Loading…",
     retry: "Retry",
     empty: "No data yet.",
@@ -39,6 +41,51 @@ export const en: Translation = {
     signedInAs: "Signed in as {{username}}",
     readOnly: "Read-only mode: your role cannot modify data.",
     roles: { admin: "Administrator", operator: "Operator" },
+  },
+  connections: {
+    new: "New connection",
+    empty: "There are no connections yet. Create the first one to link Odoo with an external API.",
+    emptyReadOnly: "There are no connections yet.",
+    columns: {
+      name: "Name",
+      kind: "Type",
+      baseUrl: "Base URL",
+      status: "Status",
+      actions: "Actions",
+    },
+    kinds: { odoo: "Odoo", rest: "REST API" },
+    status: {
+      untested: "Not tested",
+      ok: "Connection OK",
+      error: "Could not be tested",
+      failedAt: "Fails at: {{step}}",
+    },
+    steps: {
+      url_valid: "URL",
+      reachable: "Reachable",
+      tls: "TLS",
+      auth: "Authentication",
+    },
+    actions: {
+      test: "Test {{name}}",
+      edit: "Edit {{name}}",
+      delete: "Delete {{name}}",
+    },
+    delete: {
+      title: "Delete connection",
+      body: 'The connection "{{name}}" will be deleted. This cannot be undone.',
+    },
+    errors: {
+      inUse: "The connection is used by a resource or job and cannot be deleted.",
+      nameTaken: "A connection with this name already exists.",
+      invalidField: "The value is not valid.",
+      validation: "Some data is not valid. Check the marked fields.",
+      rateLimited: "Too many requests. Try again in {{seconds}} seconds.",
+      rateLimitedUnknown: "Too many requests. Try again later.",
+      vaultMissing: "The credential vault is not configured on the server.",
+      forbidden: "Your role does not allow this action.",
+      notFound: "The connection no longer exists.",
+    },
   },
   placeholder: { comingSoon: "This section will be available soon." },
   errors: {

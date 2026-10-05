@@ -2,6 +2,8 @@
 export const es = {
   app: { name: "Conector", skipToContent: "Saltar al contenido" },
   common: {
+    cancel: "Cancelar",
+    delete: "Eliminar",
     loading: "Cargando…",
     retry: "Reintentar",
     empty: "No hay datos todavía.",
@@ -37,6 +39,51 @@ export const es = {
     signedInAs: "Sesión iniciada como {{username}}",
     readOnly: "Modo solo lectura: tu rol no permite modificar datos.",
     roles: { admin: "Administrador", operator: "Operador" },
+  },
+  connections: {
+    new: "Nueva conexión",
+    empty: "Todavía no hay conexiones. Crea la primera para enlazar Odoo con una API externa.",
+    emptyReadOnly: "Todavía no hay conexiones.",
+    columns: {
+      name: "Nombre",
+      kind: "Tipo",
+      baseUrl: "URL base",
+      status: "Estado",
+      actions: "Acciones",
+    },
+    kinds: { odoo: "Odoo", rest: "API REST" },
+    status: {
+      untested: "Sin probar",
+      ok: "Conexión correcta",
+      error: "No se pudo probar",
+      failedAt: "Falla en: {{step}}",
+    },
+    steps: {
+      url_valid: "URL",
+      reachable: "Alcanzable",
+      tls: "TLS",
+      auth: "Autenticación",
+    },
+    actions: {
+      test: "Probar {{name}}",
+      edit: "Editar {{name}}",
+      delete: "Eliminar {{name}}",
+    },
+    delete: {
+      title: "Eliminar conexión",
+      body: "Se eliminará la conexión «{{name}}». Esta acción no se puede deshacer.",
+    },
+    errors: {
+      inUse: "La conexión está en uso por algún recurso o tarea y no se puede eliminar.",
+      nameTaken: "Ya existe una conexión con este nombre.",
+      invalidField: "El valor no es válido.",
+      validation: "Algunos datos no son válidos. Revisa los campos marcados.",
+      rateLimited: "Demasiadas peticiones. Inténtalo de nuevo en {{seconds}} segundos.",
+      rateLimitedUnknown: "Demasiadas peticiones. Inténtalo de nuevo más tarde.",
+      vaultMissing: "El almacén de credenciales no está configurado en el servidor.",
+      forbidden: "Tu rol no permite esta acción.",
+      notFound: "La conexión ya no existe.",
+    },
   },
   placeholder: { comingSoon: "Esta sección estará disponible próximamente." },
   errors: {
