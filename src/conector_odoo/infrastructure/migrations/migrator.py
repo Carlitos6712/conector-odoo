@@ -36,6 +36,7 @@ class Migration:
 
 def migrate(conn: sqlite3.Connection, migrations: Sequence[Migration] | None = None) -> list[int]:
     """Apply every pending migration in order and return the versions applied."""
+    # Imported lazily: versions.py imports ``Migration`` from this module (circular otherwise).
     from conector_odoo.infrastructure.migrations.versions import MIGRATIONS
 
     plan = tuple(MIGRATIONS if migrations is None else migrations)
@@ -49,8 +50,7 @@ def migrate(conn: sqlite3.Connection, migrations: Sequence[Migration] | None = N
         raise MigrationError(f"gap in recorded migration versions {sorted(applied)}")
     done: list[int] = []
     for migration in plan:
-        if migration.version not in applied:
-            _apply(conn, migration)
+        if migration.version not in applied and _apply(conn, migration):
             done.append(migration.version)
     return done
 
@@ -74,9 +74,16 @@ def _check_contiguous(plan: Sequence[Migration]) -> None:
         raise MigrationError("migration versions must be contiguous and start at 1")
 
 
-def _apply(conn: sqlite3.Connection, migration: Migration) -> None:
+def _apply(conn: sqlite3.Connection, migration: Migration) -> bool:
+    """Apply one migration; return False when a concurrent starter already recorded it."""
     conn.execute("BEGIN IMMEDIATE")
     try:
+        # Re-check under the write lock: another process may have applied it since we read.
+        if conn.execute(
+            "SELECT 1 FROM schema_migrations WHERE version = ?", (migration.version,)
+        ).fetchone():
+            conn.execute("ROLLBACK")
+            return False
         for statement in migration.statements:
             conn.execute(statement)
         conn.execute(
@@ -89,3 +96,4 @@ def _apply(conn: sqlite3.Connection, migration: Migration) -> None:
             f"migration {migration.version} ({migration.name}) failed: {exc}"
         ) from exc
     conn.execute("COMMIT")
+    return True

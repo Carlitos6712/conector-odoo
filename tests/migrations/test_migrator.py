@@ -10,6 +10,7 @@ from conector_odoo.infrastructure.migrations import (
     migrate,
     open_admin_database,
 )
+from conector_odoo.infrastructure.migrations import migrator as migrator_module
 
 EXPECTED_TABLES = {
     "schema_migrations",
@@ -101,3 +102,29 @@ def test_open_admin_database_migrates_and_enforces_foreign_keys(tmp_path: Path) 
 def test_open_admin_database_supports_memory() -> None:
     conn = open_admin_database(":memory:")
     conn.close()
+
+
+def test_concurrent_starters_do_not_double_apply(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = str(tmp_path / "race.db")
+    first = sqlite3.connect(path, isolation_level=None)
+    rival = sqlite3.connect(path, isolation_level=None)
+    real_apply = migrator_module._apply
+    raced: list[list[int]] = []
+
+    def apply_after_rival(conn: sqlite3.Connection, migration: Migration) -> bool:
+        if not raced:  # the rival wins the race after ``first`` already read the applied set
+            raced.append([])
+            raced[0] = migrate(rival)
+        return real_apply(conn, migration)
+
+    monkeypatch.setattr(migrator_module, "_apply", apply_after_rival)
+    try:
+        assert migrate(first) == []
+        assert raced == [[m.version for m in MIGRATIONS]]
+        count = first.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0]
+        assert count == len(MIGRATIONS)
+    finally:
+        first.close()
+        rival.close()

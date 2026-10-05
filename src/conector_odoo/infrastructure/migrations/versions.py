@@ -13,6 +13,7 @@ _INITIAL_SCHEMA = (
         secrets_blob BLOB,
         extra_headers_json TEXT NOT NULL DEFAULT '{}',
         tls_verify INTEGER NOT NULL DEFAULT 1 CHECK (tls_verify IN (0, 1)),
+        -- seconds; generous default for slow third-party APIs
         timeout_seconds REAL NOT NULL DEFAULT 30,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
@@ -48,8 +49,10 @@ _INITIAL_SCHEMA = (
         direction TEXT NOT NULL,
         trigger_json TEXT NOT NULL DEFAULT '{}',
         filter_json TEXT NOT NULL DEFAULT '{}',
+        -- records per request/chunk; small enough to keep one failure cheap to retry
         batch_size INTEGER NOT NULL DEFAULT 100,
         upsert_key TEXT NOT NULL,
+        -- on conflicting edits the source system overwrites the target
         conflict_rule TEXT NOT NULL DEFAULT 'source_wins',
         enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
         created_at TEXT NOT NULL,

@@ -21,7 +21,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from conector_odoo.config import Settings, get_settings
-from conector_odoo.infrastructure.api.dependencies import build_container
+from conector_odoo.infrastructure.api.dependencies import Container, build_container
 from conector_odoo.infrastructure.api.errors import register_error_handlers
 from conector_odoo.infrastructure.api.middleware import install_request_logging
 from conector_odoo.infrastructure.api.routers import (
@@ -46,6 +46,17 @@ def _include_routers(app: FastAPI) -> None:
     app.include_router(webhooks.router)  # HMAC-authenticated: no require_api_key
 
 
+async def _close_container(container: Container) -> None:
+    """Release every container resource; one failure never prevents closing the rest."""
+    try:
+        await container.odoo_client.aclose()
+    finally:
+        try:
+            await container.webhook_events.close()
+        finally:
+            await container.idempotency.close()
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     resolved = settings or get_settings()
     configure_logging(resolved.log_level)
@@ -57,7 +68,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             logger.warning("connector API key not configured; data endpoints are unauthenticated")
         container = build_container(resolved)
         app.state.container = container
-        admin_db = open_admin_database(resolved.admin_db_path)
+        try:
+            admin_db = open_admin_database(resolved.admin_db_path)
+        except BaseException:
+            await _close_container(container)  # do not leak the stores built above
+            raise
         app.state.admin_db = admin_db
         purge_task = asyncio.create_task(
             purge_loop(
@@ -78,15 +93,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     await purge_task
             finally:
                 try:
-                    await container.odoo_client.aclose()
+                    await _close_container(container)
                 finally:
-                    try:
-                        await container.webhook_events.close()
-                    finally:
-                        try:
-                            await container.idempotency.close()
-                        finally:
-                            admin_db.close()
+                    admin_db.close()
 
     app = FastAPI(title="conector-odoo", version="1.0.0", lifespan=lifespan)
     app.state.settings = resolved
