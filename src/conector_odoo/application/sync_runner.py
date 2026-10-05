@@ -179,11 +179,29 @@ class SyncRunner:
         Raises ``SyncJobNotFound`` or ``JobAlreadyRunning``; every other failure ends the run
         with status ``failed`` instead of raising (an unexpected bug is re-raised after the run
         was marked failed)."""
-        job = await self._job(job_id)
+        run = await self.start(job_id, trigger=trigger, dry_run=dry_run, only_records=only_records)
+        return await self.execute(run)
+
+    async def start(
+        self,
+        job_id: int,
+        *,
+        trigger: TriggerKind = TriggerKind.MANUAL,
+        dry_run: bool = False,
+        only_records: list[str] | None = None,
+    ) -> SyncRun:
+        """First half of ``run``: register the run (so its id is known) without doing any work.
+        Raises ``SyncJobNotFound`` or ``JobAlreadyRunning``; pass the result to ``execute``."""
+        await self._job(job_id)
         options: dict[str, Any] = {}
         if only_records is not None:
             options["only"] = {"forward": list(only_records)}
-        return await self._drive(job, await self._start(job_id, trigger, dry_run, None, options))
+        return await self._start(job_id, trigger, dry_run, None, options)
+
+    async def execute(self, run: SyncRun) -> SyncRun:
+        """Second half of ``run`` / ``resume`` / ``retry_failed``: drive a registered run to its
+        end. The same failure contract as ``run``."""
+        return await self._drive(await self._job(run.job_id), run)
 
     async def resume(self, run_id: int) -> SyncRun:
         """Continue an interrupted run from its checkpoint, keeping its counters.
@@ -191,17 +209,20 @@ class SyncRunner:
         Resumable: a ``running`` run that stopped heartbeating (crashed process), a ``cancelled``
         or a ``failed`` run. Raises ``SyncRunNotFound``, ``RunNotResumable`` (finished or still
         alive) or ``JobAlreadyRunning``."""
+        return await self.execute(await self.prepare_resume(run_id))
+
+    async def prepare_resume(self, run_id: int) -> SyncRun:
+        """First half of ``resume``: validate and reopen the run; ``execute`` continues it."""
         run = await self._require_run(run_id)
         if run.status in (RunStatus.SUCCEEDED, RunStatus.PARTIAL):
             raise RunNotResumable(f"run {run_id} already finished ({run.status.value})")
         if run.status.is_active and not self._is_stale(run, self._clock()):
             raise RunNotResumable(f"run {run_id} is still active")
-        job = await self._job(run.job_id)
+        await self._job(run.job_id)
         now = self._clock()
-        reopened = await self._runs.reopen(
+        return await self._runs.reopen(
             run_id, heartbeat_at=now, stale_before=now - self._config.stale_after
         )
-        return await self._drive(job, reopened)
 
     async def retry_failed(self, run_id: int) -> SyncRun:
         """Reprocess, in a new run linked to ``run_id``, only the records that failed there.
@@ -209,14 +230,17 @@ class SyncRunner:
         Each failed source record is re-read with ``get`` (no full scan). The errors of the
         original run whose record now succeeds are marked ``retried``. Conflicts are not retried.
         Raises ``SyncRunNotFound`` or ``RunNotResumable`` (nothing to retry)."""
+        return await self.execute(await self.prepare_retry(run_id))
+
+    async def prepare_retry(self, run_id: int) -> SyncRun:
+        """First half of ``retry_failed``: register the linked retry run; ``execute`` drives it."""
         original = await self._require_run(run_id)
         only = await self._failed_refs(run_id)
         if not only:
             raise RunNotResumable(f"run {run_id} has no failed records to retry")
-        job = await self._job(original.job_id)
+        await self._job(original.job_id)
         options = {"only": only, "retry_of": run_id}
-        run = await self._start(job.id or 0, TriggerKind.MANUAL, False, run_id, options)
-        return await self._drive(job, run)
+        return await self._start(original.job_id, TriggerKind.MANUAL, False, run_id, options)
 
     async def cancel(self, run_id: int) -> bool:
         """Ask an active run to stop at the next batch boundary. ``False`` when it is not active.
