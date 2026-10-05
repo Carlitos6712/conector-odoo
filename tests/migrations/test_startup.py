@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from conector_odoo import main as main_module
 from conector_odoo.config import Settings
 from conector_odoo.infrastructure.api.dependencies import Container, build_container
+from conector_odoo.infrastructure.migrations import MIGRATIONS
 from conector_odoo.main import create_app
 from tests.api.conftest import make_settings
 
@@ -33,7 +34,7 @@ def test_startup_migrates_the_admin_database(tmp_path: Path) -> None:
         versions = [r[0] for r in conn.execute("SELECT version FROM schema_migrations")]
     finally:
         conn.close()
-    assert versions == [1]
+    assert versions == [m.version for m in MIGRATIONS]
 
 
 def test_admin_database_failure_closes_the_container(

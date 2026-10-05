@@ -111,4 +111,13 @@ _INITIAL_SCHEMA = (
     """,
 )
 
-MIGRATIONS: tuple[Migration, ...] = (Migration(1, "initial_admin_schema", _INITIAL_SCHEMA),)
+# Non-secret, type-specific profile settings (odoo db/login, token url, scope, api-key header) and
+# the NAMES of the stored secrets, kept as JSON so new auth options need no schema change.
+_PROFILE_OPTIONS = (
+    "ALTER TABLE connection_profiles ADD COLUMN options_json TEXT NOT NULL DEFAULT '{}'",
+)
+
+MIGRATIONS: tuple[Migration, ...] = (
+    Migration(1, "initial_admin_schema", _INITIAL_SCHEMA),
+    Migration(2, "connection_profile_options", _PROFILE_OPTIONS),
+)

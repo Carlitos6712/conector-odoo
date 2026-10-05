@@ -57,14 +57,16 @@ def test_second_run_applies_nothing() -> None:
 def test_failed_migration_rolls_back_and_is_not_recorded() -> None:
     conn = connect()
     bad = Migration(
-        2, "bad", ("CREATE TABLE half_done (a INTEGER)", "INSERT INTO missing_table VALUES (1)")
+        len(MIGRATIONS) + 1,
+        "bad",
+        ("CREATE TABLE half_done (a INTEGER)", "INSERT INTO missing_table VALUES (1)"),
     )
     migrate(conn)
     with pytest.raises(MigrationError, match="bad"):
         migrate(conn, (*MIGRATIONS, bad))
     assert "half_done" not in tables(conn)
     versions = [r[0] for r in conn.execute("SELECT version FROM schema_migrations")]
-    assert 2 not in versions
+    assert len(MIGRATIONS) + 1 not in versions
 
 
 def test_gapped_migration_list_fails_loudly() -> None:

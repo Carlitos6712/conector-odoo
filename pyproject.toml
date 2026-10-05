@@ -5,6 +5,7 @@ description = "Bidirectional connector between a FastAPI app and Odoo"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "cryptography>=50.0.2",
     "fastapi>=0.142.2",
     "httpx>=0.28.1",
     "pydantic>=2",

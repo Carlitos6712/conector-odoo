@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     bulk_max_items: int = Field(default=DEFAULT_BULK_MAX_ITEMS, ge=1, le=MAX_BULK_MAX_ITEMS)
 
     connector_api_key: SecretStr | None = None
+    # Fernet key that encrypts connection-profile secrets at rest. No key is ever generated
+    # implicitly: storing or reading a secret without it fails with a clear error.
+    encryption_key: SecretStr | None = None
     webhook_secret: SecretStr
 
     idempotency_db_path: str = "./data/idempotency.sqlite3"
