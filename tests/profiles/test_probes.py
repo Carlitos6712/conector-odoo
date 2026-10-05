@@ -141,6 +141,72 @@ async def test_rejected_credentials_fail_auth(status: int) -> None:
 
 
 @respx.mock
+async def test_not_found_fails_auth_with_a_url_hint() -> None:
+    respx.get(BASE).respond(404)
+    step = failing(await RestConnectionProbe().probe(rest(), Secrets(api_key=SECRET)))
+    assert step.name == "auth"
+    assert "404" in step.detail
+    assert "URL" in (step.hint or "") or "path" in (step.hint or "")
+
+
+@respx.mock
+async def test_rate_limited_fails_auth_with_a_rate_limit_hint() -> None:
+    respx.get(BASE).respond(429)
+    step = failing(await RestConnectionProbe().probe(rest(), Secrets(api_key=SECRET)))
+    assert step.name == "auth"
+    assert "429" in step.detail
+    assert "rate" in (step.hint or "").lower()
+
+
+@respx.mock
+@pytest.mark.parametrize("status", [400, 405, 422])
+async def test_other_client_errors_do_not_pass_auth(status: int) -> None:
+    respx.get(BASE).respond(status)
+    step = failing(await RestConnectionProbe().probe(rest(), Secrets(api_key=SECRET)))
+    assert step.name == "auth"
+    assert str(status) in step.detail
+
+
+@respx.mock
+@pytest.mark.parametrize("status", [200, 204, 301])
+async def test_success_and_redirects_pass_auth(status: int) -> None:
+    respx.get(BASE).respond(status)
+    steps = await RestConnectionProbe().probe(rest(), Secrets(api_key=SECRET))
+    assert steps[-1].ok
+
+
+@respx.mock
+async def test_unencodable_header_value_fails_auth_instead_of_raising() -> None:
+    respx.get(BASE).respond(200)
+    profile = rest(extra_headers={"X-Note": "caf\u00e9 \u20ac"})
+    steps = await RestConnectionProbe().probe(profile, Secrets(api_key=SECRET))
+    assert steps[-1].name in ("auth", "reachable")
+    assert not steps[-1].ok
+
+
+async def test_invalid_url_during_auth_fails_auth_instead_of_raising(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with respx.mock:
+        respx.get(BASE).respond(200)
+        calls = {"n": 0}
+        real = httpx.AsyncClient.get
+
+        async def second_call_fails(
+            self: httpx.AsyncClient, *args: Any, **kwargs: Any
+        ) -> httpx.Response:
+            calls["n"] += 1
+            if calls["n"] == 2:  # the first GET is the reachability check
+                raise httpx.InvalidURL("bad url")
+            return await real(self, *args, **kwargs)
+
+        monkeypatch.setattr(httpx.AsyncClient, "get", second_call_fails)
+        steps = await RestConnectionProbe().probe(rest(), Secrets(api_key=SECRET))
+    assert names(steps)[-1] == ("auth", False)
+    assert steps[-1].hint
+
+
+@respx.mock
 async def test_server_error_does_not_pass_auth() -> None:
     respx.get(BASE).respond(503)
     step = failing(await RestConnectionProbe().probe(rest(), Secrets(api_key=SECRET)))

@@ -70,13 +70,26 @@ async def test_odoo_fields_round_trip(repo: SqliteConnectionProfileRepository) -
 async def test_secrets_are_only_stored_in_the_blob_column(
     repo: SqliteConnectionProfileRepository, conn: sqlite3.Connection
 ) -> None:
-    await repo.add(rest(), b"opaque-ciphertext")
-    dump = "\n".join(conn.iterdump())
-    assert "opaque-ciphertext" not in dump.replace("X'", "")  # stored as a binary literal
+    marker = b"opaque-ciphertext"
+    await repo.add(rest(), marker)
     row = conn.execute("SELECT secrets_blob, options_json FROM connection_profiles").fetchone()
-    assert row[0] == b"opaque-ciphertext"
+    assert row[0] == marker
     assert "client_secret" in row[1]  # only the NAMES of the secrets are kept in clear
-    assert "opaque" not in row[1]
+    # The blob lives in exactly one column: no other column of any table may contain it.
+    tables = [
+        r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
+    ]
+    for table in tables:
+        columns = [r[1] for r in conn.execute(f'PRAGMA table_info("{table}")').fetchall()]
+        for column in columns:
+            if (table, column) == ("connection_profiles", "secrets_blob"):
+                continue
+            for (value,) in conn.execute(f'SELECT "{column}" FROM "{table}"').fetchall():
+                raw = value if isinstance(value, bytes) else str(value).encode()
+                assert marker not in raw, f"secret leaked into {table}.{column}"
+    assert conn.execute(
+        "SELECT COUNT(*) FROM connection_profiles WHERE instr(secrets_blob, ?) > 0", (marker,)
+    ).fetchone() == (1,)
 
 
 async def test_name_must_be_unique(repo: SqliteConnectionProfileRepository) -> None:
