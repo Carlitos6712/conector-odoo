@@ -311,3 +311,37 @@ export const compatibleMappings = (
   source === "" || target === ""
     ? []
     : mappings.filter((mapping) => mappingMatches(mapping.definition, source, target));
+
+/**
+ * The selected mappings against the saved ones, before the server has to say it: the same rule
+ * as `check_job_mappings` (forward reads the source and writes the target, reverse the opposite).
+ */
+export function checkMappings(
+  state: JobFormState,
+  mappings: readonly StoredMapping[],
+): JobFieldErrors {
+  const errors: JobFieldErrors = {};
+  const inspect = (name: string, source: string, target: string): string | undefined => {
+    if (name === "") return undefined;
+    const found = mappings.find((mapping) => mapping.name === name);
+    if (found === undefined) return "jobs.errors.referenceMissing";
+    return mappingMatches(found.definition, source, target)
+      ? undefined
+      : "jobs.errors.mappingMismatch";
+  };
+  const forward = inspect(
+    state.mappingName,
+    state.sourceResource.trim(),
+    state.targetResource.trim(),
+  );
+  if (forward) errors.mapping = forward;
+  if (state.direction !== "a_to_b") {
+    const back = inspect(
+      state.reverseName,
+      state.targetResource.trim(),
+      state.sourceResource.trim(),
+    );
+    if (back) errors.reverseMapping = back;
+  }
+  return errors;
+}

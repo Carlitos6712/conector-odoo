@@ -33,3 +33,20 @@ export interface RunDetail extends Run {
   checkpoint: Record<string, unknown>;
   sample: Record<string, unknown>[];
 }
+
+export interface RunError {
+  id: number;
+  run_id: number;
+  record_ref: string | null;
+  message: string;
+  side: string;
+  kind: string;
+  retryable: boolean;
+  retried: boolean;
+  payload: Record<string, unknown> | null;
+}
+
+export interface RunErrorPage {
+  items: RunError[];
+  total: number;
+}

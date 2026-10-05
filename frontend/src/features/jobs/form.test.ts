@@ -1,5 +1,6 @@
 import { jobFixture } from "@/features/jobs/fixtures";
 import {
+  checkMappings,
   compatibleMappings,
   emptyJobState,
   JOB_STEPS,
@@ -303,5 +304,45 @@ describe("mapping compatibility", () => {
     expect(compatibleMappings([forward, reverse], "clients", "res.partner")).toEqual([forward]);
     expect(compatibleMappings([forward, reverse], "res.partner", "clients")).toEqual([reverse]);
     expect(compatibleMappings([forward, reverse], "", "res.partner")).toEqual([]);
+  });
+});
+
+describe("checkMappings", () => {
+  const forward = storedMappingFixture();
+  const reverse = storedMappingFixture({
+    name: "partner-to-clients",
+    definition: mappingDocFixture({
+      name: "partner-to-clients",
+      source_resource: "res.partner",
+      target_resource: "clients",
+    }),
+  });
+  const all = [forward, reverse];
+
+  it("accepts mappings that fit", () => {
+    const state = valid({ direction: "bidirectional", reverseName: "partner-to-clients" });
+    expect(checkMappings(state, all)).toEqual({});
+  });
+
+  it("flags a mapping that reads or writes other resources", () => {
+    expect(checkMappings(valid({ targetResource: "sale.order" }), all)).toEqual({
+      mapping: "jobs.errors.mappingMismatch",
+    });
+  });
+
+  it("flags a reverse mapping that points the wrong way", () => {
+    const state = valid({ direction: "bidirectional", reverseName: "clients-to-partner" });
+    expect(checkMappings(state, all)).toEqual({ reverseMapping: "jobs.errors.mappingMismatch" });
+  });
+
+  it("flags a mapping that no longer exists", () => {
+    expect(checkMappings(valid({ mappingName: "gone" }), all)).toEqual({
+      mapping: "jobs.errors.referenceMissing",
+    });
+  });
+
+  it("ignores the reverse mapping of a one way job and empty selections", () => {
+    expect(checkMappings(valid({ reverseName: "gone" }), all)).toEqual({});
+    expect(checkMappings(valid({ mappingName: "" }), all)).toEqual({});
   });
 });

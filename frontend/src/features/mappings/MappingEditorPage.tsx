@@ -25,29 +25,15 @@ import {
   type EditorState,
 } from "@/features/mappings/model";
 import { RuleCard } from "@/features/mappings/RuleCard";
-import { SidePicker, type SchemaState } from "@/features/mappings/SidePicker";
+import { SidePicker, useSideSchema } from "@/features/mappings/SidePicker";
 import type { Issue, StoredMapping } from "@/features/mappings/types";
 import { UnsavedChangesDialog, useUnsavedGuard } from "@/features/mappings/useUnsavedGuard";
-import { usePreview } from "@/features/resources/hooks";
 
 const SOURCE_FIELDS = "mapping-source-fields";
 const TARGET_FIELDS = "mapping-target-fields";
 
 /** The definition as it would be sent: this is also what "unsaved changes" compares. */
 const snapshot = (state: EditorState) => definitionFromState({ ...state, name: state.name.trim() });
-
-/** Schema of one side, read with a one-record preview (admins only: it contacts the remote). */
-function useSideSchema(profileId: string, resource: string): SchemaState {
-  const { canMutate } = useSession();
-  const enabled = canMutate && profileId !== "" && resource !== "";
-  const preview = usePreview(Number(profileId) || -1, resource, 1, enabled);
-  return {
-    fields: enabled ? preview.data?.schema.fields : undefined,
-    isLoading: enabled && preview.isFetching && !preview.data,
-    error: enabled ? preview.error : null,
-    retry: () => void preview.refetch(),
-  };
-}
 
 interface SuggestNote {
   added: number;

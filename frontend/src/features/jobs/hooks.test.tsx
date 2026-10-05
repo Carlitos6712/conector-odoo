@@ -13,7 +13,7 @@ import {
 } from "@/features/jobs/hooks";
 import { jobToInput } from "@/features/jobs/form";
 import { RUNS_KEY } from "@/features/runs/api";
-import { useLastRuns, useRun } from "@/features/runs/hooks";
+import { useLastRuns, useRun, useRunErrors } from "@/features/runs/hooks";
 import { json, stubApi } from "@/test/utils";
 
 function setup() {
@@ -123,6 +123,40 @@ describe("runs hooks", () => {
     const { wrapper } = setup();
     const { result } = renderHook(() => useRun(41), { wrapper });
     await waitFor(() => expect(result.current.data?.id).toBe(41));
+  });
+
+  it("reads the first errors of a run", async () => {
+    const mock = stubApi({
+      "GET /runs/41/errors?limit=5": () =>
+        json({
+          items: [
+            {
+              id: 1,
+              run_id: 41,
+              record_ref: "u-2",
+              message: "no value for name",
+              side: "target",
+              kind: "mapping",
+              retryable: false,
+              retried: false,
+              payload: null,
+            },
+          ],
+          total: 12,
+        }),
+    });
+    const { wrapper } = setup();
+    const { result } = renderHook(() => useRunErrors(41, true), { wrapper });
+    await waitFor(() => expect(result.current.data?.total).toBe(12));
+    expect(result.current.data?.items[0]?.message).toBe("no value for name");
+    expect(mock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not read errors until asked to", () => {
+    const mock = stubApi({});
+    const { wrapper } = setup();
+    renderHook(() => useRunErrors(41, false), { wrapper });
+    expect(mock).not.toHaveBeenCalled();
   });
 
   it("does not fetch without an id", () => {

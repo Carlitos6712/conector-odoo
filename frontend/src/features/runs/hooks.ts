@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { getRun, listRecentRuns, runKey, RUNS_KEY } from "@/features/runs/api";
+import { getRun, listRecentRuns, listRunErrors, runKey, RUNS_KEY } from "@/features/runs/api";
 import { latestRunByJob, runRefetchInterval } from "@/features/runs/summary";
 
 /** Last real run of every job, from one request. */
@@ -17,4 +17,12 @@ export const useRun = (id: number | null) =>
     queryFn: () => getRun(id ?? -1),
     enabled: id !== null,
     refetchInterval: (query) => runRefetchInterval(query.state.data),
+  });
+
+/** The first few errors of a run, for summaries; the full list belongs to the run page. */
+export const useRunErrors = (id: number | null, enabled: boolean, limit = 5) =>
+  useQuery({
+    queryKey: [...runKey(id ?? -1), "errors", limit],
+    queryFn: () => listRunErrors(id ?? -1, limit),
+    enabled: enabled && id !== null,
   });
