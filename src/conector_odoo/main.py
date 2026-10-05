@@ -39,6 +39,7 @@ from conector_odoo.infrastructure.api.routers import (
     sale_orders,
     webhooks,
 )
+from conector_odoo.infrastructure.api.static_frontend import mount_frontend
 from conector_odoo.infrastructure.idempotency.purge import MultiPurger, purge_loop
 from conector_odoo.infrastructure.migrations import close_admin_database, open_admin_database
 from conector_odoo.logging import configure_logging
@@ -117,4 +118,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     install_request_logging(app)
     register_error_handlers(app)
     _include_routers(app)
+    mount_frontend(app, resolved.frontend_dist_dir)  # last: it must never shadow a real route
     return app
