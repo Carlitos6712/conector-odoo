@@ -162,6 +162,7 @@ def test_create_app_defaults_to_settings_from_the_environment(
     monkeypatch.setenv("WEBHOOK_SECRET", "whsec-test-secret-123")
     monkeypatch.setenv("CONNECTOR_API_KEY", API_KEY)
     monkeypatch.setenv("IDEMPOTENCY_DB_PATH", ":memory:")
+    monkeypatch.setenv("ADMIN_DB_PATH", ":memory:")
     from conector_odoo.config import get_settings
 
     get_settings.cache_clear()

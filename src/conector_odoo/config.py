@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     webhook_secret: SecretStr
 
     idempotency_db_path: str = "./data/idempotency.sqlite3"
+    # Admin database (profiles, mappings, jobs, runs, users); migrated at startup.
+    admin_db_path: str = "./data/admin.db"
     # An ``in_progress`` key older than this is treated as abandoned (outcome unknown).
     idempotency_in_progress_timeout_seconds: float = DEFAULT_IN_PROGRESS_TIMEOUT_SECONDS
     # Records older than this are purged (at startup and every purge interval).

@@ -32,6 +32,7 @@ from conector_odoo.infrastructure.api.routers import (
     webhooks,
 )
 from conector_odoo.infrastructure.idempotency.purge import MultiPurger, purge_loop
+from conector_odoo.infrastructure.migrations import open_admin_database
 from conector_odoo.logging import configure_logging
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             logger.warning("connector API key not configured; data endpoints are unauthenticated")
         container = build_container(resolved)
         app.state.container = container
+        admin_db = open_admin_database(resolved.admin_db_path)
+        app.state.admin_db = admin_db
         purge_task = asyncio.create_task(
             purge_loop(
                 MultiPurger(container.idempotency, container.webhook_events),
@@ -80,7 +83,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     try:
                         await container.webhook_events.close()
                     finally:
-                        await container.idempotency.close()
+                        try:
+                            await container.idempotency.close()
+                        finally:
+                            admin_db.close()
 
     app = FastAPI(title="conector-odoo", version="1.0.0", lifespan=lifespan)
     app.state.settings = resolved
