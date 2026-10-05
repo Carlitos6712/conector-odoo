@@ -3,11 +3,19 @@ import type { Issue } from "@/features/mappings/types";
 import { cn } from "@/lib/utils";
 
 /** Findings with the definition path they point at (server text, rendered as plain text). */
-export function IssueList({ issues, className }: { issues: readonly Issue[]; className?: string }) {
+export function IssueList({
+  issues,
+  className,
+  label,
+}: {
+  issues: readonly Issue[];
+  className?: string;
+  label?: string;
+}) {
   const { t } = useTranslation();
   if (issues.length === 0) return null;
   return (
-    <ul className={cn("flex flex-col gap-1 text-sm", className)}>
+    <ul aria-label={label} className={cn("flex flex-col gap-1 text-sm", className)}>
       {issues.map((issue, index) => (
         <li
           key={`${issue.path}-${index}`}

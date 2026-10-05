@@ -3,7 +3,11 @@ import userEvent from "@testing-library/user-event";
 import { Link, Route, Routes } from "react-router-dom";
 import { odooProfileFixture, profileFixture } from "@/features/connections/fixtures";
 import { MappingEditorPage } from "@/features/mappings/MappingEditorPage";
-import { mappingDocFixture, storedMappingFixture } from "@/features/mappings/fixtures";
+import {
+  dryRunFixture,
+  mappingDocFixture,
+  storedMappingFixture,
+} from "@/features/mappings/fixtures";
 import type { MappingDoc } from "@/features/mappings/types";
 import { storedFixture } from "@/features/resources/fixtures";
 import type { PreviewResult } from "@/features/resources/types";
@@ -477,5 +481,45 @@ describe("MappingEditorPage: unsaved changes", () => {
     await screen.findByLabelText("Nombre");
     await userEvent.click(screen.getByRole("link", { name: "Fuera" }));
     expect(await screen.findByText("otra página")).toBeInTheDocument();
+  });
+});
+
+describe("MappingEditorPage: dry run", () => {
+  it("shows rule errors on the rule until the definition changes", async () => {
+    stubApi({
+      ...routes(),
+      "POST /mappings/dry-run": () =>
+        json({
+          ...dryRunFixture,
+          total: 1,
+          ok: 0,
+          with_errors: 1,
+          items: [
+            {
+              source_id: "u-1",
+              ok: false,
+              mapped_fields: {},
+              errors: [{ rule_target: "email", step_index: 1, message: "cannot lower" }],
+              validation: [],
+            },
+          ],
+        }),
+      "POST /profiles/1/resources/clients/preview?limit=5": () => json(clients),
+    });
+    await page("/mappings/clients-to-partner/edit");
+    await chooseSides();
+    await userEvent.click(screen.getByRole("button", { name: "Ejecutar prueba" }));
+    expect(await rule(2).findByText(/cannot lower/)).toBeInTheDocument();
+    expect(rule(1).queryByText(/cannot lower/)).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Añadir regla" }));
+    expect(rule(2).queryByText(/cannot lower/)).not.toBeInTheDocument();
+    expect(screen.getByText(/La definición ha cambiado desde esta prueba/)).toBeInTheDocument();
+  });
+
+  it("waits for both connections before offering the test", async () => {
+    stubApi(routes());
+    await page("/mappings/clients-to-partner/edit");
+    expect(screen.getByRole("button", { name: "Ejecutar prueba" })).toBeDisabled();
   });
 });

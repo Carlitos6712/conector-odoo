@@ -6,6 +6,7 @@ import { useSession } from "@/auth/useSession";
 import { Loading } from "@/components/Loading";
 import { Button } from "@/components/ui/button";
 import { useProfiles } from "@/features/connections/hooks";
+import { DryRunPanel } from "@/features/mappings/DryRunPanel";
 import { describeMappingError } from "@/features/mappings/errors";
 import { TextField } from "@/features/mappings/Fields";
 import { hintsFor, hintToIssue, issuesForRule } from "@/features/mappings/hints";
@@ -71,11 +72,13 @@ function MappingEditor({ initial }: { initial: StoredMapping | null }) {
   const [notice, setNotice] = useState<{ version: number; created: boolean } | null>(null);
   const [suggestNote, setSuggestNote] = useState<SuggestNote | null>(null);
   const [showJson, setShowJson] = useState(false);
+  const [dry, setDry] = useState<{ key: string; issues: Issue[] } | null>(null);
 
   const sourceSchema = useSideSchema(sourceProfile, state.sourceResource);
   const targetSchema = useSideSchema(targetProfile, state.targetResource);
 
-  const dirty = JSON.stringify(snapshot(state)) !== baseline;
+  const currentKey = JSON.stringify(snapshot(state));
+  const dirty = currentKey !== baseline;
   const guard = useUnsavedGuard(dirty);
 
   const hints = useMemo(
@@ -86,8 +89,11 @@ function MappingEditor({ initial }: { initial: StoredMapping | null }) {
     hintToIssue(hint, t(`mappings.hints.${hint.code}`, hint.params)),
   );
   const failure = save.error ? describeMappingError(save.error, "save") : null;
-  const serverIssues: Issue[] = [...(failure?.issues ?? []), ...(save.data?.warnings ?? [])];
-  const generalIssues = serverIssues.filter((issue) => !issue.path.startsWith("rules["));
+  const saveIssues: Issue[] = [...(failure?.issues ?? []), ...(save.data?.warnings ?? [])];
+  const generalIssues = saveIssues.filter((issue) => !issue.path.startsWith("rules["));
+  // Dry-run findings describe the definition they ran on; once it changes they are stale.
+  const dryIssues = dry && dry.key === currentKey ? dry.issues : [];
+  const serverIssues: Issue[] = [...saveIssues, ...dryIssues];
   const unmappedRequired = hintIssues.filter((issue) => issue.path.startsWith("target."));
 
   const editing = savedName !== null;
@@ -294,6 +300,14 @@ function MappingEditor({ initial }: { initial: StoredMapping | null }) {
           </div>
         )}
       </div>
+
+      <DryRunPanel
+        definition={snapshot(state)}
+        sourceProfileId={sourceProfile ? Number(sourceProfile) : null}
+        targetProfileId={targetProfile ? Number(targetProfile) : null}
+        blocked={hasBlockingHint || state.sourceResource === "" || state.targetResource === ""}
+        onResult={(key, issues) => setDry({ key, issues })}
+      />
 
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-3">
