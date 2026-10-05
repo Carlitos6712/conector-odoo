@@ -108,7 +108,7 @@ Delivery
 - B10: d7b67ab fix(resources): skip and report a corrupt catalog row instead of failing the whole list
 - F1: 1e730e2 feat(frontend): scaffold Vite, React, TypeScript, Tailwind and shadcn tooling
 - F1: 96c8548 feat(frontend): add typed API client, session auth, i18n and app shell
-- F1: e3f40fb feat(api): serve the frontend build with an SPA fallback
+- F1: e3cd1c6 feat(api): serve the frontend build with an SPA fallback
 - F2: d29c7e3 feat(frontend): add connections data layer and list page
 - F2: 4369e4f feat(frontend): add connection wizard with draft test
 - F2: 22a2897 docs(odd): record F2 progress
