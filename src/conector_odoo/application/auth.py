@@ -26,6 +26,7 @@ from conector_odoo.domain.errors import (
     AdminUserInvalid,
     AdminUserNotFound,
     AuthenticationFailed,
+    CurrentPasswordInvalid,
     LastAdminError,
     LoginLocked,
     SessionInvalid,
@@ -121,6 +122,44 @@ class AuthService:
         )
         await self._sessions.purge_expired(now)
         return LoginResult(user, token, csrf, expires_at)
+
+    async def change_password(
+        self, user: AdminUser, current_password: str, new_password: str
+    ) -> LoginResult:
+        """Self-service password change for the signed-in ``user``, whatever their role.
+
+        The current password is verified (argon2) and throttled exactly like a login, under the
+        same per-username key. On success every session of the user is destroyed and a fresh one
+        (new cookie token and CSRF token) is issued, so a stolen session dies with the old
+        password. Raises ``LoginLocked``, ``CurrentPasswordInvalid`` or ``AdminUserInvalid``.
+        """
+        now = self._clock()
+        key = _throttle_key(user.username)
+        retry_after = await self._throttle.retry_after(key, now)
+        if retry_after > 0:
+            raise LoginLocked(retry_after)
+        found = await self._users.get_credentials(user.username)
+        stored_hash = found[1] if found else await self._dummy()
+        password_ok = await asyncio.to_thread(self._hasher.verify, stored_hash, current_password)
+        if found is None or not password_ok:
+            await self._throttle.record_failure(
+                key, now, max_failures=self._config.max_failures,
+                lock_seconds=self._config.lockout_seconds,
+            )  # fmt: skip
+            raise CurrentPasswordInvalid("the current password is incorrect")
+        validate_password(new_password)
+        if new_password == current_password:
+            raise AdminUserInvalid("the new password must differ from the current one")
+        new_hash = await asyncio.to_thread(self._hasher.hash, new_password)
+        updated = await self._users.update(user.id, password_hash=new_hash)
+        await self._throttle.reset(key)
+        await self._sessions.delete_for_user(user.id)
+        token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
+        expires_at = now + timedelta(seconds=self._config.session_ttl_seconds)
+        await self._sessions.create(
+            AdminSession(hash_token(token), user.id, csrf, now, expires_at, now)
+        )
+        return LoginResult(updated, token, csrf, expires_at)
 
     async def authenticate(self, token: str) -> CurrentSession:
         """Resolve the cookie token to its user. Raises ``SessionInvalid``."""

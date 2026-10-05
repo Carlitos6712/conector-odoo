@@ -10,6 +10,9 @@ from tests.admin_api.conftest import AdminEnv, admin_settings
 SAFE = {"GET", "HEAD", "OPTIONS"}
 # Reachable without a session on purpose: they establish or drop one.
 PUBLIC = {("POST", "/admin/api/auth/login"), ("POST", "/admin/api/auth/logout")}
+# Explicit, tested exception to "writes are admin-only": a user changing their OWN password (any
+# role). It still needs a session and CSRF; see test_password_change_api.py for its behaviour.
+SELF_SERVICE = {("POST", "/admin/api/auth/password")}
 ADMIN_ONLY_PREFIXES = ("/admin/api/users",)
 
 
@@ -26,6 +29,7 @@ def _routes() -> list[tuple[str, str]]:
 
 ROUTES = _routes()
 MUTATING = [(m, p) for m, p in ROUTES if m not in SAFE and (m, p) not in PUBLIC]
+ADMIN_MUTATING = [r for r in MUTATING if r not in SELF_SERVICE]
 READS = [(m, p) for m, p in ROUTES if m in SAFE]
 
 
@@ -44,7 +48,7 @@ def test_every_route_denies_anonymous_callers(admin_env: AdminEnv, method: str, 
     assert response.json()["error"] == "unauthenticated"
 
 
-@pytest.mark.parametrize(("method", "path"), MUTATING)
+@pytest.mark.parametrize(("method", "path"), ADMIN_MUTATING)
 def test_operator_is_denied_on_every_mutating_route(
     operator: AdminEnv, method: str, path: str
 ) -> None:
@@ -76,6 +80,11 @@ def test_operator_may_read_except_admin_only_resources(
         assert response.status_code == 403
     else:
         assert response.status_code not in (401, 403), f"{method} {path}: {response.text}"
+
+
+def test_the_only_non_admin_write_is_the_self_service_password_change() -> None:
+    assert set(MUTATING) >= SELF_SERVICE
+    assert len(SELF_SERVICE) == 1
 
 
 def test_reads_do_not_need_csrf(admin: AdminEnv) -> None:

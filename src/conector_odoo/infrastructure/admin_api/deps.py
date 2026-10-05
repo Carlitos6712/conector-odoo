@@ -46,17 +46,31 @@ async def current_session(
 SessionDep = Annotated[CurrentSession, Depends(current_session)]
 
 
+def _check_csrf(request: Request, session: CurrentSession) -> None:
+    provided = request.headers.get(CSRF_HEADER, "").encode()
+    if not hmac.compare_digest(provided, session.csrf_token.encode()):
+        raise CsrfInvalid("missing or invalid CSRF token")
+
+
 async def authorize(request: Request, session: SessionDep) -> CurrentSession:
     if request.method not in SAFE_METHODS:
         if session.user.role is not Role.ADMIN:
             raise AdminForbidden("this operation requires the admin role")
-        provided = request.headers.get(CSRF_HEADER, "").encode()
-        if not hmac.compare_digest(provided, session.csrf_token.encode()):
-            raise CsrfInvalid("missing or invalid CSRF token")
+        _check_csrf(request, session)
     return session
 
 
 AuthorizedDep = Annotated[CurrentSession, Depends(authorize)]
+
+
+async def authorize_self_service(request: Request, session: SessionDep) -> CurrentSession:
+    """The one explicit exception to "writes need the admin role": a user acting on their OWN
+    account (password change). Any role may call it, but it still needs a session and CSRF."""
+    _check_csrf(request, session)
+    return session
+
+
+SelfServiceDep = Annotated[CurrentSession, Depends(authorize_self_service)]
 
 
 async def require_admin(session: AuthorizedDep) -> CurrentSession:

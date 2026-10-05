@@ -2,12 +2,36 @@
 
 from fastapi import APIRouter, Request, Response
 
-from conector_odoo.infrastructure.admin_api.deps import AdminDep, SessionDep, SettingsDep
-from conector_odoo.infrastructure.admin_api.schemas.auth import LoginIn, SessionOut, UserOut
+from conector_odoo.config import Settings
+from conector_odoo.infrastructure.admin_api.deps import (
+    AdminDep,
+    SelfServiceDep,
+    SessionDep,
+    SettingsDep,
+)
+from conector_odoo.infrastructure.admin_api.schemas.auth import (
+    LoginIn,
+    PasswordChangeIn,
+    SessionOut,
+    UserOut,
+)
 
 COOKIE_PATH = "/admin/api"
 
 router = APIRouter(prefix="/auth", tags=["admin-auth"])
+
+
+def _issue_cookie(response: Response, settings: Settings, token: str) -> None:
+    response.set_cookie(
+        settings.admin_cookie_name,
+        token,
+        max_age=settings.admin_session_ttl_seconds,
+        httponly=True,
+        secure=settings.admin_cookie_secure,
+        samesite=settings.admin_cookie_samesite,
+        path=COOKIE_PATH,
+    )
+    response.headers["Cache-Control"] = "no-store"
 
 
 @router.post("/login")
@@ -24,16 +48,26 @@ async def login(
         body.password,
         previous_token=request.cookies.get(settings.admin_cookie_name),
     )
-    response.set_cookie(
-        settings.admin_cookie_name,
-        result.token,
-        max_age=settings.admin_session_ttl_seconds,
-        httponly=True,
-        secure=settings.admin_cookie_secure,
-        samesite=settings.admin_cookie_samesite,
-        path=COOKIE_PATH,
+    _issue_cookie(response, settings, result.token)
+    return SessionOut(
+        user=UserOut.of(result.user), csrf_token=result.csrf_token, expires_at=result.expires_at
     )
-    response.headers["Cache-Control"] = "no-store"
+
+
+@router.post("/password")
+async def change_password(
+    body: PasswordChangeIn,
+    response: Response,
+    admin: AdminDep,
+    settings: SettingsDep,
+    session: SelfServiceDep,
+) -> SessionOut:
+    """Change the signed-in user's own password (any role). Every session of the user is revoked
+    and the caller gets a fresh cookie and CSRF token."""
+    result = await admin.auth.change_password(
+        session.user, body.current_password, body.new_password
+    )
+    _issue_cookie(response, settings, result.token)
     return SessionOut(
         user=UserOut.of(result.user), csrf_token=result.csrf_token, expires_at=result.expires_at
     )
