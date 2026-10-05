@@ -1,5 +1,8 @@
 """SQLite ``MappingRepository`` over the ``mappings`` table.
 
+Writes do not call ``commit()``: the admin connection is autocommit (``isolation_level=None``, see
+``open_admin_database``), so each ``execute`` is already durable.
+
 Each row is one immutable version (unique by name and version) holding the definition as
 versioned JSON (see ``mapping_codec``). A mapping that a sync job references through
 ``sync_jobs.mapping_id`` / ``reverse_mapping_id`` (any of its versions) cannot be deleted.

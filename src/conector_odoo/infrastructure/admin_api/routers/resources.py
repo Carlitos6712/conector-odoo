@@ -21,8 +21,7 @@ router = APIRouter(prefix="/profiles/{profile_id}", tags=["admin-resources"])
 
 @router.get("/resources")
 async def list_resources(profile_id: int, admin: AdminDep) -> StoredResourceListOut:
-    stored = await admin.resources.list.execute(profile_id)
-    return StoredResourceListOut(items=[StoredResourceOut.of(s) for s in stored])
+    return StoredResourceListOut.of(await admin.resources.list.report(profile_id))
 
 
 # Fixed paths first: "import" must not be read as a resource name.

@@ -57,7 +57,14 @@ def migrate(conn: sqlite3.Connection, migrations: Sequence[Migration] | None = N
 
 
 def open_admin_database(path: str) -> sqlite3.Connection:
-    """Open (creating it privately if needed) the admin database with FKs on, fully migrated."""
+    """Open (creating it privately if needed) the admin database with FKs on, fully migrated.
+
+    INVARIANT: the connection is in AUTOCOMMIT mode (``isolation_level=None``). Every repository
+    writes with plain ``execute`` and never calls ``commit()``: each statement is its own
+    transaction, and multi-statement units open an explicit ``BEGIN``/``COMMIT`` themselves (see
+    the migrator and ``SqliteSyncRunRepository._transaction``). Switching to implicit
+    transactions would leave repository writes uncommitted, so keep it and keep
+    ``tests/migrations/test_startup.py`` passing."""
     if path != ":memory:":
         prepare_private_file(Path(path))
     conn = sqlite3.connect(path, check_same_thread=False, isolation_level=None)

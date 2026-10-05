@@ -24,7 +24,12 @@ from conector_odoo.domain.profiles import (
     StoredProfile,
 )
 from conector_odoo.domain.records import Record, RecordFilter, ResourceSchema
-from conector_odoo.domain.resources import ResourceConfig, ResourceSource, StoredResource
+from conector_odoo.domain.resources import (
+    CatalogListing,
+    ResourceConfig,
+    ResourceSource,
+    StoredResource,
+)
 from conector_odoo.domain.sync import SyncJob
 from conector_odoo.domain.sync_runs import (
     RunCounters,
@@ -225,7 +230,13 @@ class ResourceCatalogRepository(Protocol):
         """Raises ``ResourceConfigInvalid`` when the stored JSON is unknown or corrupt."""
         ...
 
-    async def list(self, profile_id: int) -> list[StoredResource]: ...
+    async def list(self, profile_id: int) -> list[StoredResource]:
+        """The readable entries; a corrupt row is skipped (and logged), never fatal."""
+        ...
+
+    async def list_with_problems(self, profile_id: int) -> CatalogListing:
+        """Like ``list``, and also names every skipped entry with the reason."""
+        ...
 
     async def delete(self, profile_id: int, name: str) -> None:
         """Raises ``CatalogResourceNotFound``."""

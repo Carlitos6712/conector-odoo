@@ -170,3 +170,18 @@ def test_openapi_import_needs_exactly_one_source_and_rejects_garbage(admin: Admi
     assert admin.post(url, json={"url": "https://x.test/a", "document": "{}"}).status_code == 422
     garbage = admin.post(url, json={"document": "not an openapi document"})
     assert garbage.status_code == 422 and garbage.json()["error"] == "import_failed"
+
+
+def test_a_corrupt_catalog_row_is_reported_not_fatal(admin: AdminEnv) -> None:
+    pid = make_profile(admin)
+    url = f"{PROFILES}/{pid}/resources"
+    admin.put(f"{url}/items", json=ITEMS)
+    admin.put(f"{url}/broken", json={**ITEMS, "name": "broken"})
+    admin.client.app.state.admin_db.execute(  # type: ignore[attr-defined]
+        "UPDATE resources SET config_json = '{not json' WHERE name = 'broken'"
+    )
+    response = admin.get(url)
+    assert response.status_code == 200
+    assert [r["config"]["name"] for r in response.json()["items"]] == ["items"]
+    assert [p["name"] for p in response.json()["invalid"]] == ["broken"]
+    assert admin.get(f"{url}/broken").status_code == 422  # reading it directly says why

@@ -6,14 +6,27 @@ catalog entries is refused by the foreign key (``ProfileInUse``), exactly as for
 """
 
 import asyncio
+import logging
 import sqlite3
 import threading
 from datetime import UTC, datetime
 from typing import Any
 
-from conector_odoo.domain.errors import CatalogResourceNotFound, ProfileNotFound
+from conector_odoo.domain.errors import (
+    CatalogResourceNotFound,
+    ProfileNotFound,
+    ResourceConfigInvalid,
+)
 from conector_odoo.domain.resource_codec import resource_config_from_json, resource_config_to_json
-from conector_odoo.domain.resources import ResourceConfig, ResourceSource, StoredResource
+from conector_odoo.domain.resources import (
+    CatalogListing,
+    ResourceConfig,
+    ResourceProblem,
+    ResourceSource,
+    StoredResource,
+)
+
+logger = logging.getLogger(__name__)
 
 StoredResources = list[StoredResource]  # the ``list`` method below shadows the builtin
 
@@ -34,6 +47,9 @@ class SqliteResourceCatalogRepository:
         return await asyncio.to_thread(self._get, profile_id, name)
 
     async def list(self, profile_id: int) -> StoredResources:
+        return (await self.list_with_problems(profile_id)).items
+
+    async def list_with_problems(self, profile_id: int) -> CatalogListing:
         return await asyncio.to_thread(self._list, profile_id)
 
     async def delete(self, profile_id: int, name: str) -> None:
@@ -70,13 +86,25 @@ class SqliteResourceCatalogRepository:
             row = self._select(profile_id, name)
         return None if row is None else _to_stored(row)
 
-    def _list(self, profile_id: int) -> StoredResources:
+    def _list(self, profile_id: int) -> CatalogListing:
         with self._lock:
             rows = self._conn.execute(
-                f"SELECT {_COLUMNS} FROM resources WHERE profile_id = ? ORDER BY name",
+                f"SELECT {_COLUMNS}, name FROM resources WHERE profile_id = ? ORDER BY name",
                 (profile_id,),
             ).fetchall()
-        return [_to_stored(row) for row in rows]
+        items: StoredResources = []
+        problems: list[ResourceProblem] = []
+        for row in rows:
+            try:
+                items.append(_to_stored(row))
+            except (ResourceConfigInvalid, ValueError, TypeError) as exc:
+                # One corrupt row must not hide the rest of the catalog.
+                logger.warning(
+                    "skipping a corrupt catalog entry",
+                    extra={"profile_id": profile_id, "resource": row[5]},
+                )
+                problems.append(ResourceProblem(row[5], str(exc)))
+        return CatalogListing(items, problems)
 
     def _delete(self, profile_id: int, name: str) -> None:
         with self._lock:

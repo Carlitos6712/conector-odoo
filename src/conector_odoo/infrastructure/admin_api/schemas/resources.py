@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, model_validator
 from conector_odoo.application.resources import DiscoveredResource, PreviewResult
 from conector_odoo.domain.records import FieldSpec, FieldType, Record, ResourceSchema
 from conector_odoo.domain.resources import (
+    CatalogListing,
     EndpointSpec,
     PaginationConfig,
     PaginationStrategy,
@@ -150,8 +151,23 @@ class StoredResourceOut(BaseModel):
         )
 
 
+class ResourceProblemOut(BaseModel):
+    name: str
+    reason: str
+
+
 class StoredResourceListOut(BaseModel):
+    """``invalid`` names catalog entries that could not be read; they are skipped, not fatal."""
+
     items: list[StoredResourceOut]
+    invalid: list[ResourceProblemOut] = Field(default_factory=list)
+
+    @classmethod
+    def of(cls, listing: CatalogListing) -> Self:
+        return cls(
+            items=[StoredResourceOut.of(s) for s in listing.items],
+            invalid=[ResourceProblemOut(name=p.name, reason=p.reason) for p in listing.problems],
+        )
 
 
 class RecordOut(BaseModel):
