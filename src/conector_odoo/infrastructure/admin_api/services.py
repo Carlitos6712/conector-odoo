@@ -1,11 +1,29 @@
 """Composition of the admin side: repositories and use cases over the admin database."""
 
+import asyncio
 import logging
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from conector_odoo.application.auth import AuthConfig, AuthService, UserAdmin
+from conector_odoo.application.dashboard import GetDashboard
+from conector_odoo.application.jobs import (
+    CreateJob,
+    DeleteJob,
+    GetJob,
+    GetRun,
+    ListJobs,
+    ListRunErrors,
+    ListRuns,
+    UpdateJob,
+)
+from conector_odoo.application.mappings import (
+    DeleteMapping,
+    GetMapping,
+    ListMappings,
+    ListMappingVersions,
+)
 from conector_odoo.application.profiles import (
     CreateProfile,
     DeleteProfile,
@@ -22,8 +40,12 @@ from conector_odoo.application.resources import (
     PreviewResource,
     SaveResource,
 )
+from conector_odoo.application.run_launcher import RunLauncher
+from conector_odoo.application.scheduler import SyncScheduler
+from conector_odoo.application.sync_runner import SyncRunner
+from conector_odoo.application.sync_trigger import TriggerSyncJob
 from conector_odoo.config import Settings
-from conector_odoo.domain.ports import ConnectionProbe
+from conector_odoo.domain.ports import ConnectionProbe, MappingRepository
 from conector_odoo.domain.profiles import ProfileType
 from conector_odoo.infrastructure.auth.hasher import Argon2PasswordHasher
 from conector_odoo.infrastructure.auth.repository import (
@@ -32,12 +54,15 @@ from conector_odoo.infrastructure.auth.repository import (
     SqliteSessionStore,
 )
 from conector_odoo.infrastructure.endpoints import ProfileEndpoints
+from conector_odoo.infrastructure.mappings.repository import SqliteMappingRepository
 from conector_odoo.infrastructure.openapi.importer import OpenApiImporter
 from conector_odoo.infrastructure.profiles.odoo_probe import OdooConnectionProbe
 from conector_odoo.infrastructure.profiles.repository import SqliteConnectionProfileRepository
 from conector_odoo.infrastructure.profiles.rest_probe import RestConnectionProbe
 from conector_odoo.infrastructure.profiles.vault import FernetVault
 from conector_odoo.infrastructure.resources.repository import SqliteResourceCatalogRepository
+from conector_odoo.infrastructure.sync.jobs import SqliteSyncJobRepository
+from conector_odoo.infrastructure.sync.runs import SqliteSyncRunRepository, SqliteXRefRepository
 
 logger = logging.getLogger(__name__)
 
@@ -65,12 +90,44 @@ class ResourceServices:
 
 
 @dataclass(frozen=True)
+class MappingServices:
+    repo: MappingRepository
+    get: GetMapping
+    list: ListMappings
+    versions: ListMappingVersions
+    delete: DeleteMapping
+
+
+@dataclass(frozen=True)
+class JobServices:
+    create: CreateJob
+    update: UpdateJob
+    get: GetJob
+    list: ListJobs
+    delete: DeleteJob
+
+
+@dataclass(frozen=True)
+class RunServices:
+    list: ListRuns
+    get: GetRun
+    errors: ListRunErrors
+
+
+@dataclass(frozen=True)
 class AdminServices:
     auth: AuthService
     users: UserAdmin
     endpoints: ProfileEndpoints
     profiles: ProfileServices
     resources: ResourceServices
+    mappings: MappingServices
+    jobs: JobServices
+    runs: RunServices
+    runner: SyncRunner
+    launcher: RunLauncher
+    scheduler: SyncScheduler
+    dashboard: GetDashboard
 
 
 def _now() -> datetime:
@@ -100,6 +157,25 @@ def build_admin_services(settings: Settings, conn: sqlite3.Connection) -> AdminS
         ProfileType.REST: RestConnectionProbe(),
         ProfileType.ODOO: OdooConnectionProbe(),
     }
+    mapping_repo = SqliteMappingRepository(conn)
+    job_repo = SqliteSyncJobRepository(conn)
+    run_repo = SqliteSyncRunRepository(conn)
+    runner = SyncRunner(
+        job_repo,
+        run_repo,
+        SqliteXRefRepository(conn),
+        mapping_repo,
+        endpoints,
+        clock=_now,
+        sleep=asyncio.sleep,
+    )
+    scheduler = SyncScheduler(
+        job_repo,
+        TriggerSyncJob(runner),
+        clock=_now,
+        sleep=asyncio.sleep,
+        refresh_interval=settings.sync_scheduler_refresh_seconds,
+    )
     # The builders are looked up at call time so tests (and later customisation) can swap them.
     return AdminServices(
         auth=AuthService(users, sessions, SqliteLoginThrottle(conn), hasher, _now, config),
@@ -133,6 +209,29 @@ def build_admin_services(settings: Settings, conn: sqlite3.Connection) -> AdminS
                 lambda profile, secrets: endpoints.build_odoo(profile, secrets),
             ),
             importer=OpenApiImporter(),
+        ),
+        mappings=MappingServices(
+            repo=mapping_repo,
+            get=GetMapping(mapping_repo),
+            list=ListMappings(mapping_repo),
+            versions=ListMappingVersions(mapping_repo),
+            delete=DeleteMapping(mapping_repo),
+        ),
+        jobs=JobServices(
+            create=CreateJob(job_repo, mapping_repo),
+            update=UpdateJob(job_repo, mapping_repo),
+            get=GetJob(job_repo),
+            list=ListJobs(job_repo),
+            delete=DeleteJob(job_repo),
+        ),
+        runs=RunServices(
+            list=ListRuns(run_repo), get=GetRun(run_repo), errors=ListRunErrors(run_repo)
+        ),
+        runner=runner,
+        launcher=RunLauncher(runner),
+        scheduler=scheduler,
+        dashboard=GetDashboard(
+            profile_repo, mapping_repo, job_repo, run_repo, _now, scheduler.next_fire
         ),
     )
 
