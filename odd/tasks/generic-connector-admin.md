@@ -37,7 +37,7 @@ Backend
 Frontend
 - [x] F1 Vite/React/TS/Tailwind/shadcn scaffold, i18n (es), TanStack Query, static serving from FastAPI
 - [x] F2 Connections wizard
-- [ ] F3 Resources browser
+- [x] F3 Resources browser
 - [ ] F4 Mapping editor
 - [ ] F5 Jobs wizard
 - [ ] F6 Runs and detail
@@ -71,6 +71,7 @@ Delivery
 
 - F1: delegated direct (single writer; trigger: 2+ non-trivial files, ~70 files). TDD RED observed per stage: api client (vitest: failed to resolve `@/api/client`), i18n/auth/shell (3 suites failed to resolve missing modules), static serving (pytest: 9 of 17 failed before `mount_frontend` existed). Tooling scaffold commit and `cn` util test were written together (no separate RED).
 - F2: delegated direct (single writer; trigger: 2+ non-trivial files, ~35 files). TDD RED observed per stage: errors/hooks/list suites failed to resolve the missing `@/features/connections/*` modules, then wizard suite (same cause), then GREEN. Wizard implementation was green on the first run after the RED.
+- F3: delegated direct (single writer; trigger: 2+ non-trivial files, ~45 files). TDD RED observed: resources UI suites (list, preview) failed to resolve the missing `ResourcesPage`/`format` modules; import and Odoo explorer suites failed to resolve `ImportPage`/`OdooExplorer` (implementation moved away to confirm), then GREEN. The data layer (types, api, hooks, errors) was written just before its tests, and the editor/form suites were written before their implementation but their RED run was not executed separately.
 
 ## Commits
 - B1: 94fad86 feat(db): add versioned migrator and admin schema
@@ -108,7 +109,11 @@ Delivery
 - F1: (this commit) feat(api): serve the frontend build with an SPA fallback
 - F2: d29c7e3 feat(frontend): add connections data layer and list page
 - F2: 4369e4f feat(frontend): add connection wizard with draft test
-- F2: (this commit) docs(odd): record F2 progress
+- F2: 22a2897 docs(odd): record F2 progress
+- F3: 0291294 feat(frontend): add resources data layer, list page and live preview
+- F3: fb37160 feat(frontend): add REST resource editor with per-strategy pagination form
+- F3: 25ef02f feat(frontend): add OpenAPI import flow and Odoo model explorer
+- F3: (this commit) docs(odd): record F3 progress
 
 ## Progress / verification
 Baseline: 612 passed on branch start.
@@ -174,6 +179,8 @@ Static serving: `infrastructure/api/static_frontend.py`, setting FRONTEND_DIST_D
 Verification F1: see final report (frontend lint/typecheck/test/build green; backend pytest 1600 passed, ruff, mypy clean).
 F2: `src/features/connections/` (types, api, hooks, errors, form, FormField, TestResultView, ConnectionsPage, DeleteProfileDialog, ConnectionWizard, ConnectionWizardPage). Routes /connections, /connections/new, /connections/:id/edit (wizard redirects operators to the list). New primitives: table, badge, dialog (@radix-ui/react-dialog, role=alertdialog for confirms), select (native), steps. Validation is hand-written (no zod dependency added). Frontend tests 69 (was 33); lint/typecheck/build green; backend untouched (pytest/ruff/mypy not run).
 F2 contract notes for F3+: (1) 409 is code `conflict` for both ProfileNameTaken and ProfileInUse; the UI tells them apart by action (DELETE = in use, POST/PUT = name taken). (2) 422 detail is a flat string `body.field: msg; ...` (no structured issues for profiles); the UI parses `body.<field>:` prefixes into field errors and never shows the raw text. (3) There is no persisted last-test status on a profile: the list shows the outcome of tests run in the current page session only ("Sin probar" otherwise). (4) POST /profiles/test has no profile id, so on edit the draft test needs every credential retyped; with blank secrets the wizard offers "Probar la conexión guardada" (POST /profiles/{id}/test, tests the STORED version). A backend `POST /profiles/{id}/test` accepting a draft body that falls back to stored secrets would remove that limitation (not done). (5) Odoo profiles are sent with auth_method=api_key and secrets.api_key; there is no Odoo protocol field (JSON-RPC only). (6) PUT replaces extra_headers, so the wizard sends the stored ones unchanged (not editable yet). (7) Probe `detail`/`hint` are server English text, shown as is (already masked server-side); step names are translated via `connections.steps.*`. (8) Credential mutations use gcTime 0 and reset on unmount; typed secrets exist only in wizard component state.
+F3: `src/features/resources/` (types, api, hooks, errors, format, form, fixtures, ResourcesPage, PreviewPanel, DeleteResourceDialog, ResourceEditorPage, ResourceFormFields, ImportPage, OdooExplorer). Routes /resources (?profile=ID filter), /resources/new, /resources/:profileId/:name/edit, /resources/import. New primitives: textarea, checkbox, tabs (hand-written, ARIA tabs pattern). Frontend tests 152 (was 69); lint/typecheck/build green; backend untouched (pytest/ruff/mypy not run).
+F3 contract notes for F4+: (1) The resource catalog is REST-only (SaveResource refuses Odoo profiles with 422), so the Odoo flow is a read-only explorer (POST /discover + preview?limit=1 for the schema) and CANNOT "save as resource"; Odoo models are addressed by technical name (F4/F5 must offer them as a source/target alongside catalog resources, not read them from /resources). (2) PUT /resources/{name} is an upsert: it silently replaces an existing entry, so the UI checks the catalog listing on create and the import flow shows "Ya existe: se reemplazará". Rename is unsupported (name is the key); the editor locks name and connection. (3) Import yields one flat `warnings` list prefixed `<collection>: `; the UI counts per-candidate warnings by that prefix and shows the whole list in an "Advertencias" region plus an explicit "pagination must be set by hand" note. Candidates start unselected; bulk save is sequential PUTs (source=openapi), keeps what was saved on partial failure and never resends saved items. (4) Preview/discover are POSTs, so they are admin-only and the UI never fires them for operators; preview is a `useQuery` with gcTime 0 (re-run on demand). Record values are rendered as text only and cut at 80 characters (full value, bounded to 1000, in the title attribute). Remote failure text from the API (already masked server-side) is shown as plain text, clipped to 300 characters. (5) The editor preserves `schema_fields`, `filter_param_map`, `since_param`, get/create/update endpoints from the loaded config (a PUT replaces everything); schema fields are not editable. Client validation mirrors `validate_resource_config`; 422 `body.<field>:` locations map to form fields, domain 422 text is shown as detail. (6) No tooltip primitive was added (inline hints instead); the delete 409 is mapped, but the backend does not currently raise it for catalog entries (resources are not yet referenced by jobs).
 
 ## Next step
-F3 (next frontend task in the list above); reuse `features/connections` patterns (hooks with invalidation, `describe*Error`, FormField).
+F4 Mapping editor: reuse `features/resources` (SchemaTable, PreviewPanel, describeResourceError) for source/target schemas and samples; mapping routes are listed in the B10 route log.
