@@ -353,6 +353,49 @@ export const es = {
       notFound: "El recurso o la conexión ya no existe.",
     },
   },
+  mappings: {
+    new: "Nuevo mapeo",
+    empty:
+      "Todavía no hay mapeos. Crea uno para transformar los datos de un sistema en los de otro.",
+    emptyReadOnly: "Todavía no hay mapeos.",
+    columns: {
+      name: "Nombre",
+      version: "Versión",
+      source: "Origen",
+      target: "Destino",
+      rules: "Reglas",
+      created: "Guardado",
+      actions: "Acciones",
+    },
+    actions: {
+      edit: "Editar {{name}}",
+      view: "Ver {{name}}",
+      history: "Historial de {{name}}",
+      delete: "Eliminar {{name}}",
+    },
+    delete: {
+      title: "Eliminar mapeo",
+      body: "Se eliminará el mapeo «{{name}}» con todas sus versiones. Esta acción no se puede deshacer.",
+    },
+    versions: {
+      title: "Historial de {{name}}",
+      back: "Volver a los mapeos",
+      latest: "Última",
+      view: "Ver v{{version}}",
+      restore: "Restaurar v{{version}}",
+      definition: "Definición de la v{{version}}",
+      restored: "Se ha creado la versión {{version}} a partir de la versión restaurada.",
+      unchanged:
+        "La versión restaurada ya coincide con la versión {{version}}; no se ha creado una nueva.",
+    },
+    issues: { error: "Error", warning: "Aviso" },
+    errors: {
+      inUse: "El mapeo está en uso por alguna tarea y no se puede eliminar.",
+      conflict: "El mapeo está en conflicto con otro existente.",
+      validation: "El mapeo no es válido. Revisa los puntos indicados.",
+      notFound: "El mapeo ya no existe.",
+    },
+  },
   placeholder: { comingSoon: "Esta sección estará disponible próximamente." },
   errors: {
     notFoundTitle: "Página no encontrada",

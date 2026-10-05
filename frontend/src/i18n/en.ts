@@ -351,6 +351,48 @@ export const en: Translation = {
       notFound: "The resource or connection no longer exists.",
     },
   },
+  mappings: {
+    new: "New mapping",
+    empty: "There are no mappings yet. Create one to turn one system's data into another's.",
+    emptyReadOnly: "There are no mappings yet.",
+    columns: {
+      name: "Name",
+      version: "Version",
+      source: "Source",
+      target: "Target",
+      rules: "Rules",
+      created: "Saved",
+      actions: "Actions",
+    },
+    actions: {
+      edit: "Edit {{name}}",
+      view: "View {{name}}",
+      history: "History of {{name}}",
+      delete: "Delete {{name}}",
+    },
+    delete: {
+      title: "Delete mapping",
+      body: 'The mapping "{{name}}" and all its versions will be deleted. This cannot be undone.',
+    },
+    versions: {
+      title: "History of {{name}}",
+      back: "Back to mappings",
+      latest: "Latest",
+      view: "View v{{version}}",
+      restore: "Restore v{{version}}",
+      definition: "Definition of v{{version}}",
+      restored: "Version {{version}} was created from the restored version.",
+      unchanged:
+        "The restored version already matches version {{version}}; no new version was created.",
+    },
+    issues: { error: "Error", warning: "Warning" },
+    errors: {
+      inUse: "The mapping is used by a job and cannot be deleted.",
+      conflict: "The mapping conflicts with an existing one.",
+      validation: "The mapping is not valid. Review the listed points.",
+      notFound: "The mapping no longer exists.",
+    },
+  },
   placeholder: { comingSoon: "This section will be available soon." },
   errors: {
     notFoundTitle: "Page not found",

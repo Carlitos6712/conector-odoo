@@ -7,6 +7,8 @@ import { RequireAuth } from "@/auth/RequireAuth";
 import { AppLayout } from "@/components/AppLayout";
 import { ConnectionWizardPage } from "@/features/connections/ConnectionWizardPage";
 import { ConnectionsPage } from "@/features/connections/ConnectionsPage";
+import { MappingVersionsPage } from "@/features/mappings/MappingVersionsPage";
+import { MappingsPage } from "@/features/mappings/MappingsPage";
 import { ImportPage } from "@/features/resources/ImportPage";
 import { ResourceEditorPage } from "@/features/resources/ResourceEditorPage";
 import { ResourcesPage } from "@/features/resources/ResourcesPage";
@@ -36,15 +38,17 @@ export function App() {
           <Route path="/resources/import" element={<ImportPage />} />
           <Route path="/resources/new" element={<ResourceEditorPage />} />
           <Route path="/resources/:profileId/:name/edit" element={<ResourceEditorPage />} />
-          {NAV_ITEMS.filter((item) => !["connections", "resources"].includes(item.key)).map(
-            (item) => (
-              <Route
-                key={item.key}
-                path={item.path}
-                element={<PlaceholderPage section={item.key} />}
-              />
-            ),
-          )}
+          <Route path="/mappings" element={<MappingsPage />} />
+          <Route path="/mappings/:name/versions" element={<MappingVersionsPage />} />
+          {NAV_ITEMS.filter(
+            (item) => !["connections", "resources", "mappings"].includes(item.key),
+          ).map((item) => (
+            <Route
+              key={item.key}
+              path={item.path}
+              element={<PlaceholderPage section={item.key} />}
+            />
+          ))}
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Route>
