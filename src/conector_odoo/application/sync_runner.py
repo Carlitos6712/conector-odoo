@@ -27,7 +27,7 @@ Time (``clock``) and waiting (``sleep``) are injected so the runner is determini
 
 import hashlib
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -39,7 +39,9 @@ from conector_odoo.domain.errors import (
     RemoteAuthError,
     RemoteUnavailable,
     ResourceNotFound,
+    RunNotResumable,
     SyncJobNotFound,
+    SyncRunNotFound,
 )
 from conector_odoo.domain.mapping import MappingDefinition
 from conector_odoo.domain.mapping_engine import apply_mapping
@@ -80,6 +82,10 @@ class _Abort(Exception):
     """Stops the run with status ``failed``; the message is stored in ``run.error``."""
 
 
+class _Cancelled(Exception):
+    """A cancellation was requested; checked between batches."""
+
+
 @dataclass(frozen=True, slots=True)
 class _Pass:
     name: str
@@ -102,6 +108,7 @@ class _State:
     errors: list[RunErrorData] = field(default_factory=list)
     error_total: int = 0
     sample: list[dict[str, Any]] = field(default_factory=list)
+    resolved: dict[str, list[str]] = field(default_factory=dict)  # side -> refs processed ok
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +117,7 @@ class _Ctx:
     run: SyncRun
     passes: tuple[_Pass, ...]
     state: _State
+    only: dict[str, list[str]] | None  # pass name -> source ids; None = every record
 
 
 def content_hash(fields: dict[str, Any]) -> str:
@@ -145,21 +153,113 @@ class SyncRunner:
         *,
         trigger: TriggerKind = TriggerKind.MANUAL,
         dry_run: bool = False,
+        only_records: list[str] | None = None,
     ) -> SyncRun:
-        """Run the job once. Raises ``SyncJobNotFound`` or ``JobAlreadyRunning``; every other
-        failure ends the run with status ``failed`` instead of raising."""
+        """Run the job once. ``only_records`` limits the first pass to those source ids.
+
+        Raises ``SyncJobNotFound`` or ``JobAlreadyRunning``; every other failure ends the run
+        with status ``failed`` instead of raising (an unexpected bug is re-raised after the run
+        was marked failed)."""
+        job = await self._job(job_id)
+        options: dict[str, Any] = {}
+        if only_records is not None:
+            options["only"] = {"forward": list(only_records)}
+        return await self._drive(job, await self._start(job_id, trigger, dry_run, None, options))
+
+    async def resume(self, run_id: int) -> SyncRun:
+        """Continue an interrupted run from its checkpoint, keeping its counters.
+
+        Resumable: a ``running`` run that stopped heartbeating (crashed process), a ``cancelled``
+        or a ``failed`` run. Raises ``SyncRunNotFound``, ``RunNotResumable`` (finished or still
+        alive) or ``JobAlreadyRunning``."""
+        run = await self._require_run(run_id)
+        if run.status in (RunStatus.SUCCEEDED, RunStatus.PARTIAL):
+            raise RunNotResumable(f"run {run_id} already finished ({run.status.value})")
+        if run.status.is_active and not self._is_stale(run, self._clock()):
+            raise RunNotResumable(f"run {run_id} is still active")
+        job = await self._job(run.job_id)
+        now = self._clock()
+        reopened = await self._runs.reopen(
+            run_id, heartbeat_at=now, stale_before=now - self._config.stale_after
+        )
+        return await self._drive(job, reopened)
+
+    async def retry_failed(self, run_id: int) -> SyncRun:
+        """Reprocess, in a new run linked to ``run_id``, only the records that failed there.
+
+        Each failed source record is re-read with ``get`` (no full scan). The errors of the
+        original run whose record now succeeds are marked ``retried``. Conflicts are not retried.
+        Raises ``SyncRunNotFound`` or ``RunNotResumable`` (nothing to retry)."""
+        original = await self._require_run(run_id)
+        only = await self._failed_refs(run_id)
+        if not only:
+            raise RunNotResumable(f"run {run_id} has no failed records to retry")
+        job = await self._job(original.job_id)
+        options = {"only": only, "retry_of": run_id}
+        run = await self._start(job.id or 0, TriggerKind.MANUAL, False, run_id, options)
+        return await self._drive(job, run)
+
+    async def cancel(self, run_id: int) -> bool:
+        """Ask an active run to stop at the next batch boundary. ``False`` when it is not active.
+
+        A run that stopped heartbeating (crashed) cannot honour the request, so it is closed
+        right away."""
+        flagged = await self._runs.request_cancel(run_id)
+        if flagged:
+            run = await self._require_run(run_id)
+            if self._is_stale(run, self._clock()):
+                await self._runs.finish(
+                    run_id, RunStatus.CANCELLED, self._clock(), run.counters, sample=run.sample
+                )
+        return flagged
+
+    async def _job(self, job_id: int) -> SyncJob:
         job = await self._jobs.get(job_id)
         if job is None:
             raise SyncJobNotFound(f"sync job {job_id} not found")
+        return job
+
+    async def _require_run(self, run_id: int) -> SyncRun:
+        run = await self._runs.get(run_id)
+        if run is None:
+            raise SyncRunNotFound(f"sync run {run_id} not found")
+        return run
+
+    async def _start(
+        self,
+        job_id: int,
+        trigger: TriggerKind,
+        dry_run: bool,
+        parent_run_id: int | None,
+        options: dict[str, Any],
+    ) -> SyncRun:
         now = self._clock()
-        run = await self._runs.create(
+        return await self._runs.create(
             job_id,
             trigger.value,
             dry_run=dry_run,
             started_at=now,
             stale_before=now - self._config.stale_after,
+            parent_run_id=parent_run_id,
+            options=options,
         )
-        return await self._drive(job, run)
+
+    def _is_stale(self, run: SyncRun, now: datetime) -> bool:
+        return (run.heartbeat_at or run.started_at) < now - self._config.stale_after
+
+    async def _failed_refs(self, run_id: int) -> dict[str, list[str]]:
+        """Unretried, non-conflict failed source ids of a run, grouped by pass name."""
+        only: dict[str, list[str]] = {}
+        offset, page_size = 0, 500
+        while page := await self._runs.list_errors(run_id, page_size, offset, only_unretried=True):
+            for error in page:
+                if error.record_ref is None or error.kind is ErrorKind.CONFLICT:
+                    continue
+                refs = only.setdefault("forward" if error.side is Side.SOURCE else "reverse", [])
+                if error.record_ref not in refs:
+                    refs.append(error.record_ref)
+            offset += page_size
+        return only
 
     # -- orchestration ---------------------------------------------------------------------
 
@@ -167,10 +267,14 @@ class SyncRunner:
         state = _State(counters=run.counters, checkpoint=dict(run.checkpoint))
         status, error = RunStatus.SUCCEEDED, None
         try:
-            ctx = _Ctx(job, run, await self._build_passes(job), state)
+            only: dict[str, list[str]] | None = run.options.get("only")
+            passes = [p for p in await self._build_passes(job) if only is None or p.name in only]
+            ctx = _Ctx(job, run, tuple(passes), state, only)
             for pass_ in ctx.passes:
                 await self._run_pass(ctx, pass_)
             status = self._final_status(state)
+        except _Cancelled:
+            status = RunStatus.CANCELLED
         except _Abort as abort:
             status, error = RunStatus.FAILED, str(abort)
         except RemoteAuthError:
@@ -179,6 +283,11 @@ class SyncRunner:
             status, error = RunStatus.FAILED, f"remote system unavailable: {exc}"
         except (ResourceNotFound, MappingNotFound) as exc:
             status, error = RunStatus.FAILED, f"configuration error: {exc}"
+        except Exception as exc:
+            await self._finalize(
+                run, state, RunStatus.FAILED, f"internal error: {type(exc).__name__}"
+            )
+            raise
         await self._finalize(run, state, status, error)
         finished = await self._runs.get(run.id)
         assert finished is not None
@@ -219,6 +328,10 @@ class SyncRunner:
         self, run: SyncRun, state: _State, status: RunStatus, error: str | None
     ) -> None:
         await self._flush_errors(run, state)
+        retry_of = run.options.get("retry_of")
+        if retry_of is not None:
+            for side, refs in state.resolved.items():
+                await self._runs.mark_errors_retried(retry_of, side, refs)
         await self._runs.finish(
             run.id,
             status,
@@ -237,19 +350,72 @@ class SyncRunner:
 
     async def _run_pass(self, ctx: _Ctx, pass_: _Pass) -> None:
         state = ctx.state
-        stream = pass_.src.iter_batches(
-            pass_.src_resource, ctx.job.record_filter, ctx.job.batch_size
-        )
-        async for batch in stream:
-            for record in batch:
-                await self._process(ctx, pass_, record)
+        names = [p.name for p in ctx.passes]
+        checkpoint = state.checkpoint
+        skip_until: str | None = None
+        resumed_pass = checkpoint.get("pass")
+        if resumed_pass in names:
+            if names.index(pass_.name) < names.index(resumed_pass):
+                return  # finished in the interrupted run
+            if pass_.name == resumed_pass:
+                if checkpoint.get("done"):
+                    return
+                skip_until = checkpoint.get("last_id")
+        while True:
+            seen = skip_until is None
+            async for batch in self._batches(ctx, pass_):
+                if not seen:
+                    ids = [record.id for record in batch]
+                    if skip_until not in ids:
+                        continue
+                    batch = batch[ids.index(skip_until) + 1 :]
+                    seen = True
+                await self._run_batch(ctx, pass_, batch)
+            if seen:
+                break
+            skip_until = None  # the checkpoint record is gone: replay; xref hashes keep it safe
+        state.checkpoint = {**state.checkpoint, "pass": pass_.name, "done": True}
+        await self._runs.save_progress(ctx.run.id, state.counters, state.checkpoint, self._clock())
+
+    async def _run_batch(self, ctx: _Ctx, pass_: _Pass, batch: list[Record]) -> None:
+        state = ctx.state
+        for record in batch:
+            await self._process(ctx, pass_, record)
+        if batch:
             state.checkpoint = {"pass": pass_.name, "last_id": batch[-1].id}
-            await self._flush_errors(ctx.run, state)
-            await self._runs.save_progress(
-                ctx.run.id, state.counters, state.checkpoint, self._clock()
-            )
-            if self._config.batch_pause > 0:
-                await self._sleep(self._config.batch_pause)
+        await self._flush_errors(ctx.run, state)
+        await self._runs.save_progress(ctx.run.id, state.counters, state.checkpoint, self._clock())
+        if self._config.batch_pause > 0:
+            await self._sleep(self._config.batch_pause)
+        if await self._runs.is_cancel_requested(ctx.run.id):
+            raise _Cancelled
+
+    async def _batches(self, ctx: _Ctx, pass_: _Pass) -> AsyncIterator[list[Record]]:
+        size = ctx.job.batch_size
+        ids = None if ctx.only is None else ctx.only[pass_.name]
+        if ids is None:
+            async for batch in pass_.src.iter_batches(
+                pass_.src_resource, ctx.job.record_filter, size
+            ):
+                yield batch
+            return
+        for start in range(0, len(ids), size):
+            batch = []
+            for record_id in ids[start : start + size]:
+                record = await pass_.src.get(pass_.src_resource, record_id)
+                if record is None:
+                    self._fail(
+                        ctx,
+                        pass_,
+                        record_id,
+                        "record no longer exists at the source",
+                        ErrorKind.NOT_FOUND,
+                        retryable=False,
+                        payload={},
+                    )
+                else:
+                    batch.append(record)
+            yield batch
 
     async def _process(self, ctx: _Ctx, pass_: _Pass, record: Record) -> None:
         ref = record.id or ""
@@ -268,6 +434,7 @@ class SyncRunner:
             return
         try:
             await self._sync_record(ctx, pass_, record, mapped.fields)
+            ctx.state.resolved.setdefault(pass_.src_side.value, []).append(ref)
         except RecordRejected as exc:
             self._fail(
                 ctx,
