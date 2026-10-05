@@ -14,6 +14,7 @@ from conector_odoo.domain.entities import (
     SaleOrderData,
 )
 from conector_odoo.domain.events import OdooEvent
+from conector_odoo.domain.mapping import MappingDefinition, StoredMapping
 from conector_odoo.domain.profiles import (
     ConnectionProfile,
     ProbeStep,
@@ -216,4 +217,35 @@ class ResourceCatalogRepository(Protocol):
 
     async def delete(self, profile_id: int, name: str) -> None:
         """Raises ``CatalogResourceNotFound``."""
+        ...
+
+
+class MappingRepository(Protocol):
+    """Versioned storage of mapping definitions (versions are numbered per name from 1)."""
+
+    async def save_new_version(self, definition: MappingDefinition) -> StoredMapping:
+        """Store ``definition`` as the next version of its name.
+
+        A definition identical to the latest version returns that version unchanged.
+        """
+        ...
+
+    async def get(self, name: str, version: int | None = None) -> StoredMapping | None:
+        """The given version, or the latest when ``version`` is ``None``.
+
+        Raises ``MappingInvalid`` when the stored JSON is unknown or corrupt.
+        """
+        ...
+
+    async def list_latest(self) -> list[StoredMapping]:
+        """The latest version of every mapping, ordered by name."""
+        ...
+
+    async def list_versions(self, name: str) -> list[StoredMapping]:
+        """Every version of ``name``, oldest first (empty when the name is unknown)."""
+        ...
+
+    async def delete(self, name: str) -> None:
+        """Delete every version. Raises ``MappingNotFound`` or ``MappingInUse`` (some version is
+        referenced by a sync job)."""
         ...
