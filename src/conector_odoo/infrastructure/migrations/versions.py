@@ -125,8 +125,42 @@ _RESOURCE_CATALOG = (
     "ALTER TABLE resources ADD COLUMN updated_at TEXT",
 )
 
+# Sync engine: jobs name their resources and mapping versions (``mapping_id`` keeps pointing at one
+# stored version so deleting a referenced mapping stays refused); runs gain conflicts, a resumable
+# checkpoint, a heartbeat for crash detection, a parent link for retries and a bounded dry-run
+# sample; run errors say which side/kind failed; xref keeps the content hashes of both sides.
+_SYNC_ENGINE = (
+    "ALTER TABLE sync_jobs ADD COLUMN source_resource TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE sync_jobs ADD COLUMN target_resource TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE sync_jobs ADD COLUMN mapping_name TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE sync_jobs ADD COLUMN mapping_version INTEGER",
+    "ALTER TABLE sync_jobs ADD COLUMN reverse_mapping_id INTEGER REFERENCES mappings(id)",
+    "ALTER TABLE sync_jobs ADD COLUMN reverse_mapping_name TEXT",
+    "ALTER TABLE sync_jobs ADD COLUMN reverse_mapping_version INTEGER",
+    "ALTER TABLE sync_jobs ADD COLUMN source_updated_field TEXT",
+    "ALTER TABLE sync_jobs ADD COLUMN target_updated_field TEXT",
+    "CREATE UNIQUE INDEX idx_sync_jobs_name ON sync_jobs(name)",
+    "CREATE INDEX idx_sync_jobs_reverse_mapping ON sync_jobs(reverse_mapping_id)",
+    "ALTER TABLE sync_runs ADD COLUMN conflicts INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE sync_runs ADD COLUMN checkpoint_json TEXT NOT NULL DEFAULT '{}'",
+    "ALTER TABLE sync_runs ADD COLUMN heartbeat_at TEXT",
+    "ALTER TABLE sync_runs ADD COLUMN parent_run_id INTEGER REFERENCES sync_runs(id)",
+    "ALTER TABLE sync_runs ADD COLUMN options_json TEXT NOT NULL DEFAULT '{}'",
+    "ALTER TABLE sync_runs ADD COLUMN error TEXT",
+    "ALTER TABLE sync_runs ADD COLUMN sample_json TEXT NOT NULL DEFAULT '[]'",
+    "ALTER TABLE sync_runs ADD COLUMN cancel_requested INTEGER NOT NULL DEFAULT 0",
+    "CREATE INDEX idx_sync_runs_status ON sync_runs(status)",
+    "ALTER TABLE run_errors ADD COLUMN side TEXT NOT NULL DEFAULT 'source'",
+    "ALTER TABLE run_errors ADD COLUMN kind TEXT NOT NULL DEFAULT 'other'",
+    "ALTER TABLE run_errors ADD COLUMN retryable INTEGER NOT NULL DEFAULT 1",
+    "ALTER TABLE xref ADD COLUMN content_hash TEXT",
+    "ALTER TABLE xref ADD COLUMN reverse_hash TEXT",
+    "CREATE INDEX idx_xref_target ON xref(job_id, resource, target_id)",
+)
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "initial_admin_schema", _INITIAL_SCHEMA),
     Migration(2, "connection_profile_options", _PROFILE_OPTIONS),
     Migration(3, "resource_catalog", _RESOURCE_CATALOG),
+    Migration(4, "sync_engine", _SYNC_ENGINE),
 )
