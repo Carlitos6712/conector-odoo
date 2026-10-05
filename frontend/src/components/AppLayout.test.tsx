@@ -49,10 +49,10 @@ describe("AppLayout navigation", () => {
     expect(screen.queryByText(/solo lectura/i)).not.toBeInTheDocument();
   });
 
-  it("hides admin-only sections and announces read-only mode to an operator", async () => {
+  it("keeps Ajustes for operators (account and preferences) and announces read-only mode", async () => {
     await renderAs("operator");
     const nav = screen.getByRole("navigation", { name: "Navegación principal" });
-    expect(within(nav).queryByRole("link", { name: "Ajustes" })).not.toBeInTheDocument();
+    expect(within(nav).getByRole("link", { name: "Ajustes" })).toBeInTheDocument();
     expect(within(nav).getByRole("link", { name: "Conexiones" })).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent(/solo lectura/i);
     expect(screen.getByText("Operador")).toBeInTheDocument();
