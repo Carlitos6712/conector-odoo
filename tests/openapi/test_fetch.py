@@ -97,3 +97,61 @@ async def test_url_import_passes_base_path() -> None:
     report = await OpenApiImporter().import_url(URL, base_path="/api")
     assert report.candidates[0].list_endpoint is not None
     assert report.candidates[0].list_endpoint.path == "/things"
+
+
+# -- redirects: followed by hand, one hop at a time, never off the original host -----------------
+
+
+@respx.mock
+async def test_a_redirect_on_the_same_host_is_followed() -> None:
+    respx.get(URL).respond(302, headers={"location": "/v2/openapi.json"})
+    final = respx.get("https://api.example.com/v2/openapi.json").respond(200, json=SPEC)
+    report = await OpenApiImporter().import_url(URL)
+    assert [c.name for c in report.candidates] == ["things"] and final.called
+
+
+@respx.mock
+async def test_a_redirect_to_another_host_is_refused_without_contacting_it() -> None:
+    respx.get(URL).respond(302, headers={"location": "http://169.254.169.254/latest/meta-data"})
+    internal = respx.get("http://169.254.169.254/latest/meta-data").respond(200, json=SPEC)
+    with pytest.raises(OpenApiImportError, match="redirect"):
+        await OpenApiImporter().import_url(URL)
+    assert not internal.called
+
+
+@respx.mock
+async def test_headers_never_follow_a_redirect_off_the_host() -> None:
+    respx.get(URL).respond(301, headers={"location": "https://evil.example.net/spec.json"})
+    elsewhere = respx.get("https://evil.example.net/spec.json").respond(200, json=SPEC)
+    with pytest.raises(OpenApiImportError, match="redirect"):
+        await OpenApiImporter().import_url(URL, headers={"Authorization": "Bearer secret"})
+    assert not elsewhere.called
+
+
+@respx.mock
+async def test_an_https_to_http_downgrade_is_refused() -> None:
+    respx.get(URL).respond(302, headers={"location": "http://api.example.com/openapi.json"})
+    plain = respx.get("http://api.example.com/openapi.json").respond(200, json=SPEC)
+    with pytest.raises(OpenApiImportError, match="redirect"):
+        await OpenApiImporter().import_url(URL)
+    assert not plain.called
+
+
+@respx.mock
+async def test_an_http_to_https_upgrade_on_the_same_host_is_allowed() -> None:
+    respx.get("http://api.example.com/openapi.json").respond(
+        301, headers={"location": "https://api.example.com/openapi.json"}
+    )
+    respx.get(URL).respond(200, json=SPEC)
+    report = await OpenApiImporter().import_url("http://api.example.com/openapi.json")
+    assert report.candidates
+
+
+@respx.mock
+async def test_redirect_loops_and_missing_locations_are_import_errors() -> None:
+    respx.get(URL).respond(302, headers={"location": URL})
+    with pytest.raises(OpenApiImportError, match="redirect"):
+        await OpenApiImporter().import_url(URL)
+    respx.get(URL).respond(302)
+    with pytest.raises(OpenApiImportError, match="redirect"):
+        await OpenApiImporter().import_url(URL)
