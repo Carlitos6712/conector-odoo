@@ -275,3 +275,18 @@ async def test_progress_is_checkpointed_after_each_batch() -> None:
     assert [c["last_id"] for c in seen] == ["2", "4", "5"]
     assert world.sleeps == [0.5, 0.5, 0.5]
     assert run.checkpoint["last_id"] == "5"
+
+
+async def test_target_record_deleted_remotely_is_recreated() -> None:
+    world = build_world()
+    seed(world, 2)
+    job = await world.add_job()
+    assert job.id is not None
+    await world.runner.run(job.id)
+    del world.rest.records["clients"]["1"]
+    await world.odoo.update("customers", "1", {"name": "Back"})
+    run = await world.runner.run(job.id)
+    assert run.counters == RunCounters(created=1, skipped=1)
+    xref = await world.xrefs.get_target(job.id, "customers", "1")
+    assert xref is not None and xref.target_id != "1"
+    assert world.rest.records["clients"][xref.target_id].get("full_name") == "Back"
