@@ -33,7 +33,7 @@ Backend
 - [x] B7 Mapping engine (direct, constant, trim, case, date, cents, lookup, concat), versioned JSON, dry-run
 - [x] B8 Sync runner (upsert key, xref, idempotent, resumable, per-record errors, retry-failed, conflict rule)
 - [x] B9 Triggers: manual, cron scheduler, webhook trigger
-- [ ] B10 /admin/api + admin login + roles
+- [x] B10 /admin/api + admin login + roles
 Frontend
 - [ ] F1 Vite/React/TS/Tailwind/shadcn scaffold, i18n (es), TanStack Query, static serving from FastAPI
 - [ ] F2 Connections wizard
@@ -67,6 +67,7 @@ Delivery
 - B8: delegated direct (single writer; trigger: 2+ non-trivial files, ~22 files). TDD RED observed per stage (collection ImportError SyncJobInvalid; ModuleNotFoundError application.sync_runner; 13 failures for resume/retry/cancel; 14 failures for bidirectional), then GREEN. Migration-4 test written alongside the migration (no separate RED).
 
 - B9: delegated direct (single writer). TDD RED observed per stage (ModuleNotFoundError application.sync_trigger; domain.cron; application.scheduler; application.webhook_triggers; config attribute missing), then GREEN.
+- B10: delegated direct (single writer; trigger: 2+ non-trivial files, ~90 files). TDD RED observed per stage (collection ModuleNotFoundError application.auth; 11 failed/10 errors on the missing /admin/api routes; 23 failed profile/resource route tests; 19 failed mapping/job/run route tests; 3 failed wiring tests; hardening: 6 redirect tests, huge-exponent int() hang, resources list_with_problems missing), then GREEN.
 
 ## Commits
 - B1: 94fad86 feat(db): add versioned migrator and admin schema
@@ -88,7 +89,17 @@ Delivery
 - B8: cd76ee4 feat(sync): add bidirectional sync with echo prevention and conflict rules
 - B9: ac094ae feat(sync): add TriggerSyncJob use case with typed already-running/not-found results
 - B9: 938d584 feat(sync): add in-process cron scheduler with stdlib cron evaluator
-- B9: (see git log) feat(sync): add webhook trigger handler
+- B9: d8146e5 feat(sync): add webhook trigger handler for sync jobs
+- B10: 8272da2 feat(auth): add admin sessions, argon2 password hashing, login lockout and user management
+- B10: 86795ea feat(admin-api): add /admin/api login, session cookie, CSRF, roles and user management
+- B10: 4e11ed3 feat(admin-api): add profile and resource routes with write-only secrets
+- B10: 081f704 feat(sync): split runs into start/execute and add background RunLauncher, job and dashboard use cases
+- B10: 1ae2a40 feat(admin-api): add mapping, job, run and dashboard routes
+- B10: fa0e203 feat(admin-api): wire sync runner, webhook triggers and scheduler into the lifespan
+- B10: 57ccd1a fix(db): close the admin connection only after worker-thread statements finish
+- B10: b567b5a fix(openapi): follow redirects by hand and never leave the requested host
+- B10: 76796da fix(mapping): reject numbers whose exponent cannot be materialised
+- B10: d7b67ab fix(resources): skip and report a corrupt catalog row instead of failing the whole list
 
 ## Progress / verification
 Baseline: 612 passed on branch start.
@@ -130,5 +141,23 @@ Notes for B9/B10: runner takes injected EndpointFactory (profile id -> RecordEnd
 B9: 1331 passed; ruff check/format clean; mypy src clean. TriggerSyncJob (typed COMPLETED/ALREADY_RUNNING/NOT_FOUND; runner is async so no thread). domain/cron.py: stdlib evaluator (croniter NOT added: only 5-field numeric cron is accepted by validate_cron, ~60 lines, UTC; dom/dow OR rule). SyncScheduler: next fire recomputed from now (missed ticks collapse, no catch-up on restart), per-job task, overlap skip, refresh() + periodic reload, stop() cancels loop and in-flight runs (left stale-resumable). WebhookTrigger already stored event_types, so no migration: HandleWebhookTrigger is a bus handler (HMAC/dedupe intake untouched); passes only_records=[record_id] when event.model == job.source.resource and direction != B_TO_A (runner `only` is keyed by forward pass). Settings: SYNC_SCHEDULER_ENABLED, SYNC_SCHEDULER_REFRESH_SECONDS.
 B9 NOT wired: no profile-id -> endpoint factory/vault assembly exists in the Container yet. B10 must build SyncRunner in the lifespan (close endpoints on failure), then `register_webhook_triggers(container.event_bus, handler)` and, if settings.sync_scheduler_enabled, `scheduler.start()` / `await scheduler.stop()` before closing resources; call scheduler.refresh() after job create/update.
 
+B10: 1583 passed (baseline 1331); ruff check/format clean; mypy src clean. Full suite run 5 times in a row without a crash after 57ccd1a.
+Auth: argon2id (argon2-cffi, cost via ADMIN_ARGON2_*), server-side sessions in migration 5 (only the SHA-256 of the cookie token is stored; absolute TTL 12 h + idle 2 h; new token on every login destroys the previous one; password/role change or user delete revokes the user's sessions), per-username lockout (5 failures -> 15 min, 429 + Retry-After; unknown usernames are throttled and verify against a dummy hash, so message, status and timing match), CSRF = per-session token echoed in `X-CSRF-Token` (returned by login and /auth/me), cookie `admin_session` HttpOnly, SameSite=Lax (ADMIN_COOKIE_SAMESITE), Secure by default (ADMIN_COOKIE_SECURE=false for plain-HTTP dev), Path=/admin/api, `Cache-Control: no-store`. First admin from ADMIN_BOOTSTRAP_USER/ADMIN_BOOTSTRAP_PASSWORD only when no user exists (both or neither; min 12 chars; no default account). Not done: per-IP throttling (lockout is per username only), self-service password change for operators (an admin resets it with PATCH /users/{id}).
+Roles: one router-level dependency (`authorize`) guards everything under /admin/api except login/logout: any signed-in user may call GET/HEAD/OPTIONS, every other method needs `admin` + a valid CSRF token; `require_admin` additionally hides /users from operators. New routers MUST be included into `protected` in admin_api/router.py (deny by default); tests/admin_api/test_roles.py enumerates the OpenAPI route table and fails when a route answers an anonymous caller, lets an operator mutate, or skips CSRF. Decision: anything that contacts a remote system with stored credentials (test-connection, preview, discover, OpenAPI import, dry-run, suggest) is a POST, so operators (GET only) cannot trigger it.
+Wiring: SyncRunner gained start/execute/prepare_resume/prepare_retry (run()/resume()/retry_failed() unchanged); RunLauncher (application) registers the run inline (404/409 raised to the caller) and drives it in a tracked asyncio task, `aclose()` cancels in-flight runs (left stale = resumable). ProfileEndpoints (infrastructure/endpoints.py) is both the runner's EndpointFactory (cached per profile, keyed by updated_at; vault errors -> RemoteUnavailable) and the builder for previews. Lifespan now uses an AsyncExitStack: container, admin db (closed under the connection lock), admin services (launcher + endpoints), purge task, scheduler stop; a failing startup step releases everything. Webhook trigger registered on the event bus; scheduler started when SYNC_SCHEDULER_ENABLED.
+Crash found and fixed (57ccd1a): the scheduler's refresh runs `asyncio.to_thread(sqlite ...)`; cancelling the await at shutdown leaves the thread running, and `admin_db.close()` under it segfaulted the interpreter intermittently (seen in the full suite). close_admin_database now takes the per-connection lock. NOTE: profiles/resources/mappings repositories still use their own private locks, not `connection_lock`; harmless today (serialized sqlite build) but worth unifying.
+Hardening folded in: openapi fetch follows redirects by hand (same host only, no https->http, max 3 hops; the first URL stays the admin's choice so localhost fakes keep working); resource catalog list skips and reports corrupt rows (`invalid` in the API); mapping engine rejects |exponent| > 308 (int() of 1e999999999 hung); autocommit invariant documented in open_admin_database and the mapping repository and covered by a test. Not folded in (out of the B10 list): migrations/versions.py updated_at NULL on migrated rows.
+Route log (all under /admin/api; `*` = admin only even for GET):
+ auth: POST /auth/login, POST /auth/logout, GET /auth/me
+ users*: GET/POST /users, PATCH/DELETE /users/{id}
+ profiles: GET/POST /profiles, POST /profiles/test (draft), GET/PUT/DELETE /profiles/{id}, POST /profiles/{id}/test
+ resources: GET /profiles/{id}/resources, GET/PUT/DELETE /profiles/{id}/resources/{name}, POST .../{name}/preview, POST /profiles/{id}/resources/import, POST /profiles/{id}/discover
+ mappings: GET /mappings, GET /mappings/{name}[?version], GET /mappings/{name}/versions, PUT /mappings/{name}, DELETE /mappings/{name}, POST /mappings/dry-run, POST /mappings/suggest
+ jobs: GET/POST /jobs, GET/PUT/DELETE /jobs/{id}, POST /jobs/{id}/runs (202 + run)
+ runs: GET /runs, GET /runs/{id}, GET /runs/{id}/errors, POST /runs/{id}/cancel|resume|retry-failed (202 for resume/retry)
+ dashboard: GET /dashboard
+Error envelope `{error, detail}` everywhere (422 mapping/validation adds `issues`, 429 adds Retry-After); unexpected errors -> 500 `internal_error` with no detail. ~7000 lines over 10 commits (about 3500 src, 3500 tests), over the 400 heuristic: auth, guard, four route groups, wiring and four hardening fixes are separate coherent units.
+Notes for F1+: static serving still missing (no route outside /admin/api, /webhooks, data API). Frontend gets `csrf_token` from login or /auth/me and must send it as X-CSRF-Token on every non-GET; mapping/resource bodies follow domain codecs (mapping JSON in domain/mapping_codec.py; resource config models in admin_api/schemas/resources.py, OpenAPI at /openapi.json).
+
 ## Next step
-B10 /admin/api + admin login + roles (also wires SyncRunner, scheduler and webhook triggers into the Container/lifespan).
+F1 Vite/React/TS/Tailwind/shadcn scaffold, i18n (es), TanStack Query, static serving from FastAPI (consumes /admin/api).
