@@ -117,7 +117,16 @@ _PROFILE_OPTIONS = (
     "ALTER TABLE connection_profiles ADD COLUMN options_json TEXT NOT NULL DEFAULT '{}'",
 )
 
+# Resource catalog: where an entry came from (manual or an OpenAPI import) and when it last changed.
+# The configuration itself stays in ``config_json`` so new options need no schema change.
+_RESOURCE_CATALOG = (
+    "ALTER TABLE resources ADD COLUMN source TEXT NOT NULL DEFAULT 'manual' "
+    "CHECK (source IN ('manual', 'openapi'))",
+    "ALTER TABLE resources ADD COLUMN updated_at TEXT",
+)
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "initial_admin_schema", _INITIAL_SCHEMA),
     Migration(2, "connection_profile_options", _PROFILE_OPTIONS),
+    Migration(3, "resource_catalog", _RESOURCE_CATALOG),
 )

@@ -21,7 +21,7 @@ from conector_odoo.domain.profiles import (
     StoredProfile,
 )
 from conector_odoo.domain.records import Record, RecordFilter, ResourceSchema
-from conector_odoo.domain.resources import ResourceConfig
+from conector_odoo.domain.resources import ResourceConfig, ResourceSource, StoredResource
 
 EventHandler = Callable[[OdooEvent], Awaitable[None]]
 
@@ -196,4 +196,24 @@ class ResourceConfigProvider(Protocol):
 
     async def get(self, resource: str) -> ResourceConfig:
         """Raises ``ResourceNotFound`` when the resource is not configured."""
+        ...
+
+
+class ResourceCatalogRepository(Protocol):
+    """Per-profile catalog of REST resource configurations (unique by profile and name)."""
+
+    async def save(
+        self, profile_id: int, config: ResourceConfig, source: ResourceSource
+    ) -> StoredResource:
+        """Insert or replace ``config`` by name. Raises ``ProfileNotFound``."""
+        ...
+
+    async def get(self, profile_id: int, name: str) -> StoredResource | None:
+        """Raises ``ResourceConfigInvalid`` when the stored JSON is unknown or corrupt."""
+        ...
+
+    async def list(self, profile_id: int) -> list[StoredResource]: ...
+
+    async def delete(self, profile_id: int, name: str) -> None:
+        """Raises ``CatalogResourceNotFound``."""
         ...
