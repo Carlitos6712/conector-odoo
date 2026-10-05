@@ -649,6 +649,31 @@ export const es = {
         weekly: "Los {{days}} a las {{time}} UTC",
         custom: "Expresión personalizada (UTC): {{cron}}",
       },
+      editor: {
+        frequency: "Frecuencia",
+        presets: {
+          hourly: "Cada hora",
+          daily: "Cada día",
+          weekly: "Cada semana",
+          advanced: "Avanzado",
+        },
+        hour: "Hora",
+        minute: "Minuto",
+        days: "Días de la semana",
+        expression: "Expresión cron",
+        expressionHint:
+          "Cinco campos: minuto, hora, día del mes, mes y día de la semana. Hora UTC.",
+        nextFires: "Próximas ejecuciones (UTC)",
+      },
+      weekdaysShort: {
+        "0": "Dom",
+        "1": "Lun",
+        "2": "Mar",
+        "3": "Mié",
+        "4": "Jue",
+        "5": "Vie",
+        "6": "Sáb",
+      },
       weekdays: {
         "0": "domingos",
         "1": "lunes",
