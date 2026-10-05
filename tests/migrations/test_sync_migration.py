@@ -42,7 +42,7 @@ def test_migration_four_upgrades_a_database_already_at_version_three() -> None:
         (NOW,),
     )
 
-    assert migrate(conn) == [4]
+    assert migrate(conn, MIGRATIONS[:4]) == [4]
 
     assert {"source_resource", "mapping_name", "reverse_mapping_id"} <= columns(conn, "sync_jobs")
     assert {"conflicts", "checkpoint_json", "parent_run_id"} <= columns(conn, "sync_runs")
@@ -63,4 +63,4 @@ def test_migration_four_upgrades_a_database_already_at_version_three() -> None:
         1,
     )
     assert conn.execute("SELECT content_hash FROM xref").fetchone() == (None,)
-    assert migrate(conn) == []  # idempotent
+    assert migrate(conn, MIGRATIONS[:4]) == []  # idempotent

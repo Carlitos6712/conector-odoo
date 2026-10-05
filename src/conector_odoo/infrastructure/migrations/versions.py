@@ -158,9 +158,36 @@ _SYNC_ENGINE = (
     "CREATE INDEX idx_xref_target ON xref(job_id, resource, target_id)",
 )
 
+# Admin authentication: server-side sessions (only the SHA-256 of the cookie token is stored, so a
+# database leak does not leak live sessions), a per-username failed-login counter for lockout, and
+# case-insensitive uniqueness of usernames.
+_ADMIN_AUTH = (
+    "CREATE UNIQUE INDEX idx_admin_users_username_ci ON admin_users(lower(username))",
+    """
+    CREATE TABLE admin_sessions (
+        token_hash TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
+        csrf_token TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX idx_admin_sessions_user ON admin_sessions(user_id)",
+    """
+    CREATE TABLE login_attempts (
+        key TEXT PRIMARY KEY,
+        failures INTEGER NOT NULL DEFAULT 0,
+        locked_until TEXT,
+        last_failure_at TEXT NOT NULL
+    )
+    """,
+)
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "initial_admin_schema", _INITIAL_SCHEMA),
     Migration(2, "connection_profile_options", _PROFILE_OPTIONS),
     Migration(3, "resource_catalog", _RESOURCE_CATALOG),
     Migration(4, "sync_engine", _SYNC_ENGINE),
+    Migration(5, "admin_auth", _ADMIN_AUTH),
 )
