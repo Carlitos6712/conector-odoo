@@ -24,6 +24,7 @@ import { useProfiles } from "@/features/connections/hooks";
 import type { Profile } from "@/features/connections/types";
 import { DeleteResourceDialog, type ResourceRef } from "@/features/resources/DeleteResourceDialog";
 import { useAllResources } from "@/features/resources/hooks";
+import { OdooExplorer } from "@/features/resources/OdooExplorer";
 import { PreviewPanel } from "@/features/resources/PreviewPanel";
 import type { StoredResource } from "@/features/resources/types";
 
@@ -47,10 +48,13 @@ export function ResourcesPage() {
   const [previewing, setPreviewing] = useState<ResourceRef | null>(null);
   const [toDelete, setToDelete] = useState<ResourceRef | null>(null);
 
-  const restProfiles = (profiles.data ?? []).filter((p) => p.type === "rest");
+  const allProfiles = profiles.data ?? [];
+  const restProfiles = allProfiles.filter((p) => p.type === "rest");
   const requested = params.get("profile") ?? ALL;
-  const selected = restProfiles.find((p) => String(p.id) === requested) ?? null;
-  const scope = selected ? [selected] : restProfiles;
+  const selected = allProfiles.find((p) => String(p.id) === requested) ?? null;
+  const browsingOdoo = selected?.type === "odoo";
+  // Odoo models are explored live, so only REST connections have a catalog to list.
+  const scope = selected ? (browsingOdoo ? [] : [selected]) : restProfiles;
   const listings = useAllResources(scope.map((p) => p.id));
 
   const newTo = selected ? `/resources/new?profile=${selected.id}` : "/resources/new";
@@ -61,7 +65,7 @@ export function ResourcesPage() {
         <Button variant="outline" asChild>
           <Link to={importTo}>
             <Upload aria-hidden className="size-4" />
-            {t("resources.import")}
+            {t("resources.importAction")}
           </Link>
         </Button>
         <Button asChild>
@@ -78,6 +82,7 @@ export function ResourcesPage() {
   if (profiles.isPending) body = <Loading />;
   else if (profiles.isError)
     body = <ErrorState error={profiles.error} onRetry={() => void profiles.refetch()} />;
+  else if (selected && browsingOdoo) body = <OdooExplorer profileId={selected.id} />;
   else if (restProfiles.length === 0)
     body = (
       <EmptyState
@@ -209,9 +214,9 @@ export function ResourcesPage() {
     <section className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold">{t("nav.resources")}</h1>
-        {restProfiles.length > 0 && actions}
+        {restProfiles.length > 0 && !browsingOdoo && actions}
       </div>
-      {restProfiles.length > 0 && (
+      {allProfiles.length > 0 && (
         <div className="flex max-w-xs flex-col gap-1.5">
           <Label htmlFor="resources-profile">{t("resources.filter.label")}</Label>
           <Select
@@ -223,7 +228,7 @@ export function ResourcesPage() {
             }}
           >
             <option value={ALL}>{t("resources.filter.all")}</option>
-            {restProfiles.map((profile) => (
+            {allProfiles.map((profile) => (
               <option key={profile.id} value={profile.id}>
                 {profile.name}
               </option>

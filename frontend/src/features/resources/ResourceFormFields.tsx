@@ -207,9 +207,10 @@ function EndpointRow({
 /** The whole resource form; the page decides what happens on save. */
 export function ResourceFormFields({
   profiles,
-  lockIdentity,
+  lockProfile,
+  lockName,
   ...props
-}: FieldsProps & { profiles: readonly Profile[]; lockIdentity: boolean }) {
+}: FieldsProps & { profiles: readonly Profile[]; lockProfile: boolean; lockName: boolean }) {
   const { t } = useTranslation();
   const { form, errors, onChange } = props;
   return (
@@ -224,7 +225,7 @@ export function ResourceFormFields({
             <Select
               {...control}
               value={form.profileId}
-              disabled={lockIdentity}
+              disabled={lockProfile}
               onChange={(event) => onChange({ profileId: event.target.value })}
             >
               <option value="">{t("resources.editor.chooseConnection")}</option>
@@ -241,7 +242,7 @@ export function ResourceFormFields({
           label={t("resources.editor.name")}
           hint={t("resources.editor.nameHint")}
           required
-          disabled={lockIdentity}
+          disabled={lockName}
           props={props}
         />
         <TextField field="label" label={t("resources.editor.label")} mono={false} props={props} />

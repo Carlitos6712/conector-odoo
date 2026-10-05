@@ -23,10 +23,10 @@ function columnsOf(records: readonly PreviewRecord[]): string[] {
   return [...seen];
 }
 
-export function SchemaTable({ fields }: { fields: readonly FieldSpec[] }) {
+export function SchemaTable({ fields, label }: { fields: readonly FieldSpec[]; label?: string }) {
   const { t } = useTranslation();
   return (
-    <Table aria-label={t("resources.preview.schema")}>
+    <Table aria-label={label ?? t("resources.preview.schema")}>
       <TableHeader>
         <TableRow>
           <TableHead>{t("resources.preview.field")}</TableHead>

@@ -90,6 +90,13 @@ export function describeResourceError(
       detail: clip(error.detail),
     };
   }
+  if (error.code === "permission_denied") {
+    return {
+      messageKey: "resources.errors.remotePermission",
+      fieldErrors: {},
+      detail: clip(error.detail),
+    };
+  }
   if (error.code === "vault_not_configured") {
     return { messageKey: "resources.errors.vaultMissing", fieldErrors: {} };
   }

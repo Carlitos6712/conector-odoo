@@ -84,7 +84,8 @@ function ResourceEditor({
           errors={errors}
           onChange={change}
           profiles={profiles}
-          lockIdentity={editing}
+          lockProfile={editing}
+          lockName={editing}
         />
         {failure && (
           <div role="alert" className="text-sm text-destructive">

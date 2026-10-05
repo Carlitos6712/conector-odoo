@@ -60,6 +60,12 @@ describe("describeResourceError", () => {
     );
   });
 
+  it("distinguishes an Odoo access denial from a missing role", () => {
+    expect(describeResourceError(err(403, "permission_denied", "x"), "discover").messageKey).toBe(
+      "resources.errors.remotePermission",
+    );
+  });
+
   it("maps 429 with and without Retry-After", () => {
     const known = describeResourceError(err(429, "rate_limited", "", 12), "save");
     expect(known.messageKey).toBe("resources.errors.rateLimited");
