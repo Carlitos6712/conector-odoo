@@ -44,6 +44,7 @@ from conector_odoo.application.run_launcher import RunLauncher
 from conector_odoo.application.scheduler import SyncScheduler
 from conector_odoo.application.sync_runner import SyncRunner
 from conector_odoo.application.sync_trigger import TriggerSyncJob
+from conector_odoo.application.webhook_triggers import HandleWebhookTrigger
 from conector_odoo.config import Settings
 from conector_odoo.domain.ports import ConnectionProbe, MappingRepository
 from conector_odoo.domain.profiles import ProfileType
@@ -128,6 +129,15 @@ class AdminServices:
     launcher: RunLauncher
     scheduler: SyncScheduler
     dashboard: GetDashboard
+    webhook_trigger: HandleWebhookTrigger
+
+    async def aclose(self) -> None:
+        """Stop in-flight background runs (left resumable), then release the endpoints they use.
+        Call after ``scheduler.stop()`` and before the admin database is closed."""
+        try:
+            await self.launcher.aclose()
+        finally:
+            await self.endpoints.aclose()
 
 
 def _now() -> datetime:
@@ -169,9 +179,10 @@ def build_admin_services(settings: Settings, conn: sqlite3.Connection) -> AdminS
         clock=_now,
         sleep=asyncio.sleep,
     )
+    trigger = TriggerSyncJob(runner)
     scheduler = SyncScheduler(
         job_repo,
-        TriggerSyncJob(runner),
+        trigger,
         clock=_now,
         sleep=asyncio.sleep,
         refresh_interval=settings.sync_scheduler_refresh_seconds,
@@ -233,6 +244,7 @@ def build_admin_services(settings: Settings, conn: sqlite3.Connection) -> AdminS
         dashboard=GetDashboard(
             profile_repo, mapping_repo, job_repo, run_repo, _now, scheduler.next_fire
         ),
+        webhook_trigger=HandleWebhookTrigger(job_repo, trigger),
     )
 
 

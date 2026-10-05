@@ -22,6 +22,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 
 from fastapi import FastAPI
 
+from conector_odoo.application.webhook_triggers import register_webhook_triggers
 from conector_odoo.config import Settings, get_settings
 from conector_odoo.infrastructure.admin_api.router import include_admin_api
 from conector_odoo.infrastructure.admin_api.services import (
@@ -91,7 +92,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app.state.admin_db = admin_db
             admin = build_admin_services(resolved, admin_db)
             app.state.admin = admin
+            # Closed before the admin database (background runs write to it) and after the
+            # scheduler has stopped starting new ones.
+            stack.push_async_callback(admin.aclose)
             await bootstrap_first_admin(resolved, admin)
+            register_webhook_triggers(container.event_bus, admin.webhook_trigger)
             purge_task = asyncio.create_task(
                 purge_loop(
                     MultiPurger(container.idempotency, container.webhook_events),
@@ -102,6 +107,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
             stack.push_async_callback(_cancel_task, purge_task)
             app.state.purge_task = purge_task
+            if resolved.sync_scheduler_enabled:
+                admin.scheduler.start()
+                stack.push_async_callback(admin.scheduler.stop)
             yield
 
     app = FastAPI(title="conector-odoo", version="1.0.0", lifespan=lifespan)
