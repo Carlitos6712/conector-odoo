@@ -21,6 +21,7 @@ from conector_odoo.domain.profiles import (
     StoredProfile,
 )
 from conector_odoo.domain.records import Record, RecordFilter, ResourceSchema
+from conector_odoo.domain.resources import ResourceConfig
 
 EventHandler = Callable[[OdooEvent], Awaitable[None]]
 
@@ -188,3 +189,11 @@ class RecordSink(Protocol):
 @runtime_checkable
 class RecordEndpoint(RecordSource, RecordSink, Protocol):
     """A system that can be both read from and written to."""
+
+
+class ResourceConfigProvider(Protocol):
+    """Looks up the ``ResourceConfig`` of a resource name (storage is not the adapter's concern)."""
+
+    async def get(self, resource: str) -> ResourceConfig:
+        """Raises ``ResourceNotFound`` when the resource is not configured."""
+        ...

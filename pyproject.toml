@@ -23,6 +23,7 @@ packages = ["src/conector_odoo"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = ["integration: needs an external service (e.g. the SUWE fake API); skipped when it is unreachable"]
 pythonpath = ["src"]
 
 [tool.ruff]
