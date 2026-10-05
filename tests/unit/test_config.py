@@ -196,3 +196,12 @@ def test_bulk_max_items_default_and_bounds(monkeypatch: pytest.MonkeyPatch) -> N
             Settings(_env_file=None)  # type: ignore[call-arg]
     _set_env(monkeypatch, BULK_MAX_ITEMS="10000")
     assert Settings(_env_file=None).bulk_max_items == 10000  # type: ignore[call-arg]
+
+
+def test_sync_scheduler_settings_default_and_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_env(monkeypatch)
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.sync_scheduler_enabled is True
+    assert settings.sync_scheduler_refresh_seconds == 60.0
+    monkeypatch.setenv("SYNC_SCHEDULER_ENABLED", "false")
+    assert Settings(_env_file=None).sync_scheduler_enabled is False  # type: ignore[call-arg]

@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     # A ``received`` webhook event older than this is re-dispatched when Odoo redelivers it
     # (at-least-once); a newer one is treated as still in flight.
     webhook_redelivery_after_seconds: float = 60.0
+    # In-process cron scheduler for sync jobs; set SYNC_SCHEDULER_ENABLED=false to turn it off.
+    sync_scheduler_enabled: bool = True
+    # How often the scheduler reloads the job list (seconds).
+    sync_scheduler_refresh_seconds: float = Field(default=60.0, gt=0)
     log_level: str = "INFO"
 
     @field_validator("odoo_api_key", "connector_api_key", "webhook_secret")
