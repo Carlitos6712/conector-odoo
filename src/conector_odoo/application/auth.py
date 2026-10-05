@@ -39,6 +39,7 @@ from conector_odoo.domain.ports import (
 
 Clock = Callable[[], datetime]
 _MAX_KEY_LENGTH = 128
+_AUTH_REQUIRED = "authentication required"  # same text for every invalid-session cause
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,20 +125,20 @@ class AuthService:
     async def authenticate(self, token: str) -> CurrentSession:
         """Resolve the cookie token to its user. Raises ``SessionInvalid``."""
         if not token:
-            raise SessionInvalid("no session")
+            raise SessionInvalid(_AUTH_REQUIRED)
         digest = hash_token(token)
         session = await self._sessions.get(digest)
         if session is None:
-            raise SessionInvalid("unknown session")
+            raise SessionInvalid(_AUTH_REQUIRED)
         now = self._clock()
         idle = timedelta(seconds=self._config.idle_timeout_seconds)
         if now >= session.expires_at or now - session.last_seen_at > idle:
             await self._sessions.delete(digest)
-            raise SessionInvalid("session expired")
+            raise SessionInvalid(_AUTH_REQUIRED)
         user = await self._users.get(session.user_id)
         if user is None:
             await self._sessions.delete(digest)
-            raise SessionInvalid("unknown user")
+            raise SessionInvalid(_AUTH_REQUIRED)
         await self._sessions.touch(digest, now)
         return CurrentSession(user, session.csrf_token, session.expires_at)
 

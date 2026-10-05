@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from conector_odoo.application.pagination import (
@@ -69,7 +69,34 @@ class Settings(BaseSettings):
     sync_scheduler_enabled: bool = True
     # How often the scheduler reloads the job list (seconds).
     sync_scheduler_refresh_seconds: float = Field(default=60.0, gt=0)
+    # -- admin API (/admin/api) ----------------------------------------------------------------
+    # First admin, created at startup ONLY when no admin user exists yet. There is no default
+    # password: without both values the first admin must be created some other way.
+    admin_bootstrap_user: str | None = None
+    admin_bootstrap_password: SecretStr | None = None
+    admin_cookie_name: str = "admin_session"
+    # Secure cookies are only sent over HTTPS (browsers exempt localhost); turn off for plain-HTTP
+    # development behind no proxy only.
+    admin_cookie_secure: bool = True
+    admin_cookie_samesite: Literal["lax", "strict"] = "lax"
+    admin_session_ttl_seconds: int = Field(default=12 * 3600, ge=60)
+    admin_session_idle_seconds: int = Field(default=2 * 3600, ge=60)
+    admin_login_max_failures: int = Field(default=5, ge=1)
+    admin_login_lockout_seconds: int = Field(default=900, ge=1)
+    # Argon2id cost; the defaults follow the argon2-cffi/OWASP recommendation. Lower them only on
+    # very small hosts or in tests.
+    admin_argon2_time_cost: int = Field(default=3, ge=1)
+    admin_argon2_memory_kib: int = Field(default=64 * 1024, ge=8)
+    admin_argon2_parallelism: int = Field(default=4, ge=1)
     log_level: str = "INFO"
+
+    @model_validator(mode="after")
+    def _bootstrap_is_complete(self) -> "Settings":
+        if (self.admin_bootstrap_user is None) != (self.admin_bootstrap_password is None):
+            raise ValueError(
+                "ADMIN_BOOTSTRAP_USER and ADMIN_BOOTSTRAP_PASSWORD must be set together"
+            )
+        return self
 
     @field_validator("odoo_api_key", "connector_api_key", "webhook_secret")
     @classmethod

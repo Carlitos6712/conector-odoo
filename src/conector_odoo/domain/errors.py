@@ -199,3 +199,11 @@ class AdminUserInvalid(ConnectorError):
 
 class LastAdminError(ConnectorError):
     """The operation would leave the system without an administrator."""
+
+
+class AdminForbidden(ConnectorError):
+    """The signed-in admin user's role does not allow this operation."""
+
+
+class CsrfInvalid(ConnectorError):
+    """A state-changing admin request lacks a valid CSRF token."""
