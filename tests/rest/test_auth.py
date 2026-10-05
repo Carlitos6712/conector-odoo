@@ -212,3 +212,19 @@ async def test_secrets_never_appear_in_repr_errors_or_logs(
         assert secret not in everything
     bearer = http_client()
     assert TOKEN not in repr(bearer) + repr(bearer._auth)
+
+
+@respx.mock
+@pytest.mark.parametrize("status", [429, 500, 502, 503])
+async def test_token_endpoint_overload_or_server_error_is_unavailable(status: int) -> None:
+    respx.post(TOKEN_URL).respond(status, text="busy")
+    with pytest.raises(RemoteUnavailable, match=str(status)):
+        await http_client(oauth_profile(), CLIENT).request("GET", "/x")
+
+
+@respx.mock
+@pytest.mark.parametrize("status", [400, 401, 403])
+async def test_token_endpoint_client_errors_are_auth_errors(status: int) -> None:
+    respx.post(TOKEN_URL).respond(status, json={"error": "invalid_client"})
+    with pytest.raises(RemoteAuthError):
+        await http_client(oauth_profile(), CLIENT).request("GET", "/x")

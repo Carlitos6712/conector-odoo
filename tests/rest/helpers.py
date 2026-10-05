@@ -6,6 +6,7 @@ import httpx
 
 from conector_odoo.domain.errors import ResourceNotFound
 from conector_odoo.domain.profiles import AuthMethod, ConnectionProfile, ProfileType, Secrets
+from conector_odoo.domain.records import RecordFilter
 from conector_odoo.domain.resources import EndpointSpec, PaginationConfig, ResourceConfig
 from conector_odoo.infrastructure.rest.auth import build_authenticator
 from conector_odoo.infrastructure.rest.endpoint import RestRecordEndpoint
@@ -99,10 +100,14 @@ def query(request: httpx.Request) -> dict[str, str]:
     return dict(request.url.params)
 
 
-async def collect(source: Any, resource: str = "items", size: int = 2, **kwargs: Any) -> list[Any]:
-    from conector_odoo.domain.records import RecordFilter
-
-    record_filter = kwargs.pop("record_filter", RecordFilter())
+async def collect(
+    source: Any,
+    resource: str = "items",
+    size: int = 2,
+    *,
+    record_filter: RecordFilter | None = None,
+) -> list[Any]:
+    record_filter = record_filter or RecordFilter()
     return [
         record
         async for batch in source.iter_batches(resource, record_filter, size)

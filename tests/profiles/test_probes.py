@@ -180,8 +180,7 @@ async def test_unencodable_header_value_fails_auth_instead_of_raising() -> None:
     respx.get(BASE).respond(200)
     profile = rest(extra_headers={"X-Note": "caf\u00e9 \u20ac"})
     steps = await RestConnectionProbe().probe(profile, Secrets(api_key=SECRET))
-    assert steps[-1].name in ("auth", "reachable")
-    assert not steps[-1].ok
+    assert names(steps)[-1] == ("reachable", False)
 
 
 async def test_invalid_url_during_auth_fails_auth_instead_of_raising(

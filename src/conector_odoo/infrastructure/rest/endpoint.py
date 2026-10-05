@@ -17,7 +17,6 @@ from conector_odoo.domain.records import (
 )
 from conector_odoo.domain.resources import (
     EndpointSpec,
-    PaginationConfig,
     PaginationStrategy,
     ResourceConfig,
 )
@@ -108,72 +107,118 @@ class RestRecordEndpoint:
         self, cfg: ResourceConfig, params: dict[str, Any], size: int
     ) -> AsyncIterator[list[Record]]:
         spec = _require(cfg.list_endpoint, cfg, "list")
+        strategies = {
+            PaginationStrategy.PAGE: self._page_strategy,
+            PaginationStrategy.OFFSET: self._offset_strategy,
+            PaginationStrategy.CURSOR: self._cursor_strategy,
+            PaginationStrategy.NONE: self._single_page,
+        }
+        async for records in strategies[cfg.pagination.strategy](cfg, spec, params, size):
+            yield records
+
+    async def _fetch_page(
+        self, cfg: ResourceConfig, spec: EndpointSpec, query: dict[str, Any]
+    ) -> tuple[list[Record], Any]:
+        body = _body(await self._http.request(spec.method, spec.path, params=query))
+        items = dig(body, cfg.items_path)
+        if not isinstance(items, list):
+            raise RemoteUnavailable(
+                f"{cfg.name}: the list response has no array at items_path {cfg.items_path!r}"
+            )
+        return [_record(cfg, item, None) for item in items], body
+
+    async def _single_page(
+        self, cfg: ResourceConfig, spec: EndpointSpec, params: dict[str, Any], size: int
+    ) -> AsyncIterator[list[Record]]:
+        records, _ = await self._fetch_page(cfg, spec, dict(params))
+        if records:
+            yield records
+
+    async def _page_strategy(
+        self, cfg: ResourceConfig, spec: EndpointSpec, params: dict[str, Any], size: int
+    ) -> AsyncIterator[list[Record]]:
         pg = cfg.pagination
-        page_no, offset, cursor = pg.first_page, 0, None
+        page_no = pg.first_page
         previous: list[str] | None = None
-        seen_cursors: set[str] = set()
         for _ in range(pg.max_pages):
-            query = {**params, **_paging_params(pg, size, page_no, offset, cursor)}
-            body = _body(await self._http.request(spec.method, spec.path, params=query))
-            items = dig(body, cfg.items_path)
-            if not isinstance(items, list):
-                raise RemoteUnavailable(
-                    f"{cfg.name}: the list response has no array at items_path {cfg.items_path!r}"
-                )
-            records = [_record(cfg, item, None) for item in items]
+            query = {**params, pg.page_param: page_no, pg.size_param: size}
+            records, body = await self._fetch_page(cfg, spec, query)
             if not records:
                 return
-            current = [r.id if r.id is not None else repr(dict(r.fields)) for r in records]
-            if pg.strategy in (PaginationStrategy.PAGE, PaginationStrategy.OFFSET):
-                if current == previous:
-                    raise RemoteUnavailable(
-                        f"{cfg.name}: the server repeated the same page; it ignores the paging "
-                        "parameters"
-                    )
-                previous = current
+            previous = _check_not_repeated(cfg, records, previous)
             yield records
-            if pg.strategy is PaginationStrategy.NONE:
+            total_pages = dig(body, pg.total_pages_path)
+            if isinstance(total_pages, int):
+                if page_no - pg.first_page + 1 >= total_pages:
+                    return
+            elif len(records) < size:
                 return
-            if pg.strategy is PaginationStrategy.CURSOR:
-                nxt = dig(body, pg.next_cursor_path)
-                if nxt is MISSING or nxt in (None, ""):
+            page_no += 1
+        raise _exceeded(cfg)
+
+    async def _offset_strategy(
+        self, cfg: ResourceConfig, spec: EndpointSpec, params: dict[str, Any], size: int
+    ) -> AsyncIterator[list[Record]]:
+        pg = cfg.pagination
+        offset = 0
+        previous: list[str] | None = None
+        for _ in range(pg.max_pages):
+            query = {**params, pg.offset_param: offset, pg.limit_param: size}
+            records, body = await self._fetch_page(cfg, spec, query)
+            if not records:
+                return
+            previous = _check_not_repeated(cfg, records, previous)
+            yield records
+            offset += len(records)
+            total = dig(body, pg.total_path)
+            if isinstance(total, int):
+                if offset >= total:
                     return
-                cursor = str(nxt)
-                if cursor in seen_cursors:
-                    raise RemoteUnavailable(f"{cfg.name}: the server repeated cursor {cursor!r}")
-                seen_cursors.add(cursor)
-            elif pg.strategy is PaginationStrategy.PAGE:
-                total_pages = dig(body, pg.total_pages_path)
-                if isinstance(total_pages, int):
-                    if page_no - pg.first_page + 1 >= total_pages:
-                        return
-                elif len(records) < size:
-                    return
-                page_no += 1
-            else:
-                offset += len(records)
-                total = dig(body, pg.total_path)
-                if isinstance(total, int):
-                    if offset >= total:
-                        return
-                elif len(records) < size:
-                    return
-        raise RemoteUnavailable(f"{cfg.name}: pagination exceeded max_pages={pg.max_pages}")
+            elif len(records) < size:
+                return
+        raise _exceeded(cfg)
+
+    async def _cursor_strategy(
+        self, cfg: ResourceConfig, spec: EndpointSpec, params: dict[str, Any], size: int
+    ) -> AsyncIterator[list[Record]]:
+        pg = cfg.pagination
+        cursor: str | None = None
+        seen_cursors: set[str] = set()
+        for _ in range(pg.max_pages):
+            query = {**params, pg.limit_param: size}
+            if cursor is not None:
+                query[pg.cursor_param] = cursor
+            records, body = await self._fetch_page(cfg, spec, query)
+            if not records:
+                return
+            yield records
+            nxt = dig(body, pg.next_cursor_path)
+            if nxt is MISSING or nxt in (None, ""):
+                return
+            cursor = str(nxt)
+            if cursor in seen_cursors:
+                raise RemoteUnavailable(f"{cfg.name}: the server repeated cursor {cursor!r}")
+            seen_cursors.add(cursor)
+        raise _exceeded(cfg)
 
 
-def _paging_params(
-    pg: PaginationConfig, size: int, page: int, offset: int, cursor: str | None
-) -> dict[str, Any]:
-    if pg.strategy is PaginationStrategy.PAGE:
-        return {pg.page_param: page, pg.size_param: size}
-    if pg.strategy is PaginationStrategy.OFFSET:
-        return {pg.offset_param: offset, pg.limit_param: size}
-    if pg.strategy is PaginationStrategy.CURSOR:
-        params: dict[str, Any] = {pg.limit_param: size}
-        if cursor is not None:
-            params[pg.cursor_param] = cursor
-        return params
-    return {}
+def _check_not_repeated(
+    cfg: ResourceConfig, records: list[Record], previous: list[str] | None
+) -> list[str]:
+    """Loop guard of the page/offset strategies: a server that ignores the paging parameters
+    answers the same page forever."""
+    current = [r.id if r.id is not None else repr(dict(r.fields)) for r in records]
+    if current == previous:
+        raise RemoteUnavailable(
+            f"{cfg.name}: the server repeated the same page; it ignores the paging parameters"
+        )
+    return current
+
+
+def _exceeded(cfg: ResourceConfig) -> RemoteUnavailable:
+    return RemoteUnavailable(
+        f"{cfg.name}: pagination exceeded max_pages={cfg.pagination.max_pages}"
+    )
 
 
 def _filter_params(cfg: ResourceConfig, flt: RecordFilter) -> tuple[dict[str, Any], dict[str, Any]]:

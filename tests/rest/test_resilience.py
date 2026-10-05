@@ -143,3 +143,35 @@ async def test_error_snippet_is_truncated_and_redacts_the_token() -> None:
     assert TOKEN not in message
     assert "HTTP 500" in message
     assert len(message) < 500
+
+
+@respx.mock
+async def test_invalid_url_is_a_domain_error_not_a_raw_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def bad_url(*args: object, **kwargs: object) -> httpx.Response:
+        raise httpx.InvalidURL("bad url with secret?")
+
+    monkeypatch.setattr(httpx.AsyncClient, "request", bad_url)
+    with pytest.raises(RemoteUnavailable, match="invalid request") as info:
+        await http_client().request("GET", "/x")
+    assert "secret" not in str(info.value)
+
+
+@respx.mock
+async def test_unicode_error_is_a_domain_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def bad_encoding(*args: object, **kwargs: object) -> httpx.Response:
+        raise UnicodeEncodeError("ascii", "€", 0, 1, "cannot encode")
+
+    monkeypatch.setattr(httpx.AsyncClient, "request", bad_encoding)
+    with pytest.raises(RemoteUnavailable, match="invalid request"):
+        await http_client().request("GET", "/x")
+
+
+async def test_unsupported_protocol_fails_fast_without_retries() -> None:
+    fake = FakeTime()
+    client = http_client(fake=fake, max_retries=3)
+    client._base_url = "ftp://api.test"
+    with pytest.raises(RemoteUnavailable, match="invalid request"):
+        await client.request("GET", "/x")
+    assert fake.sleeps == []

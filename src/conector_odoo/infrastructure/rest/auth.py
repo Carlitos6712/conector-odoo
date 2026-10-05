@@ -115,6 +115,10 @@ class TokenAuth:
             ) from None
         body = _json_object(response)
         error = body.get("error")
+        if response.status_code == 429 or response.status_code >= 500:
+            raise RemoteUnavailable(
+                f"the token endpoint is unavailable (HTTP {response.status_code}); try again later"
+            )
         if response.status_code != 200:
             if error == "unsupported_grant_type":
                 raise RemoteAuthError(f"token endpoint: {_NO_M2M_HINT}")

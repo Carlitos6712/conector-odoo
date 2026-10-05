@@ -133,6 +133,16 @@ class RestHttpClient:
                     json=json,
                     headers=headers,
                 )
+            except (httpx.InvalidURL, httpx.UnsupportedProtocol, UnicodeError) as exc:
+                # A request that cannot even be built is a configuration problem of the target
+                # (bad base URL, path or header), not a record problem: report it as
+                # RemoteUnavailable, never retry it and never echo the exception text (it may
+                # contain the URL or header values).
+                logger.debug("%s rejected before sending: %s", where, type(exc).__name__)
+                raise RemoteUnavailable(
+                    f"{where}: invalid request URL or headers ({type(exc).__name__}); "
+                    "check the profile base URL, the resource path and the extra headers"
+                ) from None
             except httpx.TransportError as exc:
                 logger.debug("%s failed on attempt %d: %s", where, attempt + 1, type(exc).__name__)
                 if attempt + 1 >= attempts:
