@@ -19,10 +19,9 @@ import {
 import { useJobs } from "@/features/jobs/hooks";
 import { formatDateTime } from "@/features/mappings/format";
 import { formatDuration, runDurationSeconds } from "@/features/runs/format";
-import { filterRuns, type RunClientFilters } from "@/features/runs/policy";
+import { filterRuns, statusGroup, type RunClientFilters } from "@/features/runs/policy";
 import { useRuns } from "@/features/runs/hooks";
 import { RunStatusBadge } from "@/features/runs/RunStatusBadge";
-import { isActiveStatus } from "@/features/runs/summary";
 import {
   RUN_STATUSES,
   RUN_TRIGGERS,
@@ -108,7 +107,7 @@ export function RunsPage() {
   const filtered = Boolean(jobId || status || client.trigger || client.dryRun);
 
   const visible = runs.data ? filterRuns(runs.data.items, client) : [];
-  const active = visible.filter((run) => isActiveStatus(run.status)).length;
+  const active = visible.filter((run) => statusGroup(run.status) === "active").length;
 
   const filters = (
     <form
