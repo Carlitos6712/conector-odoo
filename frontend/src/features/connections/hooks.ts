@@ -14,8 +14,12 @@ import type { ProfileInput } from "@/features/connections/types";
 
 export const useProfiles = () => useQuery({ queryKey: PROFILES_KEY, queryFn: listProfiles });
 
-export const useProfile = (id: number) =>
-  useQuery({ queryKey: profileKey(id), queryFn: () => getProfile(id) });
+export const useProfile = (id: number | null) =>
+  useQuery({
+    queryKey: profileKey(id ?? -1),
+    queryFn: () => getProfile(id ?? -1),
+    enabled: id !== null,
+  });
 
 /**
  * Mutations carrying credentials use `gcTime: 0` so their variables leave the mutation cache as
