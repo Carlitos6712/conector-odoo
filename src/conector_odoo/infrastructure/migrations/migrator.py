@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from conector_odoo.infrastructure.sqlite import prepare_private_file
+from conector_odoo.infrastructure.sync.locks import connection_lock
 
 _TRACKING_TABLE = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -67,6 +68,17 @@ def open_admin_database(path: str) -> sqlite3.Connection:
         conn.close()
         raise
     return conn
+
+
+def close_admin_database(conn: sqlite3.Connection) -> None:
+    """Close the admin connection once the statements running in worker threads have finished.
+
+    Repositories run their blocking SQL in worker threads under the per-connection lock, and a
+    cancelled ``await`` does not stop such a thread. Closing the connection under that same lock
+    means shutdown waits for it, instead of freeing the connection under a running statement
+    (which can crash the interpreter)."""
+    with connection_lock(conn):
+        conn.close()
 
 
 def _check_contiguous(plan: Sequence[Migration]) -> None:

@@ -40,7 +40,7 @@ from conector_odoo.infrastructure.api.routers import (
     webhooks,
 )
 from conector_odoo.infrastructure.idempotency.purge import MultiPurger, purge_loop
-from conector_odoo.infrastructure.migrations import open_admin_database
+from conector_odoo.infrastructure.migrations import close_admin_database, open_admin_database
 from conector_odoo.logging import configure_logging
 
 logger = logging.getLogger(__name__)
@@ -88,7 +88,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             stack.push_async_callback(_close_container, container)
             app.state.container = container
             admin_db = open_admin_database(resolved.admin_db_path)
-            stack.callback(admin_db.close)
+            stack.callback(close_admin_database, admin_db)
             app.state.admin_db = admin_db
             admin = build_admin_services(resolved, admin_db)
             app.state.admin = admin

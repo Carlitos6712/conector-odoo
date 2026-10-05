@@ -56,3 +56,25 @@ def test_admin_database_failure_closes_the_container(
         pass
     with pytest.raises(sqlite3.ProgrammingError):  # closed connection: the stores were released
         built[0].idempotency._conn.execute("SELECT 1")  # type: ignore[attr-defined]
+
+
+def test_closing_the_admin_database_waits_for_statements_in_worker_threads() -> None:
+    """A cancelled await leaves its worker thread running; close must not free the connection
+    under it (that crashed the interpreter in the full test suite)."""
+    import threading
+    import time
+
+    from conector_odoo.infrastructure.migrations import close_admin_database, open_admin_database
+    from conector_odoo.infrastructure.sync.locks import connection_lock
+
+    conn = open_admin_database(":memory:")
+    closed = threading.Event()
+    with connection_lock(conn):  # a repository statement is "running"
+        closer = threading.Thread(target=lambda: (close_admin_database(conn), closed.set()))
+        closer.start()
+        time.sleep(0.2)
+        assert not closed.is_set()
+    closer.join(5)
+    assert closed.is_set()
+    with pytest.raises(sqlite3.ProgrammingError):
+        conn.execute("SELECT 1")
