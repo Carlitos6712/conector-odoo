@@ -62,7 +62,7 @@ from conector_odoo.infrastructure.openapi.importer import OpenApiImporter
 from conector_odoo.infrastructure.profiles.odoo_probe import OdooConnectionProbe
 from conector_odoo.infrastructure.profiles.repository import SqliteConnectionProfileRepository
 from conector_odoo.infrastructure.profiles.rest_probe import RestConnectionProbe
-from conector_odoo.infrastructure.profiles.vault import FernetVault
+from conector_odoo.infrastructure.profiles.vault import build_vault
 from conector_odoo.infrastructure.resources.repository import SqliteResourceCatalogRepository
 from conector_odoo.infrastructure.sync.jobs import SqliteSyncJobRepository
 from conector_odoo.infrastructure.sync.runs import SqliteSyncRunRepository, SqliteXRefRepository
@@ -166,8 +166,7 @@ def build_admin_services(settings: Settings, conn: sqlite3.Connection) -> AdminS
     policy = settings.outbound_policy()
     profile_repo = SqliteConnectionProfileRepository(conn)
     catalog = SqliteResourceCatalogRepository(conn)
-    key = settings.encryption_key.get_secret_value() if settings.encryption_key else None
-    vault = FernetVault(key)
+    vault = build_vault(settings)
     endpoints = ProfileEndpoints(profile_repo, catalog, vault, settings)
     probes: dict[ProfileType, ConnectionProbe] = {
         ProfileType.REST: RestConnectionProbe(policy),

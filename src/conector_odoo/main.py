@@ -42,6 +42,8 @@ from conector_odoo.infrastructure.api.routers import (
 from conector_odoo.infrastructure.api.static_frontend import mount_frontend
 from conector_odoo.infrastructure.idempotency.purge import MultiPurger, purge_loop
 from conector_odoo.infrastructure.migrations import close_admin_database, open_admin_database
+from conector_odoo.infrastructure.profiles.rotation import check_vault_at_startup
+from conector_odoo.infrastructure.profiles.vault import build_vault
 from conector_odoo.logging import configure_logging
 
 logger = logging.getLogger(__name__)
@@ -91,6 +93,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             admin_db = open_admin_database(resolved.admin_db_path)
             stack.callback(close_admin_database, admin_db)
             app.state.admin_db = admin_db
+            check_vault_at_startup(admin_db, build_vault(resolved))
             admin = build_admin_services(resolved, admin_db)
             app.state.admin = admin
             # Closed before the admin database (background runs write to it) and after the

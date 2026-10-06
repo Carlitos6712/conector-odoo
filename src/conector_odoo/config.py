@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     # Fernet key that encrypts connection-profile secrets at rest. No key is ever generated
     # implicitly: storing or reading a secret without it fails with a clear error.
     encryption_key: SecretStr | None = None
+    # Comma-separated OLD Fernet keys, used to decrypt only (never to encrypt) while a key rotation
+    # is in progress; see ``python -m conector_odoo.manage rotate-vault-key``.
+    encryption_key_previous: SecretStr | None = None
     webhook_secret: SecretStr
 
     idempotency_db_path: str = "./data/idempotency.sqlite3"
@@ -116,6 +119,12 @@ class Settings(BaseSettings):
                 "ADMIN_BOOTSTRAP_USER and ADMIN_BOOTSTRAP_PASSWORD must be set together"
             )
         return self
+
+    def previous_encryption_keys(self) -> list[str]:
+        raw = (
+            self.encryption_key_previous.get_secret_value() if self.encryption_key_previous else ""
+        )
+        return [part.strip() for part in raw.split(",") if part.strip()]
 
     def outbound_policy(self) -> OutboundPolicy:
         return OutboundPolicy.from_values(self.outbound_url_policy, self.outbound_allowed_hosts)

@@ -140,6 +140,8 @@ def scrub(text: str, settings: Settings) -> str:
     for secret in secrets:
         if secret is not None and secret.get_secret_value():
             text = text.replace(secret.get_secret_value(), "***")
+    for old_key in settings.previous_encryption_keys():
+        text = text.replace(old_key, "***")
     return text
 
 
