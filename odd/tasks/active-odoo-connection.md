@@ -27,16 +27,24 @@ Mode: enabled (project config, Strict TDD). Runner: `uv run pytest`.
 - Admin: `GET/PUT/DELETE /admin/api/odoo/active`; profile list exposes `is_active` and `last_connected_at`; deleting the active profile is refused (409).
 
 ## Tasks
-- [ ] BE1 Settings persistence + migration 7 + ActiveOdooConnection service + provider swap (tests: concurrent swap, failed probe keeps old, close-after-inflight, startup matrix profile/env/none/broken)
-- [ ] BE2 Admin routes + `is_active`/`last_connected_at` in profile responses + delete refusal + role tests + legacy routers 503 + health
-- [ ] BE3 docker-compose + README + docs/architecture + tracker
+- [x] BE1 Settings persistence + migration 7 + ActiveOdooConnection service + provider swap (tests: concurrent swap, failed probe keeps old, close-after-inflight, startup matrix profile/env/none/broken)
+- [x] BE2 Admin routes + `is_active`/`last_connected_at` in profile responses + delete refusal + role tests + legacy routers 503 + health
+- [x] BE3 docker-compose + README + docs/architecture + tracker
 - [ ] FE (next writer) Settings/Connection screen: show active connection, activate/disconnect, badges on the profile list, "not configured" banner
 
 ## Route log
 - Tracker created before the first source write. BE1-BE3: single writer (this agent, delegated by the parent orchestrator), direct work.
 
 ## Commits
-(filled as they land)
+- BE1: 3c97e30 feat(odoo): resolve the Odoo connection at runtime and swap it without a restart
+- BE2: 44a40a4 feat(admin): expose the active Odoo connection and switch it from the admin API
+- BE3: 9a7f0d2 docs(odoo): make ODOO_* optional and document the active Odoo connection
+- Tracker: see `git log --grep 'docs(odd)'`
 
 ## Progress / verification
-Baseline: 1822 passed (stated by the parent).
+Baseline: 1822 passed (observed at start).
+BE1: RED observed (collection ModuleNotFoundError `application.active_odoo`; later `container.odoo` missing for the 503 tests). The streaming-lease test (`test_swap_during_streaming.py`) had no separate RED: it characterises the wiring written just before; it fails if the lease is released when the endpoint returns (verified by reasoning, not by mutation). Decisions: provider = `OdooConnectionProvider` (acquire/release leases, `commit` swaps in one synchronous step, retired client closed on its last release or at once when idle, `aclose` force-closes at shutdown and re-raises the first close error after closing all); the legacy repos are built per connection; `Container.odoo_client` stays as a property so older tests keep working; env connection stays outside the outbound policy, profile connections are inside it; probe uses the existing `OdooConnectionProbe` (always JSON-RPC) and runs BEFORE persisting and swapping; startup never probes. Webhook handlers never used the Odoo client (they only log), so nothing changed there.
+BE2: RED observed (14 failed on the missing route/fields). Edits to the active profile reload the live client without probing (`refresh_if_active`); `is_active` reflects the PERSISTED active id (a startup fallback shows in `GET /odoo/active` as status `fallback` + warning, not in the profile list).
+BE3: `docker compose config` with only the required vars renders (ODOO_* as empty strings, treated as unset by `env_ignore_empty`). No `docker compose up` run.
+Final: `uv run pytest` 1897 passed (baseline 1822, +75 new, no existing test edited); ruff check, ruff format --check, mypy src clean; e2e `npx playwright test` 3 passed (e2e backend still passes ODOO_* = legacy mode). Live check with `tests/e2e_support/fake_odoo.py` on a private port: app started with no ODOO env -> /health `not_configured`, /customers 503; created and activated a profile -> /health reachable, /customers 200; restarted without any ODOO env -> still reachable (persisted). The external Odoo dev (:8069) and SUWE fake were not written to.
+Not done: frontend (FE); protocol per profile (profiles have no protocol field, the global ODOO_PROTOCOL applies); `.env.example` (user edit pending, see report).
