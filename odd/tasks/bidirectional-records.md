@@ -44,8 +44,8 @@ resource config has no write endpoints.
       `updated_at`, tolerate orphans in stores/contacts/users). Curl-verified. (route: delegated, writer)
 - [x] T2 Connector: `delete_endpoint` in `ResourceConfig` + codec + repository + REST sink `delete`
       (404 -> ResourceNotFound) + SUWE `clients` resource config (get/create/update/delete endpoints). RED first.
-- [ ] T3 XRef `forget_source`/pair cleanup + single-record sync service extracted from `SyncRunner`
-      (mapping, write, `_save_xref`). RED first.
+- [x] T3 XRef `forget_source`/pair cleanup + single-record sync service extracted from `SyncRunner`
+      (mapping, write, `_save_xref`). RED first. Commit 216eb3c; tests/sync 176 passed.
 - [ ] T4 Records use cases: write-through for update/delete, new `CreateRecord` + `POST /{resource}`,
       warnings in the response. RED first.
 - [ ] T5 Frontend: create dialog, delete/edit copy about counterpart, show warnings.
@@ -87,4 +87,4 @@ resource config has no write endpoints.
   Becomes its own feature document `odd/tasks/frontend-restyle.md` once the palette is decided.
 
 ## Next step
-T3: xref cleanup for both sides plus the single-record sync service extracted from `SyncRunner`.
+T4: records use cases (write-through for update/delete, `CreateRecord` + `POST /{resource}`, warnings in the response), RED first.
