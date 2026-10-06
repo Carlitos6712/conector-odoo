@@ -46,8 +46,8 @@ resource config has no write endpoints.
       (404 -> ResourceNotFound) + SUWE `clients` resource config (get/create/update/delete endpoints). RED first.
 - [x] T3 XRef `forget_source`/pair cleanup + single-record sync service extracted from `SyncRunner`
       (mapping, write, `_save_xref`). RED first. Commit 216eb3c; tests/sync 176 passed.
-- [ ] T4 Records use cases: write-through for update/delete, new `CreateRecord` + `POST /{resource}`,
-      warnings in the response. RED first.
+- [x] T4 Records use cases: write-through for update/delete, new `CreateRecord` + `POST /{resource}`,
+      warnings in the response. RED first. Commit 3eeb955; full suite 2057 passed.
 - [ ] T5 Frontend: create dialog, delete/edit copy about counterpart, show warnings.
 - [ ] T6 Live check + README section (what propagates, edited-side-wins, warnings, mock changes).
 
@@ -73,10 +73,17 @@ resource config has no write endpoints.
     (previous config saved in the session scratchpad only; it had just the list endpoint).
   - Earlier manual tests (record-management T5): Odoo partner "Supermercados Aurora" recreated as id 220.
   - Mock data: reset to fixtures by the container restart.
+- T4 (writer, delegated): `CreateRecord` + `RecordWrite`; `UpdateRecord`/`DeleteRecord` take `RecordPropagator`;
+  `POST /{resource}` (201); PATCH/POST return `{id, fields, propagation[], warnings[]}`; DELETE now returns
+  200 `{propagation, warnings}` instead of 204 (T5 frontend and T6 README must reflect it). Delete order:
+  primary, `propagate_delete`, then xref forget; if any job `failed`, generic xref cleanup is skipped so a
+  refused pair stays linked (other jobs' stale xrefs wait for a run). RED: 14 collection errors + 10 API
+  failures; GREEN. Parent re-ran `uv run pytest -q`: 2057 passed. Pre-existing, untouched: ruff E501 in
+  `infrastructure/openapi/importer.py:7`, mypy error in `infrastructure/rest/auth.py:225`.
 
 ## Pending (found while working)
 - Resource form in the UI drops `delete_endpoint` when saving (add to the form; T5).
-- Create from the connector: mock reads `client_id` for the id (see `docs/suwe/README.md` section 4).
+- Create from the connector: the id field cannot be supplied, so SUWE `client_id` cannot be chosen (see `docs/suwe/README.md` section 4).
 
 ## Done outside the T-list (user requests during the session)
 - Resources preview: link "View all records" to the Records page (commit d3d22b5).
@@ -87,4 +94,4 @@ resource config has no write endpoints.
   Becomes its own feature document `odd/tasks/frontend-restyle.md` once the palette is decided.
 
 ## Next step
-T4: records use cases (write-through for update/delete, `CreateRecord` + `POST /{resource}`, warnings in the response), RED first.
+T5: frontend create dialog, delete/edit copy about the counterpart, show warnings and the new DELETE 200 body, RED first.
