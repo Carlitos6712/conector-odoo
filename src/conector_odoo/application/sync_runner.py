@@ -663,6 +663,7 @@ class SyncRunner:
             return True
         if content_hash(apply_mapping(pass_.other_mapping, other).fields) == stored_other:
             return True  # only this side changed
+        record = await self._with_updated_field(ctx, pass_, record)
         winner = self._winner(ctx.job.conflict_rule, pass_, record, other)
         if forward:
             ctx.state.counters.conflicts += 1
@@ -671,6 +672,17 @@ class SyncRunner:
                 self._flag_conflict(ctx, pass_, record, xref)
             return False
         return winner == "src"
+
+    @staticmethod
+    async def _with_updated_field(ctx: _Ctx, pass_: _Pass, record: Record) -> Record:
+        """``newest_wins`` only: a list item may omit its change time (some REST lists do), so
+        read the full record by id. Anything else keeps the record as listed."""
+        field = pass_.src_updated_field
+        if ctx.job.conflict_rule is not ConflictRule.NEWEST_WINS or not field or not record.id:
+            return record
+        if record.get(field) is not None:
+            return record
+        return await pass_.src.get(pass_.src_resource, record.id) or record
 
     @staticmethod
     def _winner(rule: ConflictRule, pass_: _Pass, record: Record, other: Record) -> str | None:

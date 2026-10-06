@@ -108,6 +108,18 @@ is marked on its first run (the mapping carries the marker); a partner written b
 unmarked until its job is re-run. The marker is a convention: someone clearing or editing `function` on
 a marked partner makes it eligible again.
 
+5. Resolve edits made on both sides with the most recent one: `PUT /admin/api/jobs/<job-id>` (whole job
+   body unchanged except) `"conflict_rule": "newest_wins"`, `"source_updated_field": "updated_at"` (SUWE
+   `clients`) and `"target_updated_field": "write_date"` (Odoo `res.partner`, naive UTC text). A conflict
+   only exists when both sides changed since the last sync; then the later timestamp wins. Equal,
+   missing or unparsable times still write nothing and record a non-retryable `conflict` error.
+
+   Why the runner re-reads the record: the SUWE `clients` LIST items carry no `updated_at` (only the
+   detail endpoint does) and the forward pass reads its source records from the list. Under
+   `newest_wins`, when the source record has no value in `source_updated_field`, the runner fetches the
+   full record by id and reads the time from it; without that fallback every conflict would be flagged.
+   Nothing is fetched when the field is present, and other conflict rules are unaffected.
+
 Restore: `PUT` job 1 with `reverse_record_filter` empty (`raw: null`), and optionally `direction: "a_to_b"`
 and `reverse_mapping: null`. To drop the marker, `PUT` the mappings of step 3 without the `function` rule
 (new versions) and re-run the jobs; the `function` values already written stay in Odoo until edited.

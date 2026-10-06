@@ -1,7 +1,7 @@
 import pytest
 
 from conector_odoo.domain.errors import RecordRejected
-from conector_odoo.domain.records import RecordFilter
+from conector_odoo.domain.records import Record, RecordFilter
 from conector_odoo.domain.sync import ConflictRule, Direction
 from conector_odoo.domain.sync_runs import ErrorKind, RunCounters, RunStatus, Side
 from tests.sync.harness import World, build_world
@@ -314,3 +314,76 @@ async def test_forward_and_reverse_filters_apply_to_their_own_pass_only() -> Non
         "Cleo",
         "Dan",
     ]
+
+
+def hide_from_list(endpoint: object, field: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make the endpoint's list (``iter_batches``) omit ``field`` while ``get`` still returns it,
+    like SUWE ``clients`` whose list items carry no ``updated_at``."""
+    original = endpoint.iter_batches  # type: ignore[attr-defined]
+
+    async def stripped(*args: object, **kwargs: object) -> object:
+        async for batch in original(*args, **kwargs):
+            yield [
+                Record(id=r.id, fields={k: v for k, v in r.fields.items() if k != field})
+                for r in batch
+            ]
+
+    monkeypatch.setattr(endpoint, "iter_batches", stripped)
+
+
+async def newest_wins_world(**job: object) -> tuple[World, int]:
+    world = build_world()
+    job_id = await synced_pair(
+        world,
+        conflict_rule=ConflictRule.NEWEST_WINS,
+        source_updated_field="write_date",
+        target_updated_field="updated",
+        **job,
+    )
+    return world, job_id
+
+
+@pytest.mark.parametrize(
+    ("a_time", "b_time", "expected"),
+    [
+        ("2026-05-04 10:00:00", "2026-05-03T10:00:00", "Ana (odoo)"),
+        ("2026-05-02 10:00:00", "2026-05-03T10:00:00Z", "Ana (rest)"),
+    ],
+)
+async def test_newest_wins_reads_a_missing_updated_field_from_get(
+    a_time: str, b_time: str, expected: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    world, job_id = await newest_wins_world()
+    await edit_both(world, a_time, b_time)
+    hide_from_list(world.odoo, "write_date", monkeypatch)
+    run = await world.runner.run(job_id)
+    assert run.counters.conflicts == 1 and run.status is RunStatus.SUCCEEDED
+    assert names(world) == (expected, expected)
+
+
+async def test_newest_wins_does_not_fetch_when_the_list_already_has_the_field() -> None:
+    world, job_id = await newest_wins_world()
+    await edit_both(world, "2026-05-04 10:00:00", "2026-05-03T10:00:00")
+    gets = world.odoo.get_calls
+    await world.runner.run(job_id)
+    assert world.odoo.get_calls == gets  # the source side was never re-read
+
+
+async def test_newest_wins_with_equal_times_still_flags_the_conflict() -> None:
+    world, job_id = await newest_wins_world()
+    await edit_both(world, "2026-05-03 10:00:00", "2026-05-03T10:00:00Z")
+    run = await world.runner.run(job_id)
+    assert run.counters.conflicts == 1 and run.status is RunStatus.PARTIAL
+    assert names(world) == ("Ana (odoo)", "Ana (rest)")
+
+
+async def test_newest_wins_with_the_field_missing_everywhere_still_flags_the_conflict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    world, job_id = await newest_wins_world()
+    await edit_both(world, "2026-05-03 10:00:00", "2026-05-03T10:00:00Z")
+    await world.odoo.update("customers", "1", {"write_date": None})
+    hide_from_list(world.odoo, "write_date", monkeypatch)
+    run = await world.runner.run(job_id)
+    assert run.counters.conflicts == 1 and run.status is RunStatus.PARTIAL
+    assert names(world) == ("Ana (odoo)", "Ana (rest)")
