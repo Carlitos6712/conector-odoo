@@ -59,6 +59,11 @@ describe("AppLayout navigation", () => {
     expect(screen.getByText("Operador")).toBeInTheDocument();
   });
 
+  it("shows the Sipay logo as the brand in the sidebar", async () => {
+    await renderAs("operator");
+    expect(screen.getByRole("img", { name: "Sipay" })).toBeInTheDocument();
+  });
+
   it("logs out and returns to the login page", async () => {
     const fetchMock = await renderAs("admin");
     await userEvent.setup().click(screen.getByRole("button", { name: "Cerrar sesión" }));

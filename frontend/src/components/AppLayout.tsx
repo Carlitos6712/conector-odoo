@@ -6,6 +6,7 @@ import { logout, SESSION_KEY } from "@/auth/api";
 import { useSession } from "@/auth/useSession";
 import { Button } from "@/components/ui/button";
 import { ToastProvider } from "@/components/ui/toast";
+import logo from "@/assets/logo-sipay.png";
 import { NAV_ITEMS } from "@/nav";
 import { cn } from "@/lib/utils";
 
@@ -36,9 +37,10 @@ export function AppLayout() {
           {t("app.skipToContent")}
         </a>
         <aside className="flex flex-col gap-4 border-b border-sidebar-border bg-sidebar p-4 text-sidebar-foreground md:w-60 md:border-r md:border-b-0">
-          <p className="rounded-lg bg-gradient-to-br from-brand-from to-brand-to px-3 py-2.5 text-lg font-semibold tracking-tight text-white shadow-soft">
-            {t("app.name")}
-          </p>
+          <div className="flex items-center justify-center rounded-lg bg-white px-4 py-3 shadow-soft">
+            <img src={logo} alt="Sipay" className="h-8 w-auto" />
+            <span className="sr-only">{t("app.name")}</span>
+          </div>
           <nav aria-label={t("nav.label")}>
             <ul className="flex flex-wrap gap-1 md:flex-col">
               {items.map(({ key, path, icon: Icon }) => (
