@@ -91,6 +91,8 @@ class ProfileOut(BaseModel):
     has_secret: dict[str, bool]
     created_at: datetime | None
     updated_at: datetime | None
+    is_active: bool
+    last_connected_at: datetime | None
 
     @classmethod
     def of(cls, view: ProfileView) -> Self:
@@ -111,6 +113,8 @@ class ProfileOut(BaseModel):
             has_secret=view.has_secret,
             created_at=view.created_at,
             updated_at=view.updated_at,
+            is_active=view.is_active,
+            last_connected_at=view.last_connected_at,
         )
 
 

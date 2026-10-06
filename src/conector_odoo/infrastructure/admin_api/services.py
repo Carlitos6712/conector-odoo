@@ -177,13 +177,9 @@ def build_admin_services(
         ProfileType.REST: RestConnectionProbe(policy),
         ProfileType.ODOO: OdooConnectionProbe(policy=policy),
     }
+    activation_log = OdooActivationLog(SqliteAppSettings(conn))
     active_odoo = ActiveOdooConnection(
-        profile_repo,
-        vault,
-        probes,
-        odoo_runtime,
-        OdooActivationLog(SqliteAppSettings(conn)),
-        settings,
+        profile_repo, vault, probes, odoo_runtime, activation_log, settings
     )
     mapping_repo = SqliteMappingRepository(conn)
     job_repo = SqliteSyncJobRepository(conn)
@@ -222,10 +218,10 @@ def build_admin_services(
         active_odoo=active_odoo,
         profiles=ProfileServices(
             create=CreateProfile(profile_repo, vault),
-            update=UpdateProfile(profile_repo, vault),
-            get=GetProfile(profile_repo),
-            list=ListProfiles(profile_repo),
-            delete=DeleteProfile(profile_repo),
+            update=UpdateProfile(profile_repo, vault, activation_log),
+            get=GetProfile(profile_repo, activation_log),
+            list=ListProfiles(profile_repo, activation_log),
+            delete=DeleteProfile(profile_repo, activation_log),
             test=TestConnection(profile_repo, vault, probes),
             probes=probes,
         ),

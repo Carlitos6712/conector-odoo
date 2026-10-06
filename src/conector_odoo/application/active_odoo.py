@@ -217,6 +217,28 @@ class ActiveOdooConnection:
             self._warning = None
         return await self.status()
 
+    async def refresh_if_active(self, profile_id: int) -> None:
+        """Rebuild the live client after the ACTIVE profile was edited (new URL, key, ...).
+
+        No probe: the operator may be mid-edit and the old client keeps serving until the swap.
+        A profile that is not the active one is ignored; a failure keeps the old connection and
+        is logged, never raised (the edit itself already succeeded).
+        """
+        async with self._lock:
+            if (await self._log.load()).active_profile_id != profile_id:
+                return
+            try:
+                prepared = await self._prepare_stored_profile(profile_id)
+            except Exception as exc:
+                logger.warning(
+                    "the edited active Odoo profile %s could not be reloaded (%s); "
+                    "the previous connection stays in use",
+                    profile_id,
+                    _reason(exc),
+                )
+                return
+            await self._runtime.commit(prepared)
+
     async def clear(self) -> ActiveOdooStatus:
         """Forget the active profile; fall back to the env connection when complete, else none."""
         async with self._lock:
