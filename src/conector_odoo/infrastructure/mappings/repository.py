@@ -2,7 +2,7 @@
 
 Each row is one immutable version (unique by name and version) holding the definition as
 versioned JSON (see ``mapping_codec``). A mapping that a sync job references through
-``sync_jobs.mapping_id`` (any of its versions) cannot be deleted.
+``sync_jobs.mapping_id`` / ``reverse_mapping_id`` (any of its versions) cannot be deleted.
 """
 
 import asyncio
@@ -80,8 +80,9 @@ class SqliteMappingRepository:
         with self._lock:
             referenced = self._conn.execute(
                 "SELECT 1 FROM sync_jobs WHERE mapping_id IN "
+                "(SELECT id FROM mappings WHERE name = ?) OR reverse_mapping_id IN "
                 "(SELECT id FROM mappings WHERE name = ?) LIMIT 1",
-                (name,),
+                (name, name),
             ).fetchone()
             if referenced is not None:
                 raise MappingInUse(f"mapping {name!r} is used by a sync job")

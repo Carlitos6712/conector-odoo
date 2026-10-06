@@ -1,6 +1,7 @@
 """Ports (async Protocols) implemented by infrastructure adapters."""
 
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
 from conector_odoo.domain.entities import (
@@ -23,6 +24,16 @@ from conector_odoo.domain.profiles import (
 )
 from conector_odoo.domain.records import Record, RecordFilter, ResourceSchema
 from conector_odoo.domain.resources import ResourceConfig, ResourceSource, StoredResource
+from conector_odoo.domain.sync import SyncJob
+from conector_odoo.domain.sync_runs import (
+    RunCounters,
+    RunError,
+    RunErrorData,
+    RunFilter,
+    RunStatus,
+    SyncRun,
+    XRef,
+)
 
 EventHandler = Callable[[OdooEvent], Awaitable[None]]
 
@@ -249,3 +260,117 @@ class MappingRepository(Protocol):
         """Delete every version. Raises ``MappingNotFound`` or ``MappingInUse`` (some version is
         referenced by a sync job)."""
         ...
+
+
+class SyncJobRepository(Protocol):
+    """Persistence of sync jobs (unique by name)."""
+
+    async def add(self, job: SyncJob) -> SyncJob:
+        """Insert and return the job with its id. Raises ``SyncJobNameTaken``,
+        ``ProfileNotFound`` or ``MappingNotFound`` (a referenced profile/mapping is missing)."""
+        ...
+
+    async def update(self, job: SyncJob) -> SyncJob:
+        """Replace every field of ``job.id``. Raises ``SyncJobNotFound`` plus the ``add`` errors."""
+        ...
+
+    async def get(self, job_id: int) -> SyncJob | None: ...
+
+    async def list(self) -> list[SyncJob]: ...
+
+    async def delete(self, job_id: int) -> None:
+        """Also removes the job's xref rows. Raises ``SyncJobNotFound``, or ``SyncJobInUse`` when
+        the job has runs (the history is kept)."""
+        ...
+
+
+class SyncRunRepository(Protocol):
+    """Runs, their resumable state and their per-record errors."""
+
+    async def create(
+        self,
+        job_id: int,
+        trigger: str,
+        *,
+        dry_run: bool,
+        started_at: datetime,
+        stale_before: datetime,
+        parent_run_id: int | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> SyncRun:
+        """Insert a ``running`` run unless the job already has an active one.
+
+        An active run whose heartbeat (or start, when it has none) is older than ``stale_before``
+        is a crashed run and does not block. Raises ``JobAlreadyRunning`` or ``SyncJobNotFound``.
+        """
+        ...
+
+    async def get(self, run_id: int) -> SyncRun | None: ...
+
+    async def reopen(
+        self, run_id: int, *, heartbeat_at: datetime, stale_before: datetime
+    ) -> SyncRun:
+        """Set a resumable run back to ``running`` (clearing its finish time and cancel flag).
+        Raises ``SyncRunNotFound`` or ``JobAlreadyRunning`` (another run of the job is active)."""
+        ...
+
+    async def save_progress(
+        self,
+        run_id: int,
+        counters: RunCounters,
+        checkpoint: dict[str, Any],
+        heartbeat_at: datetime,
+    ) -> None: ...
+
+    async def finish(
+        self,
+        run_id: int,
+        status: RunStatus,
+        finished_at: datetime,
+        counters: RunCounters,
+        *,
+        error: str | None = None,
+        sample: Sequence[dict[str, Any]] = (),
+    ) -> None: ...
+
+    async def request_cancel(self, run_id: int) -> bool:
+        """Flag an active run for cancellation; ``False`` when it is not active."""
+        ...
+
+    async def is_cancel_requested(self, run_id: int) -> bool: ...
+
+    async def add_errors(self, run_id: int, errors: Sequence[RunErrorData]) -> None:
+        """Append errors in one transaction (batched)."""
+        ...
+
+    async def list_runs(
+        self, run_filter: RunFilter, limit: int = 50, offset: int = 0
+    ) -> list[SyncRun]:
+        """Newest first."""
+        ...
+
+    async def list_errors(
+        self, run_id: int, limit: int = 100, offset: int = 0, *, only_unretried: bool = False
+    ) -> list[RunError]: ...
+
+    async def count_errors(self, run_id: int) -> int: ...
+
+    async def mark_errors_retried(
+        self, run_id: int, side: str, record_refs: Sequence[str]
+    ) -> None: ...
+
+
+class XRefRepository(Protocol):
+    """Cross-reference between a source record id (side A) and a target record id (side B)."""
+
+    async def get_target(self, job_id: int, resource: str, source_id: str) -> XRef | None: ...
+
+    async def get_source(self, job_id: int, resource: str, target_id: str) -> XRef | None: ...
+
+    async def upsert(self, xref: XRef) -> None:
+        """Insert or replace by (job, resource, source id)."""
+        ...
+
+    async def list(
+        self, job_id: int, resource: str | None = None, limit: int = 100, offset: int = 0
+    ) -> list[XRef]: ...

@@ -139,3 +139,31 @@ class MappingNotFound(ConnectorError):
 
 class MappingInUse(ConnectorError):
     """The mapping is referenced by a sync job and cannot be deleted."""
+
+
+class SyncJobNotFound(ConnectorError):
+    """No sync job with the requested id."""
+
+
+class SyncJobNameTaken(ConnectorError):
+    """Another sync job already uses that (unique) name."""
+
+
+class SyncJobInUse(ConnectorError):
+    """The job has runs (history) and cannot be deleted."""
+
+
+class SyncJobInvalid(ConnectorError):
+    """The sync job definition is invalid (batch size, upsert key, trigger, conflict rule...)."""
+
+
+class SyncRunNotFound(ConnectorError):
+    """No sync run with the requested id."""
+
+
+class JobAlreadyRunning(ConnectorError):
+    """The job already has an active run; only one run per job may be active at a time."""
+
+
+class RunNotResumable(ConnectorError):
+    """The run cannot be resumed or retried in its current state."""
