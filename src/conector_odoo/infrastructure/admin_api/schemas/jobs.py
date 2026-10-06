@@ -62,6 +62,7 @@ class JobIn(StrictModel):
     direction: Direction = Direction.A_TO_B
     trigger: TriggerModel = Field(default_factory=lambda: ManualTriggerModel(kind="manual"))
     record_filter: RecordFilterModel = Field(default_factory=RecordFilterModel)
+    reverse_record_filter: RecordFilterModel = Field(default_factory=RecordFilterModel)
     batch_size: int = 100
     upsert_key: str = "xref"
     conflict_rule: ConflictRule = ConflictRule.SOURCE_WINS
@@ -91,6 +92,11 @@ class JobIn(StrictModel):
                 equals=dict(self.record_filter.equals),
                 since=self.record_filter.since,
                 raw=self.record_filter.raw,
+            ),
+            reverse_record_filter=RecordFilter(
+                equals=dict(self.reverse_record_filter.equals),
+                since=self.reverse_record_filter.since,
+                raw=self.reverse_record_filter.raw,
             ),
             batch_size=self.batch_size,
             upsert_key=self.upsert_key,
@@ -131,6 +137,15 @@ class JobOut(JobIn):
                 equals=dict(job.record_filter.equals),
                 since=job.record_filter.since,
                 raw=None if job.record_filter.raw is None else dict(job.record_filter.raw),
+            ),
+            reverse_record_filter=RecordFilterModel(
+                equals=dict(job.reverse_record_filter.equals),
+                since=job.reverse_record_filter.since,
+                raw=(
+                    None
+                    if job.reverse_record_filter.raw is None
+                    else dict(job.reverse_record_filter.raw)
+                ),
             ),
             batch_size=job.batch_size,
             upsert_key=job.upsert_key,

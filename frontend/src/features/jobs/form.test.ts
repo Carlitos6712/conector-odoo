@@ -50,6 +50,11 @@ describe("round trip", () => {
         since: "2026-01-01T00:00:00Z",
         raw: { domain: [["a", "=", 1]] },
       },
+      reverse_record_filter: {
+        equals: { kind: "client" },
+        since: null,
+        raw: { domain: [["ref", "!=", false]] },
+      },
     }),
   };
 
@@ -75,6 +80,7 @@ describe("toJobInput", () => {
       direction: "a_to_b",
       trigger: { kind: "manual" },
       record_filter: { equals: {}, since: null, raw: null },
+      reverse_record_filter: { equals: {}, since: null, raw: null },
       batch_size: 100,
       upsert_key: "xref",
       conflict_rule: "source_wins",

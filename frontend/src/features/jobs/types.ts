@@ -45,6 +45,8 @@ export interface JobInput {
   direction: Direction;
   trigger: TriggerDoc;
   record_filter: RecordFilterDoc;
+  /** Selection for the reverse pass of a bidirectional run; its field names belong to side B. */
+  reverse_record_filter: RecordFilterDoc;
   batch_size: number;
   /** `xref` or `field:<target field>`. */
   upsert_key: string;

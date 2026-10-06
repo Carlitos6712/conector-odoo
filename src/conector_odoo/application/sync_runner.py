@@ -73,7 +73,7 @@ from conector_odoo.domain.ports import (
     SyncRunRepository,
     XRefRepository,
 )
-from conector_odoo.domain.records import Record, RecordFilter
+from conector_odoo.domain.records import Record
 from conector_odoo.domain.sync import ConflictRule, Direction, SyncJob, TriggerKind
 from conector_odoo.domain.sync_runs import (
     ErrorKind,
@@ -469,7 +469,9 @@ class SyncRunner:
         size = ctx.job.batch_size
         ids = None if ctx.only is None else ctx.only[pass_.name]
         if ids is None:
-            record_filter = ctx.job.record_filter if pass_.forward else RecordFilter()
+            record_filter = (
+                ctx.job.record_filter if pass_.forward else ctx.job.reverse_record_filter
+            )
             async for batch in pass_.src.iter_batches(pass_.src_resource, record_filter, size):
                 yield batch
             return

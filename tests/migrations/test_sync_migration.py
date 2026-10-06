@@ -64,3 +64,30 @@ def test_migration_four_upgrades_a_database_already_at_version_three() -> None:
     )
     assert conn.execute("SELECT content_hash FROM xref").fetchone() == (None,)
     assert migrate(conn, MIGRATIONS[:4]) == []  # idempotent
+
+
+def test_migration_eight_adds_an_empty_reverse_filter_to_existing_jobs() -> None:
+    conn = sqlite3.connect(":memory:", isolation_level=None)
+    conn.execute("PRAGMA foreign_keys = ON")
+    assert migrate(conn, MIGRATIONS[:7]) == [1, 2, 3, 4, 5, 6, 7]
+    conn.execute(
+        "INSERT INTO connection_profiles (id, name, type, base_url, auth_method, created_at, "
+        "updated_at) VALUES (1, 'p', 'rest', 'https://x', 'none', ?, ?)",
+        (NOW, NOW),
+    )
+    conn.execute(
+        "INSERT INTO mappings (id, name, version, definition_json, created_at) "
+        "VALUES (1, 'm', 1, '{}', ?)",
+        (NOW,),
+    )
+    conn.execute(
+        "INSERT INTO sync_jobs (id, name, source_profile_id, target_profile_id, mapping_id, "
+        "direction, upsert_key, created_at, updated_at) VALUES (1, 'old', 1, 1, 1, 'push', 'id', "
+        "?, ?)",
+        (NOW, NOW),
+    )
+
+    assert migrate(conn, MIGRATIONS) == [8]
+
+    assert "reverse_filter_json" in columns(conn, "sync_jobs")
+    assert conn.execute("SELECT reverse_filter_json FROM sync_jobs").fetchone() == ("{}",)

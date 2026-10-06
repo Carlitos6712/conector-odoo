@@ -1,6 +1,7 @@
 import pytest
 
 from conector_odoo.domain.errors import RecordRejected
+from conector_odoo.domain.records import RecordFilter
 from conector_odoo.domain.sync import ConflictRule, Direction
 from conector_odoo.domain.sync_runs import ErrorKind, RunCounters, RunStatus, Side
 from tests.sync.harness import World, build_world
@@ -264,3 +265,52 @@ async def test_resume_after_a_crash_in_the_reverse_pass_does_not_replay_the_forw
     assert run.status is RunStatus.SUCCEEDED
     assert run.counters.created == 2  # Ana forward (before the crash) + Cy reverse
     assert len(world.rest.records["clients"]) == 2 and len(world.odoo.records["customers"]) == 2
+
+
+async def test_reverse_record_filter_limits_what_the_reverse_pass_creates() -> None:
+    world = build_world()
+    world.rest.seed("clients", {"full_name": "Cleo", "email": "cleo@x.com"})
+    world.rest.seed("clients", {"full_name": "Dan", "email": "dan@x.com"})
+    job = await world.add_job(
+        direction=BIDI, reverse_record_filter=RecordFilter(equals={"full_name": "Cleo"})
+    )
+    assert job.id is not None
+    run = await world.runner.run(job.id)
+    assert run.counters == RunCounters(created=1)
+    assert [r.fields["name"] for r in world.odoo.records["customers"].values()] == ["Cleo"]
+    assert await world.xrefs.get_source(job.id, "customers", "2") is None  # Dan never reached
+
+
+async def test_empty_reverse_record_filter_keeps_creating_every_target_record() -> None:
+    world = build_world()
+    world.rest.seed("clients", {"full_name": "Cleo", "email": "cleo@x.com"})
+    world.rest.seed("clients", {"full_name": "Dan", "email": "dan@x.com"})
+    job = await world.add_job(direction=BIDI)
+    assert job.id is not None
+    run = await world.runner.run(job.id)
+    assert run.counters == RunCounters(created=2)
+
+
+async def test_forward_and_reverse_filters_apply_to_their_own_pass_only() -> None:
+    world = build_world()
+    world.odoo.seed("customers", {"name": "Ana", "email": "ana@x.com"})
+    world.odoo.seed("customers", {"name": "Bea", "email": "bea@x.com"})
+    world.rest.seed("clients", {"full_name": "Cleo", "email": "cleo@x.com"})
+    world.rest.seed("clients", {"full_name": "Dan", "email": "dan@x.com"})
+    job = await world.add_job(
+        direction=BIDI,
+        record_filter=RecordFilter(equals={"name": "Ana"}),
+        reverse_record_filter=RecordFilter(equals={"full_name": "Dan"}),
+    )
+    assert job.id is not None
+    await world.runner.run(job.id)
+    assert sorted(r.fields["name"] for r in world.odoo.records["customers"].values()) == [
+        "Ana",
+        "Bea",
+        "Dan",
+    ]
+    assert sorted(r.fields["full_name"] for r in world.rest.records["clients"].values()) == [
+        "Ana",
+        "Cleo",
+        "Dan",
+    ]

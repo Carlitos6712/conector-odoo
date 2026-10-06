@@ -128,6 +128,7 @@ const expectedBase = {
   direction: "a_to_b",
   trigger: { kind: "manual" },
   record_filter: { equals: {}, since: null, raw: null },
+  reverse_record_filter: { equals: {}, since: null, raw: null },
   batch_size: 100,
   upsert_key: "xref",
   conflict_rule: "source_wins",
@@ -303,6 +304,7 @@ describe("JobWizard", () => {
     expect(bodyOf(mock, "POST", "/admin/api/jobs")).toMatchObject({
       upsert_key: "field:email",
       record_filter: { equals: { active: true }, since: null, raw: null },
+      reverse_record_filter: { equals: {}, since: null, raw: null },
       batch_size: 250,
     });
   });

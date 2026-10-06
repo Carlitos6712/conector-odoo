@@ -124,6 +124,9 @@ class SyncJob:
     direction: Direction = Direction.A_TO_B
     trigger: Trigger = ManualTrigger()
     record_filter: RecordFilter = field(default_factory=RecordFilter)
+    # Selection for the reverse pass of a bidirectional run (its field names belong to side B).
+    # Empty (the default) reads every record of side B.
+    reverse_record_filter: RecordFilter = field(default_factory=RecordFilter)
     batch_size: int = 100
     upsert_key: str = _XREF_KEY
     conflict_rule: ConflictRule = ConflictRule.SOURCE_WINS

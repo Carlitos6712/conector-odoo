@@ -190,3 +190,17 @@ def test_dashboard_summarises_the_system(admin: AdminEnv) -> None:
     assert summary["runs_last_24h"]["succeeded"] == 1 and summary["active_runs"] == []
     assert [r["id"] for r in summary["recent_runs"]] == [run["id"]]
     assert summary["scheduled"][0]["cron"] == "0 3 * * *"
+
+
+def test_reverse_record_filter_defaults_empty_and_round_trips(admin: AdminEnv) -> None:
+    fakes = Fakes(admin)
+    save_mapping(admin, forward_definition())
+    plain = admin.post(JOBS, json=job_body(fakes))
+    assert plain.status_code == 201, plain.text
+    assert plain.json()["reverse_record_filter"] == {"equals": {}, "since": None, "raw": None}
+    flt = {"equals": {"kind": "client"}, "since": None, "raw": {"domain": [["ref", "!=", False]]}}
+    body = {**job_body(fakes), "name": "filtered", "reverse_record_filter": flt}
+    created = admin.post(JOBS, json=body)
+    assert created.status_code == 201, created.text
+    assert created.json()["reverse_record_filter"] == flt
+    assert admin.get(f"{JOBS}/{created.json()['id']}").json()["reverse_record_filter"] == flt

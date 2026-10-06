@@ -86,6 +86,14 @@ ones) fail mapping and are not created in SUWE. Partners that do carry a `ref` (
 the other `suwe-*` jobs) are NOT filtered and would be created as clients. Do not run this job unless that
 is acceptable. Restore: `PUT` the job back with `direction: "a_to_b"` and `reverse_mapping: null`.
 
+A job now has a `reverse_record_filter` (same shape as `record_filter`: `equals`, `since`, `raw`; empty by
+default) applied only to the reverse pass, so its field names belong to side B (for this job, Odoo
+`res.partner`; `raw` takes an Odoo domain such as `{"domain": [["is_company", "=", true]]}`). It is set with
+`PUT /admin/api/jobs/<job-id>`. No filter is set on this job yet: the partners created by the other
+`suwe-*` jobs carry the same fields as client partners (all set `ref`, `is_company`, `autopost_bills`), so
+Odoo data alone cannot tell them apart; only persons (`is_company = false`, from `kyc` and `users`) can be
+excluded safely. Do not run this job until a discriminator is chosen.
+
 ## 2. Behaviour of the mock you must know
 
 - State is **in memory**: restarting the container resets the data to the fixtures and drops created,
