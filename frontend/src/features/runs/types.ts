@@ -46,6 +46,36 @@ export interface RunError {
   payload: Record<string, unknown> | null;
 }
 
+/** Server-side filters of `GET /runs` that the list exposes. */
+export interface RunFilters {
+  jobId?: number | null;
+  status?: RunStatus | null;
+}
+
+export interface RunListPage {
+  items: Run[];
+  hasNext: boolean;
+}
+
+export const RUN_STATUSES: readonly RunStatus[] = [
+  "queued",
+  "running",
+  "succeeded",
+  "partial",
+  "failed",
+  "cancelled",
+];
+export const RUN_TRIGGERS: readonly string[] = ["manual", "schedule", "webhook"];
+/** `domain.sync_runs.ErrorKind`. */
+export const ERROR_KINDS: readonly string[] = [
+  "mapping",
+  "rejected",
+  "remote",
+  "not_found",
+  "conflict",
+  "other",
+];
+
 export interface RunErrorPage {
   items: RunError[];
   total: number;
