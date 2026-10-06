@@ -215,6 +215,8 @@ at least 16 characters where noted.
 | `ADMIN_LOGIN_IP_MAX_FAILURES` | `20` | Failed logins or password checks from one client address (any usernames) inside the window before that address is blocked (429). |
 | `ADMIN_LOGIN_IP_WINDOW_SECONDS` | `900` | Sliding window of the per-address throttle. |
 | `ADMIN_LOGIN_KNOWN_IP_DAYS` | `30` | How long an address that signed in successfully stays "known" for its username and may log in through a lockout caused by other addresses. `0` disables the bypass. |
+| `OUTBOUND_URL_POLICY` | `default` | Outbound URL policy for user-supplied URLs. `default` always blocks link-local (incl. cloud metadata), unspecified and multicast addresses and non-http(s) schemes; `strict` also blocks private, loopback and CGNAT addresses unless the host is in `OUTBOUND_ALLOWED_HOSTS`. |
+| `OUTBOUND_ALLOWED_HOSTS` | empty | Comma-separated host names or IP literals allowed to resolve to private addresses in `strict` mode (for example the internal Odoo). Never unblocks link-local or metadata addresses. |
 | `TRUSTED_PROXY_COUNT` | `0` | Reverse proxies in front of the app that append to `X-Forwarded-For`. `0` ignores the header (the socket peer is the client); `N` uses the N-th entry from the right. Set it to match your proxy chain, see Security. |
 | `ADMIN_ARGON2_TIME_COST` / `ADMIN_ARGON2_MEMORY_KIB` / `ADMIN_ARGON2_PARALLELISM` | `3` / `65536` / `4` | Argon2id cost. Lower only on tiny hosts or in tests. |
 | `LOG_LEVEL` | `INFO` | JSON logs; secrets are redacted. |
@@ -233,6 +235,7 @@ at least 16 characters where noted.
 | Secret vault | Connection secrets are encrypted with Fernet (`ENCRYPTION_KEY`) before they reach SQLite. They are write-only: the API returns `has_secret` flags, never values. No key is generated implicitly. |
 | Webhooks | `X-Odoo-Signature` = HMAC-SHA256 over `timestamp.body`, constant-time compare, timestamp tolerance, event-id deduplication. |
 | OpenAPI import | http/https only, 5 MB cap, YAML via `safe_load`, local `$ref` only. Redirects are followed by hand: max 3 hops, same host only, never https to http. |
+| Outbound URL policy (SSRF) | Every request made to a user-supplied URL (OpenAPI import including each redirect hop, REST base URL, token URL and OIDC issuer URL, connection tests, previews, sync runs, Odoo profile URLs on all three protocols) is checked when the TCP connection is made: the host is resolved once, ALL returned addresses must pass, and the connection goes to the validated IP, so DNS rebinding cannot swap the target between check and use (Host header and TLS SNI/certificate checks still use the name). Always blocked: link-local (`169.254.0.0/16`, `fe80::/10`, so `169.254.169.254` and `fd00:ec2::254`), `0.0.0.0/8`, `::`, multicast, reserved ranges, Alibaba metadata `100.100.100.200`, and IPv4 embedded in IPv4-mapped, NAT64 and 6to4 addresses. Private, loopback and ULA ranges are allowed by default (Odoo and the dev fakes are usually internal); `OUTBOUND_URL_POLICY=strict` blocks them unless the host is in `OUTBOUND_ALLOWED_HOSTS`. API answers are a typed 422 `outbound_url_blocked` (connection tests report a failed step instead); the message names the rule, never the URL. Proxy environment variables are ignored by these clients, because a proxy would resolve the target itself. |
 
 Key loss: if `ENCRYPTION_KEY` is lost or changed, every stored secret becomes undecryptable
 (`VaultDecryptionError`) and each connection must be re-entered. Back the key up separately from the
@@ -255,8 +258,11 @@ Not done, by design or yet:
   changes never use the bypass.
 - **TLS is expected at a reverse proxy.** The service speaks plain HTTP. The `Secure` cookie default
   means the UI only works over HTTPS (or on localhost) unless you set `ADMIN_COOKIE_SECURE=false`.
-- **No SSRF blocklist.** An admin can point a connection or an OpenAPI import at any host, including
-  internal ones; the first URL is the admin's choice. Only admins can do this.
+- **Private addresses are reachable by default.** Only admins can set URLs, and Odoo or the target
+  API is often on an internal network, so `default` allows RFC 1918, loopback and ULA ranges. Use
+  `OUTBOUND_URL_POLICY=strict` plus `OUTBOUND_ALLOWED_HOSTS` when the connector must not reach
+  anything internal except named hosts. The Odoo configured through `ODOO_URL` (the legacy data API
+  and webhook handlers) is operator-controlled and is not subject to the policy.
 - No account unlock action or locked-account indicator in the UI.
 
 ## Usage walkthrough

@@ -4,6 +4,7 @@ from collections.abc import Callable
 from typing import Protocol
 
 from conector_odoo.domain.errors import ConnectorError, OdooAuthError
+from conector_odoo.domain.outbound import DEFAULT_POLICY, OutboundPolicy
 from conector_odoo.domain.profiles import ConnectionProfile, ProbeStep, Secrets
 from conector_odoo.infrastructure.odoo.client import OdooClient
 from conector_odoo.infrastructure.odoo.jsonrpc import JsonRpcTransport
@@ -21,7 +22,9 @@ class OdooAuthenticator(Protocol):
 OdooClientFactory = Callable[[ConnectionProfile, Secrets], OdooAuthenticator]
 
 
-def build_probe_client(profile: ConnectionProfile, secrets: Secrets) -> OdooClient:
+def build_probe_client(
+    profile: ConnectionProfile, secrets: Secrets, policy: OutboundPolicy = DEFAULT_POLICY
+) -> OdooClient:
     """One-off JSON-RPC client for the profile; no retries so a bad test fails fast."""
     transport = JsonRpcTransport(
         profile.base_url.strip(),
@@ -30,6 +33,7 @@ def build_probe_client(profile: ConnectionProfile, secrets: Secrets) -> OdooClie
         secrets.api_key or secrets.password or "",
         timeout=profile.timeout_seconds,
         max_retries=0,
+        policy=policy,
     )
     return OdooClient(transport)
 
@@ -37,14 +41,21 @@ def build_probe_client(profile: ConnectionProfile, secrets: Secrets) -> OdooClie
 class OdooConnectionProbe:
     """``ConnectionProbe`` for ``ProfileType.ODOO`` (API key or password of ``odoo_login``)."""
 
-    def __init__(self, client_factory: OdooClientFactory = build_probe_client) -> None:
-        self._client_factory = client_factory
+    def __init__(
+        self,
+        client_factory: OdooClientFactory | None = None,
+        policy: OutboundPolicy = DEFAULT_POLICY,
+    ) -> None:
+        self._policy = policy
+        self._client_factory: OdooClientFactory = client_factory or (
+            lambda profile, secrets: build_probe_client(profile, secrets, policy)
+        )
 
     async def probe(self, profile: ConnectionProfile, secrets: Secrets) -> list[ProbeStep]:
         steps = [check_url(profile)]
         if not steps[-1].ok:
             return steps
-        steps.extend(await check_endpoint(profile))
+        steps.extend(await check_endpoint(profile, self._policy))
         if not steps[-1].ok:
             return steps
         steps.append(await self._check_auth(profile, secrets))

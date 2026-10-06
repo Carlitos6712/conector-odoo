@@ -5,6 +5,7 @@ from typing import Literal
 from conector_odoo.application.pagination import DEFAULT_MAX_CONCURRENCY
 from conector_odoo.config import Settings
 from conector_odoo.domain.errors import ProfileValidationError, RemoteAuthError
+from conector_odoo.domain.outbound import DEFAULT_POLICY, OutboundPolicy
 from conector_odoo.domain.profiles import ConnectionProfile, ProfileType, Secrets
 from conector_odoo.infrastructure.odoo.client import OdooClient
 from conector_odoo.infrastructure.odoo.json2 import Json2Transport
@@ -50,6 +51,7 @@ def build_odoo_endpoint(
     max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
     company_id: int | None = None,
     allow_system_model_writes: bool = False,
+    policy: OutboundPolicy = DEFAULT_POLICY,
 ) -> OdooRecordEndpoint:
     """Generic record endpoint for an Odoo connection profile (``odoo_db``/``odoo_login``).
 
@@ -68,7 +70,7 @@ def build_odoo_endpoint(
     transport: OdooTransport
     if protocol == "xmlrpc":
         transport = XmlRpcTransport(
-            url, db, login, credential, timeout=timeout, max_retries=max_retries
+            url, db, login, credential, timeout=timeout, max_retries=max_retries, policy=policy
         )
     elif protocol == "json2":
         transport = Json2Transport(
@@ -79,6 +81,7 @@ def build_odoo_endpoint(
             timeout=timeout,
             max_retries=max_retries,
             max_connections=max_concurrency,
+            policy=policy,
         )
     else:
         transport = JsonRpcTransport(
@@ -89,6 +92,7 @@ def build_odoo_endpoint(
             timeout=timeout,
             max_retries=max_retries,
             max_connections=max_concurrency,
+            policy=policy,
         )
     client = OdooClient(transport, company_id=company_id, max_concurrency=max_concurrency)
     return OdooRecordEndpoint(client, allow_system_model_writes=allow_system_model_writes)

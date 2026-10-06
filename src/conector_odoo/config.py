@@ -14,6 +14,7 @@ from conector_odoo.application.pagination import (
     MAX_BULK_MAX_ITEMS,
     MAX_CONCURRENCY,
 )
+from conector_odoo.domain.outbound import OutboundPolicy
 from conector_odoo.infrastructure.idempotency.store import DEFAULT_IN_PROGRESS_TIMEOUT_SECONDS
 
 OdooProtocol = Literal["jsonrpc", "xmlrpc", "json2"]
@@ -101,6 +102,11 @@ class Settings(BaseSettings):
     admin_argon2_time_cost: int = Field(default=3, ge=1)
     admin_argon2_memory_kib: int = Field(default=64 * 1024, ge=8)
     admin_argon2_parallelism: int = Field(default=4, ge=1)
+    # Outbound URL policy (SSRF): ``default`` always blocks link-local/metadata, unspecified and
+    # multicast addresses and non-http(s) schemes; ``strict`` also blocks private and loopback
+    # addresses unless the host is in OUTBOUND_ALLOWED_HOSTS (comma-separated names or IPs).
+    outbound_url_policy: Literal["default", "strict"] = "default"
+    outbound_allowed_hosts: str = ""
     log_level: str = "INFO"
 
     @model_validator(mode="after")
@@ -110,6 +116,9 @@ class Settings(BaseSettings):
                 "ADMIN_BOOTSTRAP_USER and ADMIN_BOOTSTRAP_PASSWORD must be set together"
             )
         return self
+
+    def outbound_policy(self) -> OutboundPolicy:
+        return OutboundPolicy.from_values(self.outbound_url_policy, self.outbound_allowed_hosts)
 
     @field_validator("odoo_api_key", "connector_api_key", "webhook_secret")
     @classmethod

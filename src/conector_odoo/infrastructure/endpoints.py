@@ -56,7 +56,9 @@ class ProfileEndpoints:
     def build_rest(
         self, profile: ConnectionProfile, secrets: Secrets, configs: ResourceConfigProvider
     ) -> RestRecordEndpoint:
-        return build_rest_endpoint(profile, secrets, configs)
+        return build_rest_endpoint(
+            profile, secrets, configs, policy=self._settings.outbound_policy()
+        )
 
     def build_odoo(self, profile: ConnectionProfile, secrets: Secrets) -> OdooRecordEndpoint:
         return build_odoo_endpoint(
@@ -65,6 +67,7 @@ class ProfileEndpoints:
             protocol=self._settings.odoo_protocol,
             max_retries=self._settings.odoo_max_retries,
             max_concurrency=self._settings.odoo_max_concurrency,
+            policy=self._settings.outbound_policy(),
         )
 
     async def __call__(self, profile_id: int) -> RecordEndpoint:

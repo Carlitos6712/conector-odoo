@@ -127,6 +127,11 @@ class GuardedTransport(httpx.AsyncHTTPTransport):
         )
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        if request.url.scheme not in ("http", "https"):
+            # What httpx itself raises, so callers keep their existing "bad URL" handling.
+            raise httpx.UnsupportedProtocol(
+                f"Request URL has an unsupported protocol '{request.url.scheme}://'."
+            )
         self._policy.check_url(str(request.url))
         return await super().handle_async_request(request)
 
@@ -142,6 +147,7 @@ def guarded_client(
 ) -> httpx.AsyncClient:
     """An ``AsyncClient`` whose every connection obeys ``policy`` (see the module docstring)."""
     return httpx.AsyncClient(
+        verify=verify,  # the transport owns TLS; passed too so the setting stays observable
         transport=GuardedTransport(policy, verify=verify, limits=limits or _DEFAULT_LIMITS),
         timeout=timeout,
         headers=headers,

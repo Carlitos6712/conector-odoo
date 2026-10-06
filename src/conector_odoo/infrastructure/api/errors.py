@@ -31,6 +31,7 @@ from conector_odoo.domain.errors import (
     OdooUnavailable,
     OdooValidationError,
     OpenApiImportError,
+    OutboundUrlBlocked,
     ProfileInUse,
     ProfileNameTaken,
     ProfileNotFound,
@@ -98,6 +99,8 @@ _MAPPING: tuple[tuple[type[ConnectorError] | tuple[type[ConnectorError], ...], i
         "conflict",
     ),
     (OpenApiImportError, 422, "import_failed"),
+    # Before RemoteUnavailable (its base class): a refusal is the caller's input, not an outage.
+    (OutboundUrlBlocked, 422, "outbound_url_blocked"),
     (
         (
             ProfileValidationError,

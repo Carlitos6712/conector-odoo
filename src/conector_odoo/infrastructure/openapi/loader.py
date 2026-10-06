@@ -13,6 +13,8 @@ import httpx
 import yaml
 
 from conector_odoo.domain.errors import OpenApiImportError
+from conector_odoo.domain.outbound import DEFAULT_POLICY, OutboundPolicy
+from conector_odoo.infrastructure.net.guard import guarded_client
 
 MAX_BYTES = 5 * 1024 * 1024
 DEFAULT_TIMEOUT = 15.0
@@ -24,6 +26,7 @@ async def fetch_document(
     url: str,
     *,
     tls_verify: bool = True,
+    policy: OutboundPolicy = DEFAULT_POLICY,
     headers: Mapping[str, str] | None = None,
     timeout_seconds: float = DEFAULT_TIMEOUT,
     max_bytes: int = MAX_BYTES,
@@ -33,13 +36,15 @@ async def fetch_document(
     Redirects are followed by hand, at most ``_MAX_REDIRECTS`` hops, and never away from the host
     the caller named: a public server must not be able to bounce the request (and the caller's
     headers) to an internal address. The first URL is the caller's own choice, like a profile's
-    base URL, so it is not host-filtered."""
+    base URL, so it is not host-filtered. Every connection (first request and each hop) is
+    validated against ``policy`` when it is made, see ``infrastructure/net/guard.py``."""
     parts = urlsplit(url.strip())
     if parts.scheme not in ("http", "https") or not parts.hostname:
         raise OpenApiImportError("the document URL must be an http or https URL")
     current = url.strip()
     try:
-        async with httpx.AsyncClient(
+        async with guarded_client(
+            policy,
             verify=tls_verify,
             timeout=timeout_seconds,
             headers=dict(headers) if headers else None,

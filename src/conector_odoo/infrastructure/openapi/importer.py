@@ -19,6 +19,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from conector_odoo.domain.errors import ResourceConfigInvalid
+from conector_odoo.domain.outbound import DEFAULT_POLICY, OutboundPolicy
 from conector_odoo.domain.resource_codec import validate_resource_config
 from conector_odoo.domain.resources import (
     EndpointSpec,
@@ -73,8 +74,11 @@ class _Group:
 
 
 class OpenApiImporter:
-    def __init__(self, *, max_bytes: int = MAX_BYTES) -> None:
+    def __init__(
+        self, *, max_bytes: int = MAX_BYTES, policy: OutboundPolicy = DEFAULT_POLICY
+    ) -> None:
         self._max_bytes = max_bytes
+        self._policy = policy
 
     async def import_url(
         self,
@@ -87,7 +91,11 @@ class OpenApiImporter:
         """Fetch ``url`` (http/https) and import it. ``tls_verify`` and ``headers`` are the
         caller's choice (e.g. a profile's); nothing is sent that is not passed."""
         content = await fetch_document(
-            url, tls_verify=tls_verify, headers=headers, max_bytes=self._max_bytes
+            url,
+            tls_verify=tls_verify,
+            headers=headers,
+            max_bytes=self._max_bytes,
+            policy=self._policy,
         )
         return self.parse(content, base_path=base_path)
 

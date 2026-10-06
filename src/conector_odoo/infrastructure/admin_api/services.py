@@ -163,14 +163,15 @@ def build_admin_services(settings: Settings, conn: sqlite3.Connection) -> AdminS
         ip_window_seconds=settings.admin_login_ip_window_seconds,
         known_ip_seconds=settings.admin_login_known_ip_days * 24 * 3600,
     )
+    policy = settings.outbound_policy()
     profile_repo = SqliteConnectionProfileRepository(conn)
     catalog = SqliteResourceCatalogRepository(conn)
     key = settings.encryption_key.get_secret_value() if settings.encryption_key else None
     vault = FernetVault(key)
     endpoints = ProfileEndpoints(profile_repo, catalog, vault, settings)
     probes: dict[ProfileType, ConnectionProbe] = {
-        ProfileType.REST: RestConnectionProbe(),
-        ProfileType.ODOO: OdooConnectionProbe(),
+        ProfileType.REST: RestConnectionProbe(policy),
+        ProfileType.ODOO: OdooConnectionProbe(policy=policy),
     }
     mapping_repo = SqliteMappingRepository(conn)
     job_repo = SqliteSyncJobRepository(conn)
@@ -233,7 +234,7 @@ def build_admin_services(settings: Settings, conn: sqlite3.Connection) -> AdminS
                 vault,
                 lambda profile, secrets: endpoints.build_odoo(profile, secrets),
             ),
-            importer=OpenApiImporter(),
+            importer=OpenApiImporter(policy=policy),
         ),
         mappings=MappingServices(
             repo=mapping_repo,

@@ -11,6 +11,8 @@ from typing import Any
 import httpx
 
 from conector_odoo.domain.errors import RemoteUnavailable
+from conector_odoo.domain.outbound import DEFAULT_POLICY, OutboundPolicy
+from conector_odoo.infrastructure.net.guard import guarded_client
 from conector_odoo.infrastructure.rest.auth import Authenticator
 from conector_odoo.infrastructure.rest.errors import error_for
 
@@ -62,6 +64,7 @@ class RestHttpClient:
         *,
         extra_headers: Mapping[str, str] | None = None,
         tls_verify: bool = True,
+        policy: OutboundPolicy = DEFAULT_POLICY,
         timeout: float = 30.0,
         max_retries: int = 2,
         backoff_base: float = 0.5,
@@ -78,7 +81,8 @@ class RestHttpClient:
         self._idempotency_header = idempotency_header
         self._sleep = sleep
         self._limiter = RateLimiter(min_interval, clock, sleep)
-        self._client = httpx.AsyncClient(verify=tls_verify, timeout=timeout)
+        # Also the client of the token/discovery requests, so token_url and issuer_url obey it too.
+        self._client = guarded_client(policy, verify=tls_verify, timeout=timeout)
 
     def __repr__(self) -> str:
         return f"RestHttpClient(base_url={self._base_url!r})"

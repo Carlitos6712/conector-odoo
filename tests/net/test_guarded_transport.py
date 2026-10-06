@@ -165,3 +165,39 @@ def test_env_proxies_are_not_honoured(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_guarded_transport_is_an_httpx_transport() -> None:
     assert isinstance(GuardedTransport(DEFAULT_POLICY), httpx.AsyncBaseTransport)
+
+
+def test_blocking_connect_validates_every_address_before_connecting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        guard, "resolve_host_blocking", lambda h, p: ["127.0.0.1", "169.254.169.254"]
+    )
+    with pytest.raises(OutboundUrlBlocked):
+        guard.connect_guarded(DEFAULT_POLICY, "mixed.test", 80, 1.0)
+
+
+def test_blocking_connect_connects_to_the_validated_address(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import socket
+
+    server = socket.socket()
+    server.bind(("127.0.0.1", 0))
+    server.listen(1)
+    monkeypatch.setattr(guard, "resolve_host_blocking", lambda h, p: ["127.0.0.1"])
+    conn = guard.connect_guarded(DEFAULT_POLICY, "internal.test", server.getsockname()[1], 2.0)
+    assert conn.getpeername() == server.getsockname()
+    conn.close()
+    server.close()
+
+
+async def test_xmlrpc_transport_connects_through_the_guard(monkeypatch: pytest.MonkeyPatch) -> None:
+    from conector_odoo.infrastructure.odoo.xmlrpc import XmlRpcTransport
+
+    monkeypatch.setattr(guard, "resolve_host_blocking", lambda h, p: ["169.254.169.254"])
+    transport = XmlRpcTransport(
+        "http://odoo.attacker.test", "db", "u", "k" * 20, max_retries=0, policy=DEFAULT_POLICY
+    )
+    with pytest.raises(OutboundUrlBlocked):
+        await transport.authenticate()
