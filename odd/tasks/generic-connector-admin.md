@@ -32,7 +32,7 @@ Backend
 - [x] B6 Resource catalog + OpenAPI importer
 - [x] B7 Mapping engine (direct, constant, trim, case, date, cents, lookup, concat), versioned JSON, dry-run
 - [x] B8 Sync runner (upsert key, xref, idempotent, resumable, per-record errors, retry-failed, conflict rule)
-- [ ] B9 Triggers: manual, cron scheduler, webhook trigger
+- [x] B9 Triggers: manual, cron scheduler, webhook trigger
 - [ ] B10 /admin/api + admin login + roles
 Frontend
 - [ ] F1 Vite/React/TS/Tailwind/shadcn scaffold, i18n (es), TanStack Query, static serving from FastAPI
@@ -66,6 +66,8 @@ Delivery
 - B7: delegated direct (single writer; trigger: 2+ non-trivial files, ~20 files). TDD RED observed (collection ModuleNotFoundError: domain.mapping; later domain.mapping_codec/mapping_validation; then application.mappings + infrastructure.mappings), then GREEN.
 - B8: delegated direct (single writer; trigger: 2+ non-trivial files, ~22 files). TDD RED observed per stage (collection ImportError SyncJobInvalid; ModuleNotFoundError application.sync_runner; 13 failures for resume/retry/cancel; 14 failures for bidirectional), then GREEN. Migration-4 test written alongside the migration (no separate RED).
 
+- B9: delegated direct (single writer). TDD RED observed per stage (ModuleNotFoundError application.sync_trigger; domain.cron; application.scheduler; application.webhook_triggers; config attribute missing), then GREEN.
+
 ## Commits
 - B1: 94fad86 feat(db): add versioned migrator and admin schema
 - B2: d57ea4c fix(db): serialize concurrent migrations and release stores on startup failure
@@ -84,6 +86,9 @@ Delivery
 - B8: a27892c feat(sync): add sync runner core with upsert, xref, idempotent skip, error isolation and dry-run
 - B8: 31d4e4d feat(sync): add resume, retry-failed, cancel and only-records to the sync runner
 - B8: cd76ee4 feat(sync): add bidirectional sync with echo prevention and conflict rules
+- B9: ac094ae feat(sync): add TriggerSyncJob use case with typed already-running/not-found results
+- B9: 938d584 feat(sync): add in-process cron scheduler with stdlib cron evaluator
+- B9: (see git log) feat(sync): add webhook trigger handler
 
 ## Progress / verification
 Baseline: 612 passed on branch start.
@@ -122,5 +127,8 @@ B7 review: tier medium, slice_budget_reached, consent granted, approved, acknowl
 B8: 1282 passed; ruff check/format clean; mypy src clean. Domain sync.py (SyncJob, triggers manual/schedule(cron validated)/webhook, ConflictRule, Direction) + sync_runs.py (RunStatus, counters, XRef, redact_payload); migration 4 (job resources/mapping names/reverse mapping/updated-at fields, run conflicts/checkpoint/heartbeat/parent/options/error/sample/cancel flag, run_errors side/kind/retryable, xref content_hash/reverse_hash, UNIQUE sync_jobs.name). Repos in infrastructure/sync/{jobs,runs,locks}.py (shared per-connection lock; job delete refused with SyncJobInUse when runs exist; MappingInUse now also checks reverse_mapping_id). application/sync_runner.py: algorithm documented in the module docstring. xref semantics: content_hash = forward mapping of A at last sync, reverse_hash = reverse mapping of B; echo prevention and conflict detection both compare them. Resume = skip until checkpoint last_id (no remote cursor in RecordSource), replay if that id vanished; stale run (no heartbeat for 15 min) is resumable and does not block a new run. Fake endpoint extended (reject_when hook, get/update counters, batch_size check). ~3460 lines over 4 commits (about 1500 src, 1950 tests), over the 400 heuristic: domain+migration+3 repos, runner core, resume/retry/cancel and bidirectional are separate coherent units.
 Notes for B9/B10: runner takes injected EndpointFactory (profile id -> RecordEndpoint), clock and sleep; no Container wiring, no routes. No automatic incremental `since` (filter.since only; checkpoint stores max_updated_at for later use). Reverse pass ignores job.record_filter (its field names belong to side A). Dry-run does not simulate xref effects across passes. SQLite connection lock registry keeps connections alive (sqlite3.Connection is not weak-referenceable).
 
+B9: 1331 passed; ruff check/format clean; mypy src clean. TriggerSyncJob (typed COMPLETED/ALREADY_RUNNING/NOT_FOUND; runner is async so no thread). domain/cron.py: stdlib evaluator (croniter NOT added: only 5-field numeric cron is accepted by validate_cron, ~60 lines, UTC; dom/dow OR rule). SyncScheduler: next fire recomputed from now (missed ticks collapse, no catch-up on restart), per-job task, overlap skip, refresh() + periodic reload, stop() cancels loop and in-flight runs (left stale-resumable). WebhookTrigger already stored event_types, so no migration: HandleWebhookTrigger is a bus handler (HMAC/dedupe intake untouched); passes only_records=[record_id] when event.model == job.source.resource and direction != B_TO_A (runner `only` is keyed by forward pass). Settings: SYNC_SCHEDULER_ENABLED, SYNC_SCHEDULER_REFRESH_SECONDS.
+B9 NOT wired: no profile-id -> endpoint factory/vault assembly exists in the Container yet. B10 must build SyncRunner in the lifespan (close endpoints on failure), then `register_webhook_triggers(container.event_bus, handler)` and, if settings.sync_scheduler_enabled, `scheduler.start()` / `await scheduler.stop()` before closing resources; call scheduler.refresh() after job create/update.
+
 ## Next step
-B9 Triggers: manual, cron scheduler, webhook trigger (use SyncRunner.run with TriggerKind, JobAlreadyRunning handling).
+B10 /admin/api + admin login + roles (also wires SyncRunner, scheduler and webhook triggers into the Container/lifespan).
