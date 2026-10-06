@@ -4,7 +4,7 @@ from typing import Any, Self
 from pydantic import BaseModel, Field, model_validator
 
 from conector_odoo.application.record_propagation import PropagationOutcome
-from conector_odoo.application.records import RecordPage, RecordWrite
+from conector_odoo.application.records import RecordDelete, RecordPage, RecordWrite
 from conector_odoo.application.resources import DiscoveredResource, PreviewResult
 from conector_odoo.domain.records import FieldSpec, FieldType, Record, ResourceSchema
 from conector_odoo.domain.resources import (
@@ -338,9 +338,12 @@ class RecordWriteOut(RecordOut):
 class RecordDeleteOut(BaseModel):
     propagation: list[PropagationOut]
     warnings: list[str]
+    already_deleted: bool = False
 
     @classmethod
-    def of(cls, outcomes: tuple[PropagationOutcome, ...]) -> Self:
+    def of(cls, result: RecordDelete) -> Self:
         return cls(
-            propagation=[PropagationOut.of(o) for o in outcomes], warnings=_warnings(outcomes)
+            propagation=[PropagationOut.of(o) for o in result.propagation],
+            warnings=_warnings(result.propagation),
+            already_deleted=result.already_deleted,
         )

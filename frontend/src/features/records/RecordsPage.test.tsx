@@ -426,6 +426,26 @@ describe("RecordsPage delete", () => {
     expect(callsTo(fetchMock, "DELETE")).toHaveLength(1);
   });
 
+  it("shows the already-deleted note when the backend answers 200 with already_deleted", async () => {
+    let gone = false;
+    stubApi(
+      routes("admin", {
+        [DELETE]: () => {
+          gone = true;
+          return json({ propagation: [], warnings: [], already_deleted: true });
+        },
+        [LIST]: () =>
+          json(gone ? pageFixture({ items: [pageFixture().items[1]!] }) : pageFixture()),
+      }),
+    );
+    await renderApp(<RecordsPage />);
+    const dialog = await openDelete();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Eliminar definitivamente" }));
+    const report = await screen.findByRole("status");
+    expect(report).toHaveTextContent("El registro ya estaba eliminado.");
+    expect(report).not.toHaveTextContent(/no se ha propagado nada/i);
+  });
+
   it("surfaces the refusal message and keeps the dialog open", async () => {
     stubApi(
       routes("admin", {

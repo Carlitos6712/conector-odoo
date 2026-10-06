@@ -67,5 +67,5 @@ async def delete_record(
     profile_id: int, resource: str, record_id: str, admin: AdminDep
 ) -> RecordDeleteOut:
     """Delete ONE record (and its counterparts). Never touches other records, never cascades."""
-    outcomes = await admin.records.delete.execute(profile_id, resource, record_id)
-    return RecordDeleteOut.of(outcomes)
+    result = await admin.records.delete.execute(profile_id, resource, record_id)
+    return RecordDeleteOut.of(result)
