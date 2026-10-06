@@ -64,7 +64,9 @@ class TokenAuth:
         self,
         *,
         client_id: str,
-        client_secret: str,
+        client_secret: str | None,
+        username: str | None = None,
+        password: str | None = None,
         scope: str | None,
         token_url: str | None,
         issuer_url: str | None,
@@ -72,6 +74,8 @@ class TokenAuth:
     ) -> None:
         self._client_id = client_id
         self._client_secret = client_secret
+        self._username = username
+        self._password = password
         self._scope = scope
         self._token_url = token_url
         self._issuer_url = issuer_url
@@ -90,7 +94,7 @@ class TokenAuth:
         self._token = None
 
     def secret_values(self) -> tuple[str, ...]:
-        values = [self._client_id, self._client_secret]
+        values = [v for v in (self._client_id, self._client_secret, self._password) if v]
         if self._token:
             values.append(self._token)
         return tuple(values)
@@ -100,13 +104,13 @@ class TokenAuth:
 
     async def _fetch(self, client: httpx.AsyncClient) -> None:
         url = self._token_url or await self._discover(client)
-        form = {
-            "grant_type": "client_credentials",
-            "client_id": self._client_id,
-            "client_secret": self._client_secret,
-        }
-        if self._scope:
-            form["scope"] = self._scope
+        form = client_credentials_form(
+            client_id=self._client_id,
+            client_secret=self._client_secret,
+            username=self._username,
+            password=self._password,
+            scope=self._scope,
+        )
         try:
             response = await client.post(url, data=form)
         except httpx.TransportError as exc:
@@ -154,6 +158,33 @@ class TokenAuth:
         return endpoint
 
 
+def client_credentials_form(
+    *,
+    client_id: str,
+    client_secret: str | None,
+    username: str | None,
+    password: str | None,
+    scope: str | None,
+) -> dict[str, str]:
+    """Form of the token request: user + app password when both are set, else the client secret."""
+    form = {"grant_type": "client_credentials", "client_id": client_id}
+    if username and password:
+        form["username"] = username
+        form["password"] = password
+    else:
+        form["client_secret"] = client_secret or ""
+    if scope:
+        form["scope"] = scope
+    return form
+
+
+def has_client_credentials(profile: ConnectionProfile, secrets: Secrets) -> bool:
+    """Client id plus a client secret or (profile username + vault password)."""
+    if not secrets.client_id:
+        return False
+    return bool(secrets.client_secret or (profile.username and secrets.password))
+
+
 def _json_object(response: httpx.Response) -> dict[str, Any]:
     try:
         body = response.json()
@@ -183,13 +214,18 @@ def build_authenticator(
         if not secrets.token:
             raise RemoteAuthError("a bearer token is required for this profile")
         return StaticAuth("Authorization", f"Bearer {secrets.token}", secrets.token)
-    if not (secrets.client_id and secrets.client_secret):
-        raise RemoteAuthError("a client id and client secret are required for this profile")
+    if not has_client_credentials(profile, secrets):
+        raise RemoteAuthError(
+            "a client id and either a client secret or a username and password are required "
+            "for this profile"
+        )
     if method is AuthMethod.OAUTH2_CLIENT_CREDENTIALS and not profile.token_url:
         raise RemoteAuthError("token_url is required for oauth2_client_credentials")
     return TokenAuth(
         client_id=secrets.client_id,
         client_secret=secrets.client_secret,
+        username=profile.username,
+        password=secrets.password,
         scope=profile.scope,
         token_url=profile.token_url,
         issuer_url=(issuer_url or profile.base_url) if method is AuthMethod.OIDC else None,

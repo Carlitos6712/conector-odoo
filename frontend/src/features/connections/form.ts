@@ -23,6 +23,7 @@ export interface FormState {
   auth_method: AuthMethod;
   api_key_header: string;
   token_url: string;
+  username: string;
   scope: string;
   tls_verify: boolean;
   timeout_seconds: string;
@@ -43,6 +44,7 @@ export const emptyState = (): FormState => ({
   auth_method: "bearer",
   api_key_header: "X-API-Key",
   token_url: "",
+  username: "",
   scope: "",
   tls_verify: true,
   timeout_seconds: "30",
@@ -60,13 +62,14 @@ export const stateFromProfile = (profile: Profile): FormState => ({
   auth_method: profile.auth_method,
   api_key_header: profile.api_key_header,
   token_url: profile.token_url ?? "",
+  username: profile.username ?? "",
   scope: profile.scope ?? "",
   tls_verify: profile.tls_verify,
   timeout_seconds: String(profile.timeout_seconds),
   extra_headers: profile.extra_headers,
 });
 
-/** Credentials each kind/auth type needs. */
+/** Credentials each kind/auth type takes (some may be optional, see `validate`). */
 export function requiredSecrets(state: FormState): SecretField[] {
   if (state.type === "odoo") return ["api_key"];
   switch (state.auth_method) {
@@ -74,9 +77,37 @@ export function requiredSecrets(state: FormState): SecretField[] {
       return ["api_key"];
     case "bearer":
       return ["token"];
+    case "oauth2_client_credentials":
+      return ["client_id", "client_secret", "password"];
     default:
       return ["client_id", "client_secret"];
   }
+}
+
+/** OAuth2 client credentials can authenticate with a user + app password instead of a secret. */
+export const usesUserPassword = (state: FormState) =>
+  state.type === "rest" && state.auth_method === "oauth2_client_credentials";
+
+const filled = (value: string) => value.trim() !== "";
+
+/** Is the user + password pair complete (typed now, or the password already stored)? */
+function hasUserPassword(state: FormState, stored: Profile["has_secret"]): boolean {
+  return (
+    usesUserPassword(state) &&
+    filled(state.username) &&
+    (filled(state.secrets.password) || Boolean(stored.password))
+  );
+}
+
+/** Credentials that must be provided: the client secret is optional with user + password. */
+function mandatorySecrets(state: FormState, stored: Profile["has_secret"]): SecretField[] {
+  const fields = requiredSecrets(state);
+  if (!usesUserPassword(state)) return fields;
+  return fields.filter((field) => {
+    if (field === "password") return filled(state.username);
+    if (field === "client_secret") return !hasUserPassword(state, stored);
+    return true;
+  });
 }
 
 export const usesTokenUrl = (state: FormState) =>
@@ -126,7 +157,7 @@ export function validate(
       else if (tokenUrl && !isHttpUrl(tokenUrl)) errors.token_url = INVALID_URL;
     }
   }
-  for (const field of requiredSecrets(state)) {
+  for (const field of mandatorySecrets(state, stored)) {
     if (!state.secrets[field].trim() && !stored[field]) errors[field] = REQUIRED;
   }
   return errors;
@@ -134,7 +165,7 @@ export function validate(
 
 /** True when every credential the draft test needs has been typed (stored ones are unreadable). */
 export const hasAllSecretsTyped = (state: FormState) =>
-  requiredSecrets(state).every((field) => state.secrets[field].trim() !== "");
+  mandatorySecrets(state, {}).every((field) => state.secrets[field].trim() !== "");
 
 /** Builds the request body with only the fields relevant to the chosen kind and auth type. */
 export function toInput(state: FormState): ProfileInput {
@@ -167,5 +198,6 @@ export function toInput(state: FormState): ProfileInput {
     ...(usesTokenUrl(state)
       ? { token_url: state.token_url.trim() || null, scope: state.scope.trim() || null }
       : {}),
+    ...(usesUserPassword(state) ? { username: state.username.trim() || null } : {}),
   };
 }

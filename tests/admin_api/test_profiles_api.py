@@ -140,3 +140,20 @@ def test_every_secret_field_is_write_only(admin: AdminEnv, field: str) -> None:
     response = admin.post(PROFILES, json=rest_body(secrets={field: value}))
     assert response.status_code == 201
     assert value not in response.text and value not in admin.get(PROFILES).text
+
+
+def test_username_is_stored_and_returned_but_the_password_is_not(admin: AdminEnv) -> None:
+    body = rest_body(
+        auth_method="oauth2_client_credentials",
+        token_url="https://idp.test/token",
+        username="alice",
+        secrets={"client_id": "cid", "password": "app-PASSWORD-xyz"},
+    )
+    created = admin.post(PROFILES, json=body)
+    assert created.status_code == 201, created.text
+    profile = created.json()
+    assert profile["username"] == "alice"
+    assert profile["has_secret"]["password"] is True
+    assert "app-PASSWORD-xyz" not in created.text
+    fetched = admin.get(f"{PROFILES}/{profile['id']}")
+    assert fetched.json()["username"] == "alice"

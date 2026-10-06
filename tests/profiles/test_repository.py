@@ -1,5 +1,6 @@
 import sqlite3
 from collections.abc import Iterator
+from dataclasses import replace
 
 import pytest
 
@@ -154,3 +155,13 @@ def vars_of(profile: ConnectionProfile) -> dict[str, object]:
     import dataclasses
 
     return {f.name: getattr(profile, f.name) for f in dataclasses.fields(profile)}
+
+
+async def test_username_round_trips_as_a_non_secret_option(
+    repo: SqliteConnectionProfileRepository,
+) -> None:
+    draft = replace(rest(), auth_method=AuthMethod.OAUTH2_CLIENT_CREDENTIALS, username="alice")
+    saved = await repo.add(draft, None)
+    stored = await repo.get(saved.id or 0)
+    assert stored is not None
+    assert stored.profile.username == "alice"

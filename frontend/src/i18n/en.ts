@@ -171,6 +171,8 @@ export const en: Translation = {
       },
       saving: "Saving…",
       secretStored: "Stored. Leave blank to keep the current value.",
+      userPasswordHint:
+        "Optional: set a username and password (e.g. an Authentik app password) instead of the client secret.",
       tokenUrlOidcHint: "Optional: when omitted it is discovered from the base URL.",
       advanced: "Advanced options",
       fields: {
@@ -183,6 +185,7 @@ export const en: Translation = {
         apiKeyHeader: "Key header",
         bearer: "Bearer token",
         password: "Password",
+        username: "Username",
         tokenUrl: "Token URL",
         scope: "Scope",
         clientId: "Client ID",

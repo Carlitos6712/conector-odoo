@@ -15,6 +15,7 @@ from conector_odoo.domain.errors import OutboundUrlBlocked
 from conector_odoo.domain.outbound import DEFAULT_POLICY, OutboundPolicy
 from conector_odoo.domain.profiles import AuthMethod, ConnectionProfile, ProbeStep, Secrets
 from conector_odoo.infrastructure.net.guard import guarded_client
+from conector_odoo.infrastructure.rest.auth import client_credentials_form, has_client_credentials
 
 URL_VALID = "url_valid"
 REACHABLE = "reachable"
@@ -250,8 +251,8 @@ async def _add_credentials(
             return _missing("a bearer token")
         headers["Authorization"] = f"Bearer {secrets.token}"
     else:
-        if not (secrets.client_id and secrets.client_secret):
-            return _missing("a client id and client secret")
+        if not has_client_credentials(profile, secrets):
+            return _missing("a client id and either a client secret or a username and password")
         if not profile.token_url:
             return ProbeStep(
                 AUTH,
@@ -275,13 +276,13 @@ def _missing(what: str) -> ProbeStep:
 async def _fetch_token(
     client: httpx.AsyncClient, profile: ConnectionProfile, secrets: Secrets
 ) -> str | ProbeStep:
-    form = {
-        "grant_type": "client_credentials",
-        "client_id": secrets.client_id or "",
-        "client_secret": secrets.client_secret or "",
-    }
-    if profile.scope:
-        form["scope"] = profile.scope
+    form = client_credentials_form(
+        client_id=secrets.client_id or "",
+        client_secret=secrets.client_secret,
+        username=profile.username,
+        password=secrets.password,
+        scope=profile.scope,
+    )
     try:
         response = await client.post(profile.token_url or "", data=form)
     except OutboundUrlBlocked as exc:
@@ -299,7 +300,8 @@ async def _fetch_token(
             AUTH,
             False,
             f"the token endpoint refused the client credentials (HTTP {response.status_code})",
-            "Check client id/secret, the granted scope and that client_credentials is enabled.",
+            "Check the client id and secret (or username and app password), the granted scope "
+            "and that client_credentials is enabled.",
         )
     return token
 

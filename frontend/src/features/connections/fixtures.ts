@@ -14,6 +14,7 @@ export function profileFixture(overrides: Partial<Profile> = {}): Profile {
     odoo_db: null,
     odoo_login: null,
     token_url: null,
+    username: null,
     scope: null,
     api_key_header: "X-API-Key",
     has_secret: { token: true },

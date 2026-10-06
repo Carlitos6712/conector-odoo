@@ -1,5 +1,6 @@
 import logging
 from typing import Any
+from urllib.parse import parse_qs
 
 import httpx
 import pytest
@@ -228,3 +229,75 @@ async def test_token_endpoint_client_errors_are_auth_errors(status: int) -> None
     respx.post(TOKEN_URL).respond(status, json={"error": "invalid_client"})
     with pytest.raises(RemoteAuthError):
         await http_client(oauth_profile(), CLIENT).request("GET", "/x")
+
+
+USER_PASSWORD = Secrets(client_id="cid-public", password="app-password-77")
+
+
+@respx.mock
+async def test_oauth2_username_password_grant_sends_user_form_without_client_secret() -> None:
+    token = respx.post(TOKEN_URL).mock(return_value=token_response())
+    respx.get(f"{BASE}/x").respond(200, json={})
+    client = http_client(oauth_profile(username="alice"), USER_PASSWORD)
+    await client.request("GET", "/x")
+    form = parse_qs(token.calls[0].request.content.decode())
+    assert form == {
+        "grant_type": ["client_credentials"],
+        "client_id": ["cid-public"],
+        "username": ["alice"],
+        "password": ["app-password-77"],
+        "scope": ["read"],
+    }
+
+
+@respx.mock
+async def test_oauth2_username_password_wins_over_client_secret_when_both_set() -> None:
+    token = respx.post(TOKEN_URL).mock(return_value=token_response())
+    respx.get(f"{BASE}/x").respond(200, json={})
+    secrets = Secrets(client_id="cid", client_secret="csecret-value-9", password="pw-1")
+    await http_client(oauth_profile(username="alice"), secrets).request("GET", "/x")
+    form = parse_qs(token.calls[0].request.content.decode())
+    assert form["username"] == ["alice"]
+    assert "client_secret" not in form
+
+
+@respx.mock
+async def test_oauth2_without_username_keeps_client_secret_grant() -> None:
+    token = respx.post(TOKEN_URL).mock(return_value=token_response())
+    respx.get(f"{BASE}/x").respond(200, json={})
+    secrets = Secrets(client_id="cid", client_secret="csecret-value-9", password="pw-1")
+    await http_client(oauth_profile(), secrets).request("GET", "/x")
+    form = parse_qs(token.calls[0].request.content.decode())
+    assert form["client_secret"] == ["csecret-value-9"]
+    assert "username" not in form
+    assert "password" not in form
+
+
+@pytest.mark.parametrize(
+    ("username", "secrets"),
+    [
+        ("alice", Secrets(client_id="cid")),
+        (None, Secrets(client_id="cid", password="pw")),
+        ("alice", Secrets(password="pw")),
+    ],
+)
+async def test_oauth2_incomplete_user_credentials_raise_auth_error(
+    username: str | None, secrets: Secrets
+) -> None:
+    with pytest.raises(RemoteAuthError, match="required"):
+        await http_client(oauth_profile(username=username), secrets).request("GET", "/x")
+
+
+@respx.mock
+async def test_oauth2_password_never_appears_in_repr_errors_or_logs(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    respx.post(TOKEN_URL).mock(return_value=token_response("at-ok"))
+    respx.get(f"{BASE}/x").respond(500, text="boom app-password-77")
+    client = http_client(oauth_profile(username="alice"), USER_PASSWORD)
+    with pytest.raises(RemoteUnavailable) as info:
+        await client.request("GET", "/x")
+    everything = repr(client) + repr(client._auth) + str(info.value) + caplog.text
+    assert "app-password-77" not in everything
+    assert "app-password-77" in client._auth.secret_values()

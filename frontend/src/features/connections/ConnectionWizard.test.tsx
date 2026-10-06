@@ -130,13 +130,13 @@ describe("ConnectionWizard create", () => {
     ["Token Bearer", ["Token Bearer"], ["Clave de API", "URL del token", "Client ID"]],
     [
       "Client credentials (OAuth2)",
-      ["URL del token", "Ámbito (scope)", "Client ID", "Client secret"],
+      ["URL del token", "Ámbito (scope)", "Client ID", "Client secret", "Usuario", "Contraseña"],
       ["Token Bearer", "Clave de API"],
     ],
     [
       "OpenID Connect",
       ["URL del token", "Ámbito (scope)", "Client ID", "Client secret"],
-      ["Token Bearer", "Clave de API"],
+      ["Token Bearer", "Clave de API", "Usuario", "Contraseña"],
     ],
   ])("shows only the fields of the %s auth type", async (authType, shown, hidden) => {
     stubApi(baseRoutes());
@@ -146,6 +146,60 @@ describe("ConnectionWizard create", () => {
     await user.selectOptions(screen.getByLabelText("Tipo de autenticación"), authType);
     for (const label of shown) expect(screen.getByLabelText(label)).toBeInTheDocument();
     for (const label of hidden) expect(screen.queryByLabelText(label)).not.toBeInTheDocument();
+  });
+
+  it("accepts a username and password instead of a client secret for OAuth2", async () => {
+    const fetchMock = stubApi({
+      ...baseRoutes(),
+      "POST /profiles": () => json(profileFixture(), 201),
+    });
+    await renderApp(<Harness />, "/connections/new");
+    const user = userEvent.setup();
+    await pickKind(user, "API REST");
+    await user.selectOptions(
+      screen.getByLabelText("Tipo de autenticación"),
+      "Client credentials (OAuth2)",
+    );
+    await user.type(screen.getByLabelText("Nombre"), "Authentik");
+    await user.type(screen.getByLabelText("URL base"), "https://api.suwe.test/v1");
+    await user.type(
+      screen.getByLabelText("URL del token"),
+      "https://auth.test/application/o/token/",
+    );
+    await user.type(screen.getByLabelText("Client ID"), "cid");
+    await user.type(screen.getByLabelText("Usuario"), "alice");
+    await user.click(screen.getByRole("button", { name: "Siguiente" }));
+    // client secret is still required while the password is missing
+    expect(screen.getByRole("heading", { name: "Datos de conexión" })).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Contraseña"), "app-pass-1");
+    await user.click(screen.getByRole("button", { name: "Siguiente" }));
+    await user.click(screen.getByRole("button", { name: "Siguiente" })); // test is optional
+    await user.click(screen.getByRole("button", { name: "Guardar conexión" }));
+    await screen.findByText("lista de conexiones");
+    const saved = bodyOf(fetchMock, "POST", "/profiles");
+    expect(saved).toMatchObject({
+      auth_method: "oauth2_client_credentials",
+      username: "alice",
+      secrets: { client_id: "cid", password: "app-pass-1" },
+    });
+    expect(saved?.secrets).not.toHaveProperty("client_secret");
+  });
+
+  it("keeps requiring the client secret when no username is typed", async () => {
+    stubApi(baseRoutes());
+    await renderApp(<Harness />, "/connections/new");
+    const user = userEvent.setup();
+    await pickKind(user, "API REST");
+    await user.selectOptions(
+      screen.getByLabelText("Tipo de autenticación"),
+      "Client credentials (OAuth2)",
+    );
+    await user.type(screen.getByLabelText("Nombre"), "IdP");
+    await user.type(screen.getByLabelText("URL base"), "https://api.suwe.test/v1");
+    await user.type(screen.getByLabelText("URL del token"), "https://auth.test/token");
+    await user.type(screen.getByLabelText("Client ID"), "cid");
+    await user.click(screen.getByRole("button", { name: "Siguiente" }));
+    expect(screen.getByLabelText("Client secret")).toHaveAttribute("aria-invalid", "true");
   });
 
   it("shows accessible inline errors and stays on the step", async () => {

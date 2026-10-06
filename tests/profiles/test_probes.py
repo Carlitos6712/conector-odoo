@@ -1,4 +1,5 @@
 from typing import Any
+from urllib.parse import parse_qs
 
 import httpx
 import pytest
@@ -372,3 +373,52 @@ async def test_odoo_probe_requires_database_login_and_key() -> None:
     assert "database" in step.detail
     step = failing(await probe.probe(odoo(), Secrets()))
     assert "API key" in step.detail
+
+
+@respx.mock
+async def test_username_password_grant_fetches_a_token_without_client_secret() -> None:
+    token = respx.post("https://auth.test/token").respond(200, json={"access_token": "tok-1"})
+    api = respx.get(BASE).respond(200)
+    profile = rest(
+        auth_method=AuthMethod.OAUTH2_CLIENT_CREDENTIALS,
+        token_url="https://auth.test/token",
+        scope="openid",
+        username="alice",
+    )
+    steps = await RestConnectionProbe().probe(profile, Secrets(client_id="cid", password=SECRET))
+    assert steps[-1].ok
+    assert api.calls.last.request.headers["Authorization"] == "Bearer tok-1"
+    form = parse_qs(token.calls.last.request.content.decode())
+    assert form["username"] == ["alice"]
+    assert form["password"] == [SECRET]
+    assert form["client_id"] == ["cid"]
+    assert "client_secret" not in form
+
+
+@respx.mock
+async def test_username_password_rejection_does_not_leak_the_password() -> None:
+    respx.get(BASE).respond(200)
+    respx.post("https://auth.test/token").respond(401, json={"error": "invalid_grant"})
+    profile = rest(
+        auth_method=AuthMethod.OAUTH2_CLIENT_CREDENTIALS,
+        token_url="https://auth.test/token",
+        username="alice",
+    )
+    step = failing(
+        await RestConnectionProbe().probe(profile, Secrets(client_id="c", password=SECRET))
+    )
+    assert step.name == "auth"
+    assert SECRET not in repr(step)
+
+
+@respx.mock
+async def test_oauth2_missing_user_password_or_secret_fails_auth() -> None:
+    respx.get(BASE).respond(200)
+    profile = rest(
+        auth_method=AuthMethod.OAUTH2_CLIENT_CREDENTIALS,
+        token_url="https://auth.test/token",
+        username="alice",
+    )
+    step = failing(await RestConnectionProbe().probe(profile, Secrets(client_id="c")))
+    assert step.name == "auth"
+    assert "password" in step.detail

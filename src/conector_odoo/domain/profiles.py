@@ -67,7 +67,9 @@ class ConnectionProfile:
 
     ``extra_headers`` are sent as-is and shown in the admin, so they must not carry credentials
     (use ``Secrets``). Odoo profiles use ``odoo_db``/``odoo_login``; OAuth2/OIDC profiles use
-    ``token_url`` and ``scope``; API-key profiles send the key in ``api_key_header``.
+    ``token_url`` and ``scope`` (plus a non-secret ``username`` when they authenticate with a user
+    password, which lives in ``Secrets.password``); API-key profiles send the key in
+    ``api_key_header``.
     """
 
     id: int | None
@@ -81,6 +83,7 @@ class ConnectionProfile:
     odoo_db: str | None = None
     odoo_login: str | None = None
     token_url: str | None = None
+    username: str | None = None
     scope: str | None = None
     api_key_header: str = "X-API-Key"
     secret_fields: frozenset[str] = frozenset()
