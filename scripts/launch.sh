@@ -65,8 +65,10 @@ do_start() {
   [[ -d "$ROOT/.venv" ]] || (cd "$ROOT" && uv sync)
   [[ -d "$ROOT/frontend/node_modules" ]] || (cd "$ROOT/frontend" && npm ci)
 
+  # Local use: no admin login, so the backend must stay on localhost (see README, Launcher).
+  export ADMIN_AUTH_DISABLED="${ADMIN_AUTH_DISABLED:-true}"
   echo "Starting..."
-  start_one backend "$ROOT" uv run uvicorn conector_odoo.main:create_app --factory --host 0.0.0.0 --port "$BACKEND_PORT"
+  start_one backend "$ROOT" uv run uvicorn conector_odoo.main:create_app --factory --host "${BACKEND_HOST:-127.0.0.1}" --port "$BACKEND_PORT"
   start_one frontend "$ROOT/frontend" npm run dev -- --port "$FRONTEND_PORT"
 
   wait_for backend "http://localhost:$BACKEND_PORT/docs" || true
