@@ -1,11 +1,12 @@
 """Description of a remote REST resource: where its endpoints are and how it paginates.
 
-Pure domain: stdlib only. B6 will persist/import these; adapters receive them through the
-``ResourceConfigProvider`` port and never know where they are stored.
+Pure domain: stdlib only. The resource catalog persists/imports these; adapters receive them
+through the ``ResourceConfigProvider`` port and never know where they are stored.
 """
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import StrEnum
 
 from conector_odoo.domain.records import FieldSpec
@@ -72,3 +73,20 @@ class ResourceConfig:
     filter_param_map: Mapping[str, str] = field(default_factory=dict)
     since_param: str | None = None
     schema_fields: tuple[FieldSpec, ...] = ()
+
+
+class ResourceSource(StrEnum):
+    """How a catalog entry came to be: typed in by an admin or prefilled from an OpenAPI import."""
+
+    MANUAL = "manual"
+    OPENAPI = "openapi"
+
+
+@dataclass(frozen=True, slots=True)
+class StoredResource:
+    """A ``ResourceConfig`` as kept in the catalog of one connection profile."""
+
+    profile_id: int
+    config: ResourceConfig
+    source: ResourceSource
+    updated_at: datetime

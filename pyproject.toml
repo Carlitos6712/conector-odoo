@@ -10,6 +10,7 @@ dependencies = [
     "httpx>=0.28.1",
     "pydantic>=2",
     "pydantic-settings>=2.15.0",
+    "pyyaml>=6.0.3",
     "uvicorn[standard]>=0.54.0",
 ]
 
@@ -55,4 +56,5 @@ dev = [
     "pytest-asyncio>=1.4.0",
     "respx>=0.23.1",
     "ruff>=0.16.10",
+    "types-pyyaml>=6.0.12.20260906",
 ]

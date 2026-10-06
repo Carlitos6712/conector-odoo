@@ -112,3 +112,17 @@ class RemoteUnavailable(ConnectorError):
 
 class RemoteAuthError(ConnectorError):
     """The remote system rejected the credentials or the session."""
+
+
+class ResourceConfigInvalid(ConnectorError):
+    """A REST resource configuration is malformed (bad endpoint, inconsistent pagination, or
+    stored JSON that is unknown or corrupt)."""
+
+
+class CatalogResourceNotFound(ConnectorError):
+    """The resource catalog of a profile has no entry with that name."""
+
+
+class OpenApiImportError(ConnectorError):
+    """An OpenAPI/Swagger document cannot be fetched or parsed (too large, bad scheme, not a
+    supported document)."""
