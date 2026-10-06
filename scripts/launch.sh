@@ -34,7 +34,8 @@ start_one() { # name workdir command...
   local name="$1" dir="$2"; shift 2
   if is_running "$name"; then echo "  $name already running (pid $(<"$RUN_DIR/$name.pid"))"; return 0; fi
   # setsid may fork, so $! is not the group leader: the leader records its own pid, then execs the command
-  (cd "$dir" && setsid nohup bash -c 'echo $$ >"$0"; exec "$@"' "$RUN_DIR/$name.pid" "$@" >"$RUN_DIR/$name.log" 2>&1 &)
+  # the wrapper subshell must not keep our stdout open, or `launch.sh start | tail` never returns
+  (cd "$dir" && setsid nohup bash -c 'echo $$ >"$0"; exec "$@"' "$RUN_DIR/$name.pid" "$@" >"$RUN_DIR/$name.log" 2>&1 </dev/null &) >/dev/null 2>&1
 }
 
 stop_one() {
@@ -65,8 +66,10 @@ do_start() {
   [[ -d "$ROOT/.venv" ]] || (cd "$ROOT" && uv sync)
   [[ -d "$ROOT/frontend/node_modules" ]] || (cd "$ROOT/frontend" && npm ci)
 
+  # Local use: no admin login, so the backend must stay on localhost (see README, Launcher).
+  export ADMIN_AUTH_DISABLED="${ADMIN_AUTH_DISABLED:-true}"
   echo "Starting..."
-  start_one backend "$ROOT" uv run uvicorn conector_odoo.main:create_app --factory --host 0.0.0.0 --port "$BACKEND_PORT"
+  start_one backend "$ROOT" uv run uvicorn conector_odoo.main:create_app --factory --host "${BACKEND_HOST:-127.0.0.1}" --port "$BACKEND_PORT"
   start_one frontend "$ROOT/frontend" npm run dev -- --port "$FRONTEND_PORT"
 
   wait_for backend "http://localhost:$BACKEND_PORT/docs" || true

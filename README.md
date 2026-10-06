@@ -135,6 +135,11 @@ bash scripts/launch.sh start --docker   # docker compose instead (UI on CONNECTO
 - The backend defaults to port **8001**, not 8000, because 8000 is often taken by other local dev
   containers. If something else owns the port, uvicorn fails with `address already in use` and the
   UI proxy ends up talking to the other service.
+- **No login by default.** The launcher sets `ADMIN_AUTH_DISABLED=true`, so the UI opens straight
+  into the app as an admin. Security warning: anyone who can reach the backend port is an admin.
+  The launcher therefore binds uvicorn to `127.0.0.1` (override with `BACKEND_HOST`; keep it on
+  `127.0.0.1`). To restore the login, run `ADMIN_AUTH_DISABLED=false bash scripts/launch.sh restart`.
+  `CONNECTOR_API_KEY` and the webhook HMAC are unaffected.
 - Override with `BACKEND_PORT` and `FRONTEND_PORT`. The launcher derives `VITE_BACKEND_URL` from
   `BACKEND_PORT`, so the dev proxy follows; set `VITE_BACKEND_URL` yourself to point elsewhere.
 - Each service runs in its own process group (PID files and logs in `.run/`), so `stop` and
@@ -270,6 +275,7 @@ admin UI ("Active Odoo connection" above). The four `ODOO_URL/DB/USER/API_KEY` v
 | `SYNC_SCHEDULER_ENABLED` | `true` | Run cron jobs in-process. Set `false` to disable. |
 | `SYNC_SCHEDULER_REFRESH_SECONDS` | `60.0` | How often the scheduler reloads the job list (> 0). |
 | `ADMIN_BOOTSTRAP_USER` / `ADMIN_BOOTSTRAP_PASSWORD` | unset | First admin, created only when no admin exists. Set both or neither; password 12+ characters. |
+| `ADMIN_AUTH_DISABLED` | `false` | Skips the admin login: every request acts as a built-in admin (CSRF is not checked). **Local use only**: anyone who can reach the port is an admin. Does not affect `CONNECTOR_API_KEY` or the webhook HMAC. `scripts/launch.sh` turns it on by default; to document it in `.env` add it there yourself. |
 | `ADMIN_COOKIE_NAME` | `admin_session` | Session cookie name. |
 | `ADMIN_COOKIE_SECURE` | `true` | Send the cookie over HTTPS only. Set `false` for plain-HTTP development. |
 | `ADMIN_COOKIE_SAMESITE` | `lax` | `lax` or `strict`. |

@@ -77,6 +77,20 @@ describe("LoginPage", () => {
     });
   });
 
+  it("redirects to the app instead of showing the form when a session already exists", async () => {
+    stubApi({ "GET /auth/me": () => json(sessionBody("admin", "csrf-me")) });
+    await renderApp(<Harness />, "/login");
+    expect(await screen.findByText("contenido protegido")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Usuario")).not.toBeInTheDocument();
+  });
+
+  it("does not flash the form while the session is still being checked", async () => {
+    stubApi({ "GET /auth/me": () => new Promise<Response>(() => {}) });
+    await renderApp(<Harness />, "/login");
+    expect(screen.getByRole("status")).toHaveTextContent("Cargando");
+    expect(screen.queryByLabelText("Usuario")).not.toBeInTheDocument();
+  });
+
   it("shows an accessible error on bad credentials and stays on the form", async () => {
     stubApi({
       "GET /auth/me": () => json({ error: "unauthorized", detail: "" }, 401),

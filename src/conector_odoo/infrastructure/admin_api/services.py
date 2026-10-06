@@ -274,6 +274,8 @@ def build_admin_services(
 
 async def bootstrap_first_admin(settings: Settings, services: AdminServices) -> None:
     """Create the configured first admin, only when no admin user exists at all."""
+    if settings.admin_auth_disabled:
+        return
     if settings.admin_bootstrap_user is None or settings.admin_bootstrap_password is None:
         return
     created = await services.users.bootstrap(

@@ -10,18 +10,23 @@ Roles: any signed-in user may call safe methods (GET/HEAD/OPTIONS); every other 
 """
 
 import hmac
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import Depends, Request, Response
 
 from conector_odoo.application.auth import CurrentSession
 from conector_odoo.config import Settings
-from conector_odoo.domain.auth import Role
+from conector_odoo.domain.auth import AdminUser, Role
 from conector_odoo.domain.client_ip import resolve_client_ip
 from conector_odoo.domain.errors import AdminForbidden, CsrfInvalid
 from conector_odoo.infrastructure.admin_api.services import AdminServices
 from conector_odoo.infrastructure.api.dependencies import get_settings
 
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+# The identity used when ``ADMIN_AUTH_DISABLED`` is on. The id is never stored anywhere.
+_DISABLED_AUTH_USER = AdminUser(id=0, username="local-admin", role=Role.ADMIN, created_at=_EPOCH)
+_DISABLED_AUTH_CSRF = "auth-disabled"
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 CSRF_HEADER = "X-CSRF-Token"
 
@@ -51,6 +56,9 @@ async def current_session(
 ) -> CurrentSession:
     """The signed-in session or ``SessionInvalid`` (401). Admin responses are never cached."""
     response.headers["Cache-Control"] = "no-store"
+    if settings.admin_auth_disabled:
+        expires_at = datetime.now(UTC) + timedelta(seconds=settings.admin_session_ttl_seconds)
+        return CurrentSession(_DISABLED_AUTH_USER, _DISABLED_AUTH_CSRF, expires_at)
     token = request.cookies.get(settings.admin_cookie_name, "")
     return await admin.auth.authenticate(token)
 
@@ -58,27 +66,31 @@ async def current_session(
 SessionDep = Annotated[CurrentSession, Depends(current_session)]
 
 
-def _check_csrf(request: Request, session: CurrentSession) -> None:
+def _check_csrf(request: Request, session: CurrentSession, settings: Settings) -> None:
+    if settings.admin_auth_disabled:
+        return  # no cookie session exists, so there is nothing for a forged request to ride on
     provided = request.headers.get(CSRF_HEADER, "").encode()
     if not hmac.compare_digest(provided, session.csrf_token.encode()):
         raise CsrfInvalid("missing or invalid CSRF token")
 
 
-async def authorize(request: Request, session: SessionDep) -> CurrentSession:
+async def authorize(request: Request, session: SessionDep, settings: SettingsDep) -> CurrentSession:
     if request.method not in SAFE_METHODS:
         if session.user.role is not Role.ADMIN:
             raise AdminForbidden("this operation requires the admin role")
-        _check_csrf(request, session)
+        _check_csrf(request, session, settings)
     return session
 
 
 AuthorizedDep = Annotated[CurrentSession, Depends(authorize)]
 
 
-async def authorize_self_service(request: Request, session: SessionDep) -> CurrentSession:
+async def authorize_self_service(
+    request: Request, session: SessionDep, settings: SettingsDep
+) -> CurrentSession:
     """The one explicit exception to "writes need the admin role": a user acting on their OWN
     account (password change). Any role may call it, but it still needs a session and CSRF."""
-    _check_csrf(request, session)
+    _check_csrf(request, session, settings)
     return session
 
 

@@ -5,6 +5,7 @@ import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { ApiError } from "@/api/client";
 import { login, SESSION_KEY } from "@/auth/api";
 import { useSession } from "@/auth/useSession";
+import { Loading } from "@/components/Loading";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -30,7 +31,7 @@ export function LoginPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useSession();
+  const { query, user } = useSession();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const from = (location.state as { from?: string } | null)?.from ?? "/";
@@ -44,6 +45,7 @@ export function LoginPage() {
   });
   const errorMessage = useLoginErrorMessage(mutation.error);
 
+  if (query.isPending) return <Loading />;
   if (user) return <Navigate to={from} replace />;
 
   function onSubmit(event: FormEvent) {

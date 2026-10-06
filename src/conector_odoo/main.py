@@ -84,6 +84,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if resolved.connector_api_key is None:
             logger.warning("connector API key not configured; data endpoints are unauthenticated")
+        if resolved.admin_auth_disabled:
+            logger.warning(
+                "admin authentication is disabled (ADMIN_AUTH_DISABLED); "
+                "anyone who can reach this port is an admin"
+            )
         # Every resource registers its closer the moment it exists, so a failure at any later
         # startup step (or any closer failing at shutdown) still releases everything else.
         async with AsyncExitStack() as stack:
