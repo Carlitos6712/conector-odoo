@@ -112,7 +112,7 @@ resource config has no write endpoints.
 - Job 1 reverse filter now SET (see test-data log). Open: Odoo partners 221 "Aena" (`ref` R345678), 222
   "Erik Bocadillo" (`ref` A123456) and 224 "Sipay" (`ref` "ERIK BOCADILLO") have a `ref`, no marker and no
   SUWE uuid match, so a job 1 run would create them in SUWE as clients. Partner 220 "Supermercados Aurora"
-  also unmarked (client-like). User decision pending. The filter domain `function != suwe-sync` was
+  also unmarked (client-like). User decision: delete 221/222/224 manually (user does it); 220 stays. The filter domain `function != suwe-sync` was
   emulated locally, not run by Odoo: the first job 1 run must be a dry-run.
   Job wizard UI has no field for the filter (API only; the wizard carries it through unchanged).
 - Create from the connector: the id field cannot be supplied, so SUWE `client_id` cannot be chosen (see `docs/suwe/README.md` section 4).
@@ -122,4 +122,4 @@ resource config has no write endpoints.
 - Records page: REST resource picker, page size 25/50/100, range line, show-all-columns (commit c6e7217).
 
 ## Next step
-Ask the user what to do with partners 220/221/222/224 (before any job 1 run, dry-run first); then T6 live check via UI and README section; then T7 restyle (agree palette first).
+Wait for the user to delete partners 221/222/224 by hand (first job 1 run must be a dry-run); T6 live check via UI and README section; then T7 restyle (agree palette first).
