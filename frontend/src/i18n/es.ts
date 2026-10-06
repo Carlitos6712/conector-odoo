@@ -1286,6 +1286,7 @@ export const es = {
       update: "Registro actualizado.",
       delete: "Registro eliminado.",
       none: "Ningún job bidireccional cubre este recurso, así que no se ha propagado nada a otro sistema.",
+      alreadyGone: "El registro ya estaba eliminado.",
       dismiss: "Cerrar",
       action: {
         created: "creado en la contraparte",

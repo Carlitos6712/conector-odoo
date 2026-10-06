@@ -399,6 +399,33 @@ describe("RecordsPage delete", () => {
     expect(screen.getByText("Alan Turing")).toBeInTheDocument();
   });
 
+  it("treats a 404 on delete as already deleted: no error, list refetched, neutral note", async () => {
+    let gone = false;
+    const fetchMock = stubApi(
+      routes("admin", {
+        [DELETE]: () => {
+          gone = true;
+          return json(
+            { error: "resource_not_found", detail: "res.partner: record 7 not found" },
+            404,
+          );
+        },
+        [LIST]: () =>
+          json(gone ? pageFixture({ items: [pageFixture().items[1]!] }) : pageFixture()),
+      }),
+    );
+    await renderApp(<RecordsPage />);
+    const dialog = await openDelete();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Eliminar definitivamente" }));
+    await waitFor(() => expect(screen.queryByText("Ada Lovelace")).not.toBeInTheDocument());
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    const report = await screen.findByRole("status");
+    expect(report).toHaveTextContent("El registro ya estaba eliminado.");
+    expect(report).not.toHaveTextContent(/no se ha propagado nada/i);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(callsTo(fetchMock, "DELETE")).toHaveLength(1);
+  });
+
   it("surfaces the refusal message and keeps the dialog open", async () => {
     stubApi(
       routes("admin", {

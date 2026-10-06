@@ -41,6 +41,8 @@ export interface PropagationOutcome {
 export interface PropagationReport {
   propagation: PropagationOutcome[];
   warnings: string[];
+  /** Set client-side when a delete found the record already gone (nothing to propagate). */
+  alreadyGone?: boolean;
 }
 
 export interface RecordWriteResult extends RemoteRecord, PropagationReport {}

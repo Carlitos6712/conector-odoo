@@ -1,4 +1,4 @@
-import { api } from "@/api/client";
+import { api, ApiError } from "@/api/client";
 import type {
   PropagationReport,
   RecordPage,
@@ -44,9 +44,17 @@ export async function deleteRecord(
   target: RecordTarget,
   id: string | number,
 ): Promise<PropagationReport> {
-  const body = await api.delete<PropagationReport | undefined>(
-    `${recordsPath(target)}/${encodeURIComponent(String(id))}`,
-  );
-  // An older backend answered 204 with no body: nothing was propagated.
-  return body ?? { propagation: [], warnings: [] };
+  try {
+    const body = await api.delete<PropagationReport | undefined>(
+      `${recordsPath(target)}/${encodeURIComponent(String(id))}`,
+    );
+    // An older backend answered 204 with no body: nothing was propagated.
+    return body ?? { propagation: [], warnings: [] };
+  } catch (error) {
+    // Deleting what is already gone meets the goal; an older backend still answered 404.
+    if (error instanceof ApiError && error.status === 404) {
+      return { propagation: [], warnings: [], alreadyGone: true };
+    }
+    throw error;
+  }
 }

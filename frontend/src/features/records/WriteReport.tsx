@@ -35,7 +35,9 @@ export function WriteReport({
           {t("records.report.dismiss")}
         </Button>
       </div>
-      {propagation.length === 0 ? (
+      {summary.alreadyGone ? (
+        <p className="text-muted-foreground">{t("records.report.alreadyGone")}</p>
+      ) : propagation.length === 0 ? (
         <p className="text-muted-foreground">{t("records.report.none")}</p>
       ) : (
         <ul className="flex flex-col gap-1">

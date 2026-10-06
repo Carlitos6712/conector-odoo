@@ -223,8 +223,10 @@ class DeleteRecord(_Base):
     ) -> tuple[PropagationOutcome, ...]:
         """Delete ONE record, delete its counterparts, then forget the remaining xrefs.
 
-        Raises ``ResourceNotFound`` (the stale xrefs are still forgotten: the record is gone) and
-        ``RecordRejected`` when the remote refuses (xrefs untouched, the record still exists).
+        Idempotent: a record that no longer exists is a success (the goal is met), the stale xrefs
+        are forgotten and nothing is propagated. Raises ``ResourceNotFound`` only for an unknown
+        resource and ``RecordRejected`` when the remote refuses (xrefs untouched, the record
+        still exists).
         A counterpart that refuses keeps its pair linked, so the other xrefs are left alone too:
         the next job run reconciles them.
         """
@@ -232,8 +234,9 @@ class DeleteRecord(_Base):
         try:
             await endpoint.delete(resource, record_id)
         except ResourceNotFound:
+            await endpoint.describe(resource)  # an unknown resource is still an error
             await self._forget(profile_id, resource, record_id)
-            raise
+            return ()
         outcomes = await self._propagator.propagate_delete(profile_id, resource, record_id)
         if not any(o.action == "failed" for o in outcomes):
             await self._forget(profile_id, resource, record_id)

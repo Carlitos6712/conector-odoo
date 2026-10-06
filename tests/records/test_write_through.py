@@ -200,10 +200,28 @@ async def test_delete_of_a_target_record_of_a_one_way_job_still_forgets_its_xref
     assert await world.xrefs.list(job.id) == []
 
 
-async def test_delete_of_a_missing_primary_raises_and_propagates_nothing() -> None:
+async def test_delete_of_a_missing_primary_is_an_idempotent_success() -> None:
+    world = build_world()
+    await synced_pair(world)
+    _, _, delete = make(world)
+    assert await delete.execute(1, "customers", "99") == ()
+    assert world.rest.delete_calls == 0  # nothing to mirror
+
+
+async def test_delete_of_an_already_gone_primary_still_forgets_its_stale_xrefs() -> None:
+    world = build_world()
+    job_id = await synced_pair(world)
+    await world.odoo.delete("customers", "1")  # gone behind the connector's back
+    assert await world.xrefs.list(job_id) != []
+    _, _, delete = make(world)
+    assert await delete.execute(1, "customers", "1") == ()
+    assert await world.xrefs.list(job_id) == []
+    assert world.rest.delete_calls == 0
+
+
+async def test_delete_on_an_unknown_resource_is_still_not_found() -> None:
     world = build_world()
     await synced_pair(world)
     _, _, delete = make(world)
     with pytest.raises(ResourceNotFound):
-        await delete.execute(1, "customers", "99")
-    assert world.rest.delete_calls == 0
+        await delete.execute(1, "nope", "1")

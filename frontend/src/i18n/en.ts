@@ -1273,6 +1273,7 @@ export const en: Translation = {
       update: "Record updated.",
       delete: "Record deleted.",
       none: "No bidirectional job covers this resource, so nothing was propagated to another system.",
+      alreadyGone: "The record was already deleted.",
       dismiss: "Close",
       action: {
         created: "created on the counterpart",
