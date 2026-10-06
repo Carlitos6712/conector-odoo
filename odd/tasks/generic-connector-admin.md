@@ -246,9 +246,9 @@ D3: `/livez` (process-only liveness, public, no Odoo call) added in routers/heal
 ## Final status
 
 All tasks (A, B, F, D1-D3) are done; `docker compose up -d --build` brings up the connector with the admin UI (acceptance met). Consolidated open gaps:
-- Login throttle is per username only; no per-IP throttle.
-- No SSRF blocklist for connection profile URLs (internal addresses are allowed; admin-only, documented).
-- No vault key rotation: changing ENCRYPTION_KEY makes stored secrets undecryptable.
+- RESOLVED (security-hardening S1, b501fd5): login throttle is per username only; no per-IP throttle. Now a per-address sliding window plus TRUSTED_PROXY_COUNT and a known-address bypass of username lockout.
+- RESOLVED (security-hardening S2, 2b6a7f9 + f06f8f9): no SSRF blocklist for connection profile URLs. Now an outbound URL policy (always-blocked metadata/link-local, strict mode with allow list) enforced at connect time.
+- RESOLVED (security-hardening S3, be7a64a + docs 3ec6ff7): no vault key rotation. Now ENCRYPTION_KEY_PREVIOUS plus `python -m conector_odoo.manage rotate-vault-key`.
 - No cross-cutting a11y / color-contrast audit (chart amber series untuned in dark mode).
 - Mapping dry-run has no sample-data view beyond the fields tested.
 - No per-day aggregate runs endpoint (dashboard chart uses the 200 latest runs).

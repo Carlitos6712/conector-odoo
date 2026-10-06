@@ -51,6 +51,8 @@ from conector_odoo.domain.profiles import ProfileType
 from conector_odoo.infrastructure.auth.hasher import Argon2PasswordHasher
 from conector_odoo.infrastructure.auth.repository import (
     SqliteAdminUserRepository,
+    SqliteIpLoginThrottle,
+    SqliteKnownLoginIps,
     SqliteLoginThrottle,
     SqliteSessionStore,
 )
@@ -60,7 +62,7 @@ from conector_odoo.infrastructure.openapi.importer import OpenApiImporter
 from conector_odoo.infrastructure.profiles.odoo_probe import OdooConnectionProbe
 from conector_odoo.infrastructure.profiles.repository import SqliteConnectionProfileRepository
 from conector_odoo.infrastructure.profiles.rest_probe import RestConnectionProbe
-from conector_odoo.infrastructure.profiles.vault import FernetVault
+from conector_odoo.infrastructure.profiles.vault import build_vault
 from conector_odoo.infrastructure.resources.repository import SqliteResourceCatalogRepository
 from conector_odoo.infrastructure.sync.jobs import SqliteSyncJobRepository
 from conector_odoo.infrastructure.sync.runs import SqliteSyncRunRepository, SqliteXRefRepository
@@ -157,15 +159,18 @@ def build_admin_services(settings: Settings, conn: sqlite3.Connection) -> AdminS
         idle_timeout_seconds=settings.admin_session_idle_seconds,
         max_failures=settings.admin_login_max_failures,
         lockout_seconds=settings.admin_login_lockout_seconds,
+        ip_max_failures=settings.admin_login_ip_max_failures,
+        ip_window_seconds=settings.admin_login_ip_window_seconds,
+        known_ip_seconds=settings.admin_login_known_ip_days * 24 * 3600,
     )
+    policy = settings.outbound_policy()
     profile_repo = SqliteConnectionProfileRepository(conn)
     catalog = SqliteResourceCatalogRepository(conn)
-    key = settings.encryption_key.get_secret_value() if settings.encryption_key else None
-    vault = FernetVault(key)
+    vault = build_vault(settings)
     endpoints = ProfileEndpoints(profile_repo, catalog, vault, settings)
     probes: dict[ProfileType, ConnectionProbe] = {
-        ProfileType.REST: RestConnectionProbe(),
-        ProfileType.ODOO: OdooConnectionProbe(),
+        ProfileType.REST: RestConnectionProbe(policy),
+        ProfileType.ODOO: OdooConnectionProbe(policy=policy),
     }
     mapping_repo = SqliteMappingRepository(conn)
     job_repo = SqliteSyncJobRepository(conn)
@@ -189,7 +194,16 @@ def build_admin_services(settings: Settings, conn: sqlite3.Connection) -> AdminS
     )
     # The builders are looked up at call time so tests (and later customisation) can swap them.
     return AdminServices(
-        auth=AuthService(users, sessions, SqliteLoginThrottle(conn), hasher, _now, config),
+        auth=AuthService(
+            users,
+            sessions,
+            SqliteLoginThrottle(conn),
+            hasher,
+            _now,
+            config,
+            ip_throttle=SqliteIpLoginThrottle(conn),
+            known_ips=SqliteKnownLoginIps(conn),
+        ),
         users=UserAdmin(users, sessions, hasher, _now),
         endpoints=endpoints,
         profiles=ProfileServices(
@@ -219,7 +233,7 @@ def build_admin_services(settings: Settings, conn: sqlite3.Connection) -> AdminS
                 vault,
                 lambda profile, secrets: endpoints.build_odoo(profile, secrets),
             ),
-            importer=OpenApiImporter(),
+            importer=OpenApiImporter(policy=policy),
         ),
         mappings=MappingServices(
             repo=mapping_repo,

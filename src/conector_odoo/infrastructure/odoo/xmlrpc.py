@@ -14,6 +14,8 @@ from xml.parsers.expat import ExpatError
 from xmlrpc.client import ServerProxy
 
 from conector_odoo.domain.errors import OdooAuthError, OdooUnavailable
+from conector_odoo.domain.outbound import OutboundPolicy
+from conector_odoo.infrastructure.net.guard import connect_guarded
 from conector_odoo.infrastructure.odoo.errors import map_http_status, map_xmlrpc_fault
 from conector_odoo.infrastructure.odoo.retry import is_idempotent, run_with_retry
 
@@ -22,25 +24,39 @@ logger = logging.getLogger(__name__)
 Sleep = Callable[[float], Awaitable[None]]
 
 
+def _guard(connection: Any, policy: OutboundPolicy | None) -> None:
+    """Route the connection's TCP connect through the outbound policy (resolve, validate every
+    address, connect by IP; TLS still verifies the original host name). ``_create_connection`` is
+    the attribute ``http.client`` itself uses for this; tests/net fails if it ever goes away."""
+    if policy is not None:
+        connection._create_connection = lambda address, timeout, source=None: connect_guarded(
+            policy, address[0], address[1], timeout, source
+        )
+
+
 class _TimeoutTransport(xmlrpc.client.Transport):
-    def __init__(self, timeout: float) -> None:
+    def __init__(self, timeout: float, policy: OutboundPolicy | None = None) -> None:
         super().__init__()
         self._timeout = timeout
+        self._policy = policy
 
     def make_connection(self, host: Any) -> Any:
         connection = super().make_connection(host)
         connection.timeout = self._timeout
+        _guard(connection, self._policy)
         return connection
 
 
 class _TimeoutSafeTransport(xmlrpc.client.SafeTransport):
-    def __init__(self, timeout: float) -> None:
+    def __init__(self, timeout: float, policy: OutboundPolicy | None = None) -> None:
         super().__init__()
         self._timeout = timeout
+        self._policy = policy
 
     def make_connection(self, host: Any) -> Any:
         connection = super().make_connection(host)
         connection.timeout = self._timeout
+        _guard(connection, self._policy)
         return connection
 
 
@@ -54,6 +70,7 @@ class XmlRpcTransport:
         *,
         timeout: float = 10.0,
         max_retries: int = 2,
+        policy: OutboundPolicy | None = None,
         sleep: Sleep = asyncio.sleep,
         backoff_base: float = 0.5,
     ) -> None:
@@ -63,6 +80,7 @@ class XmlRpcTransport:
         self._api_key = api_key
         self._timeout = timeout
         self._max_retries = max_retries
+        self._policy = policy
         self._sleep = sleep
         self._backoff_base = backoff_base
         self._uid: int | None = None
@@ -100,9 +118,9 @@ class XmlRpcTransport:
         url = f"{self._base}/xmlrpc/2/{endpoint}"
         transport: xmlrpc.client.Transport
         if url.startswith("https"):
-            transport = _TimeoutSafeTransport(self._timeout)
+            transport = _TimeoutSafeTransport(self._timeout, self._policy)
         else:
-            transport = _TimeoutTransport(self._timeout)
+            transport = _TimeoutTransport(self._timeout, self._policy)
         return ServerProxy(url, transport=transport, allow_none=True)
 
     def _blocking_call(self, endpoint: str, method: str, args: list[Any]) -> Any:

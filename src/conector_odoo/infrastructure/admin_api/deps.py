@@ -17,6 +17,7 @@ from fastapi import Depends, Request, Response
 from conector_odoo.application.auth import CurrentSession
 from conector_odoo.config import Settings
 from conector_odoo.domain.auth import Role
+from conector_odoo.domain.client_ip import resolve_client_ip
 from conector_odoo.domain.errors import AdminForbidden, CsrfInvalid
 from conector_odoo.infrastructure.admin_api.services import AdminServices
 from conector_odoo.infrastructure.api.dependencies import get_settings
@@ -32,6 +33,17 @@ def get_admin(request: Request) -> AdminServices:
 
 AdminDep = Annotated[AdminServices, Depends(get_admin)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
+
+
+def client_ip(request: Request, settings: SettingsDep) -> str:
+    """The address login throttling is keyed on (see ``resolve_client_ip`` for the proxy rules)."""
+    peer = request.client.host if request.client else None
+    return resolve_client_ip(
+        peer, request.headers.getlist("x-forwarded-for"), settings.trusted_proxy_count
+    )
+
+
+ClientIpDep = Annotated[str, Depends(client_ip)]
 
 
 async def current_session(

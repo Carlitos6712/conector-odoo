@@ -14,6 +14,7 @@ from conector_odoo.application.pagination import (
     MAX_BULK_MAX_ITEMS,
     MAX_CONCURRENCY,
 )
+from conector_odoo.domain.outbound import OutboundPolicy
 from conector_odoo.infrastructure.idempotency.store import DEFAULT_IN_PROGRESS_TIMEOUT_SECONDS
 
 OdooProtocol = Literal["jsonrpc", "xmlrpc", "json2"]
@@ -50,6 +51,9 @@ class Settings(BaseSettings):
     # Fernet key that encrypts connection-profile secrets at rest. No key is ever generated
     # implicitly: storing or reading a secret without it fails with a clear error.
     encryption_key: SecretStr | None = None
+    # Comma-separated OLD Fernet keys, used to decrypt only (never to encrypt) while a key rotation
+    # is in progress; see ``python -m conector_odoo.manage rotate-vault-key``.
+    encryption_key_previous: SecretStr | None = None
     webhook_secret: SecretStr
 
     idempotency_db_path: str = "./data/idempotency.sqlite3"
@@ -86,11 +90,26 @@ class Settings(BaseSettings):
     admin_session_idle_seconds: int = Field(default=2 * 3600, ge=60)
     admin_login_max_failures: int = Field(default=5, ge=1)
     admin_login_lockout_seconds: int = Field(default=900, ge=1)
+    # Per client address (sliding window): failed logins / password checks from one address, across
+    # all usernames, before that address is blocked with 429.
+    admin_login_ip_max_failures: int = Field(default=20, ge=1)
+    admin_login_ip_window_seconds: int = Field(default=900, ge=1)
+    # How long (days) an address that signed in successfully stays "known" for its username, which
+    # lets the owner past a lockout caused by other addresses. 0 disables the bypass.
+    admin_login_known_ip_days: int = Field(default=30, ge=0)
+    # Number of reverse proxies in front of the app that append to X-Forwarded-For. 0 (default)
+    # ignores the header and uses the socket peer; N > 0 takes the N-th entry from the right.
+    trusted_proxy_count: int = Field(default=0, ge=0)
     # Argon2id cost; the defaults follow the argon2-cffi/OWASP recommendation. Lower them only on
     # very small hosts or in tests.
     admin_argon2_time_cost: int = Field(default=3, ge=1)
     admin_argon2_memory_kib: int = Field(default=64 * 1024, ge=8)
     admin_argon2_parallelism: int = Field(default=4, ge=1)
+    # Outbound URL policy (SSRF): ``default`` always blocks link-local/metadata, unspecified and
+    # multicast addresses and non-http(s) schemes; ``strict`` also blocks private and loopback
+    # addresses unless the host is in OUTBOUND_ALLOWED_HOSTS (comma-separated names or IPs).
+    outbound_url_policy: Literal["default", "strict"] = "default"
+    outbound_allowed_hosts: str = ""
     log_level: str = "INFO"
 
     @model_validator(mode="after")
@@ -100,6 +119,15 @@ class Settings(BaseSettings):
                 "ADMIN_BOOTSTRAP_USER and ADMIN_BOOTSTRAP_PASSWORD must be set together"
             )
         return self
+
+    def previous_encryption_keys(self) -> list[str]:
+        raw = (
+            self.encryption_key_previous.get_secret_value() if self.encryption_key_previous else ""
+        )
+        return [part.strip() for part in raw.split(",") if part.strip()]
+
+    def outbound_policy(self) -> OutboundPolicy:
+        return OutboundPolicy.from_values(self.outbound_url_policy, self.outbound_allowed_hosts)
 
     @field_validator("odoo_api_key", "connector_api_key", "webhook_secret")
     @classmethod

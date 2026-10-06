@@ -11,7 +11,10 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from conector_odoo.domain.errors import OutboundUrlBlocked
+from conector_odoo.domain.outbound import DEFAULT_POLICY, OutboundPolicy
 from conector_odoo.domain.profiles import AuthMethod, ConnectionProfile, ProbeStep, Secrets
+from conector_odoo.infrastructure.net.guard import guarded_client
 
 URL_VALID = "url_valid"
 REACHABLE = "reachable"
@@ -42,14 +45,18 @@ def check_url(profile: ConnectionProfile) -> ProbeStep:
     )
 
 
-async def check_endpoint(profile: ConnectionProfile) -> list[ProbeStep]:
+async def check_endpoint(
+    profile: ConnectionProfile, policy: OutboundPolicy = DEFAULT_POLICY
+) -> list[ProbeStep]:
     """``reachable`` and ``tls`` steps: one unauthenticated GET on the base URL (any HTTP answer,
     even 401/404, proves the host is up and the TLS handshake worked)."""
     try:
-        async with httpx.AsyncClient(
-            verify=profile.tls_verify, timeout=profile.timeout_seconds, follow_redirects=False
+        async with guarded_client(
+            policy, verify=profile.tls_verify, timeout=profile.timeout_seconds
         ) as client:
             await client.get(profile.base_url.strip(), headers=profile.extra_headers)
+    except OutboundUrlBlocked as exc:
+        return [_blocked(REACHABLE, exc)]
     except httpx.TransportError as exc:
         return _classify(exc, profile)
     except (httpx.InvalidURL, UnicodeError):
@@ -127,11 +134,14 @@ def _causes(exc: BaseException) -> list[BaseException]:
 class RestConnectionProbe:
     """``ConnectionProbe`` for ``ProfileType.REST``."""
 
+    def __init__(self, policy: OutboundPolicy = DEFAULT_POLICY) -> None:
+        self._policy = policy
+
     async def probe(self, profile: ConnectionProfile, secrets: Secrets) -> list[ProbeStep]:
         steps = [check_url(profile)]
         if not steps[-1].ok:
             return steps
-        steps.extend(await check_endpoint(profile))
+        steps.extend(await check_endpoint(profile, self._policy))
         if not steps[-1].ok:
             return steps
         steps.append(await self._check_auth(profile, secrets))
@@ -139,14 +149,16 @@ class RestConnectionProbe:
 
     async def _check_auth(self, profile: ConnectionProfile, secrets: Secrets) -> ProbeStep:
         try:
-            async with httpx.AsyncClient(
-                verify=profile.tls_verify, timeout=profile.timeout_seconds
+            async with guarded_client(
+                self._policy, verify=profile.tls_verify, timeout=profile.timeout_seconds
             ) as client:
                 headers = dict(profile.extra_headers)
                 failure = await _add_credentials(client, profile, secrets, headers)
                 if failure:
                     return failure
                 response = await client.get(profile.base_url.strip(), headers=headers)
+        except OutboundUrlBlocked as exc:
+            return _blocked(AUTH, exc)
         except httpx.TransportError as exc:
             return ProbeStep(
                 AUTH,
@@ -157,6 +169,16 @@ class RestConnectionProbe:
         except (httpx.InvalidURL, UnicodeError):
             return _unbuildable(AUTH)
         return _judge(response.status_code)
+
+
+def _blocked(step: str, exc: OutboundUrlBlocked) -> ProbeStep:
+    return ProbeStep(
+        step,
+        False,
+        str(exc),
+        "The connector refuses link-local, metadata, unspecified and multicast addresses, and "
+        "(strict policy) private addresses not listed in OUTBOUND_ALLOWED_HOSTS.",
+    )
 
 
 def _unbuildable(step: str) -> ProbeStep:
@@ -262,6 +284,8 @@ async def _fetch_token(
         form["scope"] = profile.scope
     try:
         response = await client.post(profile.token_url or "", data=form)
+    except OutboundUrlBlocked as exc:
+        return _blocked(AUTH, exc)
     except httpx.TransportError as exc:
         return ProbeStep(
             AUTH,

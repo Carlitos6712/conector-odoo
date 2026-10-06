@@ -14,10 +14,20 @@ services:
       WEBHOOK_SECRET: ${WEBHOOK_SECRET:?set WEBHOOK_SECRET in .env}
       CONNECTOR_API_KEY: ${CONNECTOR_API_KEY:-}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env (see .env.example)}
+      # Only while rotating the vault key: comma-separated OLD keys (decrypt only).
+      ENCRYPTION_KEY_PREVIOUS: ${ENCRYPTION_KEY_PREVIOUS:-}
       ADMIN_BOOTSTRAP_USER: ${ADMIN_BOOTSTRAP_USER:?set ADMIN_BOOTSTRAP_USER in .env}
       ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:?set ADMIN_BOOTSTRAP_PASSWORD in .env}
       # Secure by default; set false only for plain-HTTP local use (no proxy).
       ADMIN_COOKIE_SECURE: ${ADMIN_COOKIE_SECURE:-true}
+      # Number of reverse proxies appending to X-Forwarded-For (0 = ignore the header).
+      TRUSTED_PROXY_COUNT: ${TRUSTED_PROXY_COUNT:-0}
+      ADMIN_LOGIN_IP_MAX_FAILURES: ${ADMIN_LOGIN_IP_MAX_FAILURES:-20}
+      ADMIN_LOGIN_IP_WINDOW_SECONDS: ${ADMIN_LOGIN_IP_WINDOW_SECONDS:-900}
+      ADMIN_LOGIN_KNOWN_IP_DAYS: ${ADMIN_LOGIN_KNOWN_IP_DAYS:-30}
+      # default | strict (strict blocks private addresses except OUTBOUND_ALLOWED_HOSTS).
+      OUTBOUND_URL_POLICY: ${OUTBOUND_URL_POLICY:-default}
+      OUTBOUND_ALLOWED_HOSTS: ${OUTBOUND_ALLOWED_HOSTS:-}
       SYNC_SCHEDULER_ENABLED: ${SYNC_SCHEDULER_ENABLED:-true}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       # Fixed by the image; the databases live on the connector-data volume.

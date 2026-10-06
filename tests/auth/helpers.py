@@ -5,6 +5,8 @@ from conector_odoo.application.auth import AuthConfig, AuthService, UserAdmin
 from conector_odoo.infrastructure.auth.hasher import Argon2PasswordHasher
 from conector_odoo.infrastructure.auth.repository import (
     SqliteAdminUserRepository,
+    SqliteIpLoginThrottle,
+    SqliteKnownLoginIps,
     SqliteLoginThrottle,
     SqliteSessionStore,
 )
@@ -34,9 +36,18 @@ class AuthWorld:
         self.users = SqliteAdminUserRepository(conn)
         self.sessions = SqliteSessionStore(conn)
         self.throttle = SqliteLoginThrottle(conn)
+        self.ip_throttle = SqliteIpLoginThrottle(conn)
+        self.known_ips = SqliteKnownLoginIps(conn)
         self.hasher = fast_hasher()
         self.config = config or AuthConfig()
         self.auth = AuthService(
-            self.users, self.sessions, self.throttle, self.hasher, self.clock, self.config
+            self.users,
+            self.sessions,
+            self.throttle,
+            self.hasher,
+            self.clock,
+            self.config,
+            ip_throttle=self.ip_throttle,
+            known_ips=self.known_ips,
         )
         self.admin = UserAdmin(self.users, self.sessions, self.hasher, self.clock)

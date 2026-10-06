@@ -53,6 +53,8 @@ from typing import Any
 import httpx
 
 from conector_odoo.domain.errors import ConnectorError, OdooAuthError, OdooUnavailable
+from conector_odoo.domain.outbound import OutboundPolicy
+from conector_odoo.infrastructure.net.guard import guarded_client
 from conector_odoo.infrastructure.odoo.errors import (
     map_http_status,
     map_odoo_exception,
@@ -116,6 +118,7 @@ class Json2Transport:
         timeout: float = 10.0,
         max_retries: int = 2,
         client: httpx.AsyncClient | None = None,
+        policy: OutboundPolicy | None = None,
         max_connections: int | None = None,
         sleep: Sleep = asyncio.sleep,
         backoff_base: float = 0.5,
@@ -128,6 +131,10 @@ class Json2Transport:
         self._max_retries = max_retries
         self._owns_client = client is None
         self._max_connections = max_connections
+        # ``policy`` is set for user-supplied (profile) URLs; the env-configured Odoo of the data
+        # API is operator-controlled and keeps the plain client.
+        if client is None and policy is not None:
+            client = guarded_client(policy, timeout=timeout, limits=_limits(max_connections))
         self._client = client or httpx.AsyncClient(timeout=timeout, limits=_limits(max_connections))
         self._sleep = sleep
         self._backoff_base = backoff_base

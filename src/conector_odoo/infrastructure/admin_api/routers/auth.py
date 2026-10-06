@@ -5,6 +5,7 @@ from fastapi import APIRouter, Request, Response
 from conector_odoo.config import Settings
 from conector_odoo.infrastructure.admin_api.deps import (
     AdminDep,
+    ClientIpDep,
     SelfServiceDep,
     SessionDep,
     SettingsDep,
@@ -41,12 +42,14 @@ async def login(
     response: Response,
     admin: AdminDep,
     settings: SettingsDep,
+    client_ip: ClientIpDep,
 ) -> SessionOut:
     """Sign in. Any session cookie the browser already holds is destroyed (rotation)."""
     result = await admin.auth.login(
         body.username,
         body.password,
         previous_token=request.cookies.get(settings.admin_cookie_name),
+        client_ip=client_ip,
     )
     _issue_cookie(response, settings, result.token)
     return SessionOut(
@@ -61,11 +64,12 @@ async def change_password(
     admin: AdminDep,
     settings: SettingsDep,
     session: SelfServiceDep,
+    client_ip: ClientIpDep,
 ) -> SessionOut:
     """Change the signed-in user's own password (any role). Every session of the user is revoked
     and the caller gets a fresh cookie and CSRF token."""
     result = await admin.auth.change_password(
-        session.user, body.current_password, body.new_password
+        session.user, body.current_password, body.new_password, client_ip=client_ip
     )
     _issue_cookie(response, settings, result.token)
     return SessionOut(

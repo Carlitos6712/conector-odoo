@@ -31,6 +31,7 @@ from conector_odoo.domain.errors import (
     OdooUnavailable,
     OdooValidationError,
     OpenApiImportError,
+    OutboundUrlBlocked,
     ProfileInUse,
     ProfileNameTaken,
     ProfileNotFound,
@@ -98,6 +99,8 @@ _MAPPING: tuple[tuple[type[ConnectorError] | tuple[type[ConnectorError], ...], i
         "conflict",
     ),
     (OpenApiImportError, 422, "import_failed"),
+    # Before RemoteUnavailable (its base class): a refusal is the caller's input, not an outage.
+    (OutboundUrlBlocked, 422, "outbound_url_blocked"),
     (
         (
             ProfileValidationError,
@@ -137,6 +140,8 @@ def scrub(text: str, settings: Settings) -> str:
     for secret in secrets:
         if secret is not None and secret.get_secret_value():
             text = text.replace(secret.get_secret_value(), "***")
+    for old_key in settings.previous_encryption_keys():
+        text = text.replace(old_key, "***")
     return text
 
 

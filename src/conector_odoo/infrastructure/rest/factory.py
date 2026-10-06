@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from conector_odoo.domain.outbound import DEFAULT_POLICY, OutboundPolicy
 from conector_odoo.domain.ports import ResourceConfigProvider
 from conector_odoo.domain.profiles import ConnectionProfile, Secrets
 from conector_odoo.infrastructure.rest.auth import build_authenticator
@@ -15,6 +16,7 @@ def build_rest_endpoint(
     configs: ResourceConfigProvider,
     *,
     issuer_url: str | None = None,
+    policy: OutboundPolicy = DEFAULT_POLICY,
     **http_options: Any,
 ) -> RestRecordEndpoint:
     """``http_options`` are ``RestHttpClient`` tuning knobs (``max_retries``, ``min_interval``,
@@ -26,6 +28,7 @@ def build_rest_endpoint(
         auth,
         extra_headers=profile.extra_headers,
         tls_verify=profile.tls_verify,
+        policy=policy,
         timeout=profile.timeout_seconds,
         **http_options,
     )

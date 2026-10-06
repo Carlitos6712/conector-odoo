@@ -250,3 +250,81 @@ class SqliteLoginThrottle:
     def _reset(self, key: str) -> None:
         with self._lock:
             self._conn.execute("DELETE FROM login_attempts WHERE key = ?", (key,))
+
+
+class SqliteIpLoginThrottle:
+    """Sliding-window failure counter per client address: one row per failed attempt.
+
+    Rows older than the window are deleted on every write, so the table holds at most the failures
+    of the last window. A blocked address stops adding rows, which bounds the table per address.
+    Timestamps are epoch seconds (REAL) so range comparisons are numeric.
+    """
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+        self._lock = connection_lock(conn)
+
+    async def retry_after(
+        self, ip: str, now: datetime, *, max_failures: int, window_seconds: int
+    ) -> int:
+        return await asyncio.to_thread(self._retry_after, ip, now, max_failures, window_seconds)
+
+    async def record_failure(self, ip: str, now: datetime, *, window_seconds: int) -> None:
+        await asyncio.to_thread(self._record_failure, ip, now, window_seconds)
+
+    def _retry_after(self, ip: str, now: datetime, max_failures: int, window: int) -> int:
+        edge = now.timestamp() - window
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT at FROM login_ip_failures WHERE ip = ? AND at > ? ORDER BY at", (ip, edge)
+            ).fetchall()
+        if len(rows) < max_failures:
+            return 0
+        # The block lifts when enough of the oldest in-window failures have aged out.
+        oldest_that_matters = rows[len(rows) - max_failures][0]
+        return int(max(1, math.ceil(oldest_that_matters + window - now.timestamp())))
+
+    def _record_failure(self, ip: str, now: datetime, window: int) -> None:
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM login_ip_failures WHERE at <= ?", (now.timestamp() - window,)
+            )
+            self._conn.execute(
+                "INSERT INTO login_ip_failures (ip, at) VALUES (?, ?)", (ip, now.timestamp())
+            )
+
+
+class SqliteKnownLoginIps:
+    """Addresses a username has recently signed in from (successful logins only)."""
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+        self._lock = connection_lock(conn)
+
+    async def is_known(self, key: str, ip: str, now: datetime, *, max_age_seconds: int) -> bool:
+        return await asyncio.to_thread(self._is_known, key, ip, now, max_age_seconds)
+
+    async def remember(self, key: str, ip: str, now: datetime, *, max_age_seconds: int) -> None:
+        await asyncio.to_thread(self._remember, key, ip, now, max_age_seconds)
+
+    def _is_known(self, key: str, ip: str, now: datetime, max_age: int) -> bool:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT 1 FROM known_login_ips WHERE username_key = ? AND ip = ? "
+                "AND last_success_at > ?",
+                (key, ip, now.timestamp() - max_age),
+            ).fetchone()
+        return row is not None
+
+    def _remember(self, key: str, ip: str, now: datetime, max_age: int) -> None:
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM known_login_ips WHERE last_success_at <= ?",
+                (now.timestamp() - max_age,),
+            )
+            self._conn.execute(
+                "INSERT INTO known_login_ips (username_key, ip, last_success_at) VALUES (?, ?, ?) "
+                "ON CONFLICT (username_key, ip) DO UPDATE SET "
+                "last_success_at = excluded.last_success_at",
+                (key, ip, now.timestamp()),
+            )
