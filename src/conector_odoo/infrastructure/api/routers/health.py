@@ -1,4 +1,4 @@
-"""``GET /health``: public on purpose (no ``X-API-Key``) so probes need no secret."""
+"""``GET /health`` and ``GET /livez``: public on purpose (no ``X-API-Key``), no secret needed."""
 
 from typing import Annotated
 
@@ -13,6 +13,12 @@ from conector_odoo.infrastructure.api.schemas import DegradedHealthOut, HealthOu
 from conector_odoo.infrastructure.odoo.client import OdooClient
 
 router = APIRouter(tags=["health"])
+
+
+@router.get("/livez")
+async def livez() -> dict[str, str]:
+    """Process liveness only: never touches Odoo, so it is the container healthcheck."""
+    return {"status": "ok"}
 
 
 @router.get("/health", response_model=HealthOut, responses={503: {"model": DegradedHealthOut}})

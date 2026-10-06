@@ -109,6 +109,13 @@ def test_health_ok(env: Env) -> None:
     }
 
 
+def test_livez_is_public_and_independent_of_odoo(secured_env: Env) -> None:
+    secured_env.odoo.result = OdooUnavailable("down")
+    response = secured_env.client.get("/livez")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
 @pytest.mark.parametrize("error", [OdooUnavailable("down"), OdooAuthError("bad key")])
 def test_health_degraded_on_connector_error(env: Env, error: ConnectorError) -> None:
     env.odoo.result = error
@@ -162,6 +169,7 @@ def test_create_app_defaults_to_settings_from_the_environment(
     monkeypatch.setenv("WEBHOOK_SECRET", "whsec-test-secret-123")
     monkeypatch.setenv("CONNECTOR_API_KEY", API_KEY)
     monkeypatch.setenv("IDEMPOTENCY_DB_PATH", ":memory:")
+    monkeypatch.setenv("ADMIN_DB_PATH", ":memory:")
     from conector_odoo.config import get_settings
 
     get_settings.cache_clear()

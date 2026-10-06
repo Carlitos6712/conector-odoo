@@ -5,10 +5,13 @@ description = "Bidirectional connector between a FastAPI app and Odoo"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "argon2-cffi>=25.1.0",
+    "cryptography>=50.0.2",
     "fastapi>=0.142.2",
     "httpx>=0.28.1",
     "pydantic>=2",
     "pydantic-settings>=2.15.0",
+    "pyyaml>=6.0.3",
     "uvicorn[standard]>=0.54.0",
 ]
 
@@ -22,6 +25,7 @@ packages = ["src/conector_odoo"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = ["integration: needs an external service (e.g. the SUWE fake API); skipped when it is unreachable"]
 pythonpath = ["src"]
 
 [tool.ruff]
@@ -53,4 +57,5 @@ dev = [
     "pytest-asyncio>=1.4.0",
     "respx>=0.23.1",
     "ruff>=0.16.10",
+    "types-pyyaml>=6.0.12.20260906",
 ]

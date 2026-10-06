@@ -1,9 +1,15 @@
 """Build the Odoo transport and client selected by ``Settings.odoo_protocol``."""
 
+from typing import Literal
+
+from conector_odoo.application.pagination import DEFAULT_MAX_CONCURRENCY
 from conector_odoo.config import Settings
+from conector_odoo.domain.errors import ProfileValidationError, RemoteAuthError
+from conector_odoo.domain.profiles import ConnectionProfile, ProfileType, Secrets
 from conector_odoo.infrastructure.odoo.client import OdooClient
 from conector_odoo.infrastructure.odoo.json2 import Json2Transport
 from conector_odoo.infrastructure.odoo.jsonrpc import JsonRpcTransport
+from conector_odoo.infrastructure.odoo.records import OdooRecordEndpoint
 from conector_odoo.infrastructure.odoo.transport import OdooTransport
 from conector_odoo.infrastructure.odoo.xmlrpc import XmlRpcTransport
 
@@ -33,3 +39,56 @@ def build_odoo_client(settings: Settings) -> OdooClient:
         company_id=settings.odoo_company_id,
         max_concurrency=settings.odoo_max_concurrency,
     )
+
+
+def build_odoo_endpoint(
+    profile: ConnectionProfile,
+    secrets: Secrets,
+    *,
+    protocol: Literal["jsonrpc", "xmlrpc", "json2"] = "jsonrpc",
+    max_retries: int = 2,
+    max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
+    company_id: int | None = None,
+    allow_system_model_writes: bool = False,
+) -> OdooRecordEndpoint:
+    """Generic record endpoint for an Odoo connection profile (``odoo_db``/``odoo_login``).
+
+    The credential is the API key, falling back to the password. Secrets only travel into the
+    transport; nothing here logs or ``repr``s them.
+    """
+    if profile.type is not ProfileType.ODOO:
+        raise ProfileValidationError("an Odoo endpoint needs a profile of type odoo")
+    if not profile.odoo_db or not profile.odoo_login:
+        raise ProfileValidationError("the Odoo database and login are required")
+    credential = secrets.api_key or secrets.password
+    if not credential:
+        raise RemoteAuthError("an API key (or password) is required for this profile")
+    url, db, login = profile.base_url.strip(), profile.odoo_db, profile.odoo_login
+    timeout = profile.timeout_seconds
+    transport: OdooTransport
+    if protocol == "xmlrpc":
+        transport = XmlRpcTransport(
+            url, db, login, credential, timeout=timeout, max_retries=max_retries
+        )
+    elif protocol == "json2":
+        transport = Json2Transport(
+            url,
+            db,
+            login,
+            credential,
+            timeout=timeout,
+            max_retries=max_retries,
+            max_connections=max_concurrency,
+        )
+    else:
+        transport = JsonRpcTransport(
+            url,
+            db,
+            login,
+            credential,
+            timeout=timeout,
+            max_retries=max_retries,
+            max_connections=max_concurrency,
+        )
+    client = OdooClient(transport, company_id=company_id, max_concurrency=max_concurrency)
+    return OdooRecordEndpoint(client, allow_system_model_writes=allow_system_model_writes)

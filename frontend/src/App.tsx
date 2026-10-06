@@ -1,0 +1,62 @@
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { Route, Routes } from "react-router-dom";
+import { setUnauthorizedHandler } from "@/api/client";
+import { SESSION_KEY } from "@/auth/api";
+import { RequireAuth } from "@/auth/RequireAuth";
+import { AppLayout } from "@/components/AppLayout";
+import { DashboardPage } from "@/features/dashboard/DashboardPage";
+import { ConnectionWizardPage } from "@/features/connections/ConnectionWizardPage";
+import { ConnectionsPage } from "@/features/connections/ConnectionsPage";
+import { JobWizardPage } from "@/features/jobs/JobWizardPage";
+import { JobsPage } from "@/features/jobs/JobsPage";
+import { RunDetailPage } from "@/features/runs/RunDetailPage";
+import { RunsPage } from "@/features/runs/RunsPage";
+import { MappingEditorPage } from "@/features/mappings/MappingEditorPage";
+import { MappingVersionsPage } from "@/features/mappings/MappingVersionsPage";
+import { MappingsPage } from "@/features/mappings/MappingsPage";
+import { ImportPage } from "@/features/resources/ImportPage";
+import { ResourceEditorPage } from "@/features/resources/ResourceEditorPage";
+import { ResourcesPage } from "@/features/resources/ResourcesPage";
+import { SettingsPage } from "@/features/settings/SettingsPage";
+import { LoginPage } from "@/pages/LoginPage";
+import { NotFoundPage } from "@/pages/NotFoundPage";
+
+export function App() {
+  const queryClient = useQueryClient();
+
+  // An expired session on any call sends the user back to the login page via the guard.
+  useEffect(() => {
+    setUnauthorizedHandler(() => queryClient.setQueryData(SESSION_KEY, null));
+    return () => setUnauthorizedHandler(null);
+  }, [queryClient]);
+
+  return (
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route element={<RequireAuth />}>
+        <Route element={<AppLayout />}>
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/connections" element={<ConnectionsPage />} />
+          <Route path="/connections/new" element={<ConnectionWizardPage />} />
+          <Route path="/connections/:id/edit" element={<ConnectionWizardPage />} />
+          <Route path="/resources" element={<ResourcesPage />} />
+          <Route path="/resources/import" element={<ImportPage />} />
+          <Route path="/resources/new" element={<ResourceEditorPage />} />
+          <Route path="/resources/:profileId/:name/edit" element={<ResourceEditorPage />} />
+          <Route path="/mappings" element={<MappingsPage />} />
+          <Route path="/mappings/new" element={<MappingEditorPage />} />
+          <Route path="/mappings/:name/edit" element={<MappingEditorPage />} />
+          <Route path="/mappings/:name/versions" element={<MappingVersionsPage />} />
+          <Route path="/jobs" element={<JobsPage />} />
+          <Route path="/jobs/new" element={<JobWizardPage />} />
+          <Route path="/jobs/:id/edit" element={<JobWizardPage />} />
+          <Route path="/runs" element={<RunsPage />} />
+          <Route path="/runs/:id" element={<RunDetailPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="*" element={<NotFoundPage />} />
+        </Route>
+      </Route>
+    </Routes>
+  );
+}
