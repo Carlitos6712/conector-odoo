@@ -56,7 +56,7 @@ export function TabsList({ label, children }: { label: string; children: React.R
       role="tablist"
       aria-label={label}
       onKeyDown={onKeyDown}
-      className="inline-flex w-fit gap-1 rounded-md bg-muted p-1"
+      className="inline-flex w-fit gap-1 rounded-lg bg-brand-soft p-1"
     >
       {children}
     </div>
@@ -76,8 +76,10 @@ export function TabsTrigger({ value, children }: { value: string; children: Reac
       tabIndex={selected ? 0 : -1}
       onClick={() => context.onValueChange(value)}
       className={cn(
-        "rounded-sm px-3 py-1.5 text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring",
-        selected ? "bg-background shadow-xs" : "text-muted-foreground hover:text-foreground",
+        "rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-ring",
+        selected
+          ? "bg-primary text-primary-foreground shadow-soft"
+          : "text-brand-soft-foreground hover:bg-accent",
       )}
     >
       {children}

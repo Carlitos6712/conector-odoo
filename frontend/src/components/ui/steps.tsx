@@ -35,7 +35,7 @@ export function Steps({
                 className={cn(
                   "flex size-6 items-center justify-center rounded-full border text-xs",
                   index === current && "border-primary bg-primary text-primary-foreground",
-                  done && "border-emerald-600 bg-emerald-600 text-white",
+                  done && "border-success bg-success text-success-foreground",
                 )}
               >
                 {done ? <Check className="size-3" /> : index + 1}

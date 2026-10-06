@@ -255,7 +255,7 @@ function MappingEditor({ initial }: { initial: StoredMapping | null }) {
           </div>
         )}
         {unmappedRequired.length > 0 && (
-          <div className="rounded-md border border-amber-500 p-3">
+          <div className="rounded-md border border-warning-soft-foreground/30 bg-warning-soft p-3 text-warning-soft-foreground">
             <p className="mb-1 text-sm font-medium">{t("mappings.editor.rules.unmapped")}</p>
             <IssueList issues={unmappedRequired} />
           </div>

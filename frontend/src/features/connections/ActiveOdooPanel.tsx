@@ -30,9 +30,10 @@ function Banner({
   children: ReactNode;
 }) {
   const styles = {
-    danger: "border-destructive bg-destructive/10 text-destructive",
-    warning: "border-amber-500 bg-amber-500/10",
-    info: "border-border bg-muted/40",
+    danger:
+      "border-destructive-soft-foreground/30 bg-destructive-soft text-destructive-soft-foreground",
+    warning: "border-warning-soft-foreground/30 bg-warning-soft text-warning-soft-foreground",
+    info: "border-info-soft-foreground/20 bg-info-soft text-info-soft-foreground",
   } as const;
   return (
     <div

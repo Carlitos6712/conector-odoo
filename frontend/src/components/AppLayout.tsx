@@ -35,8 +35,10 @@ export function AppLayout() {
         >
           {t("app.skipToContent")}
         </a>
-        <aside className="flex flex-col gap-4 border-b bg-card p-4 md:w-60 md:border-r md:border-b-0">
-          <p className="text-lg font-semibold">{t("app.name")}</p>
+        <aside className="flex flex-col gap-4 border-b border-sidebar-border bg-sidebar p-4 text-sidebar-foreground md:w-60 md:border-r md:border-b-0">
+          <p className="rounded-lg bg-gradient-to-br from-brand-from to-brand-to px-3 py-2.5 text-lg font-semibold tracking-tight text-white shadow-soft">
+            {t("app.name")}
+          </p>
           <nav aria-label={t("nav.label")}>
             <ul className="flex flex-wrap gap-1 md:flex-col">
               {items.map(({ key, path, icon: Icon }) => (
@@ -46,8 +48,9 @@ export function AppLayout() {
                     end={path === "/"}
                     className={({ isActive }) =>
                       cn(
-                        "flex items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring",
-                        isActive && "bg-accent font-medium",
+                        "flex items-center gap-2 rounded-md border-l-2 border-transparent px-3 py-2 text-sm text-sidebar-muted transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground focus-visible:outline-2 focus-visible:outline-white/70",
+                        isActive &&
+                          "border-white bg-sidebar-active font-medium text-sidebar-foreground",
                       )
                     }
                   >
@@ -63,9 +66,14 @@ export function AppLayout() {
               <p>
                 <span className="font-medium">{user.username}</span>
                 <br />
-                <span className="text-muted-foreground">{t(`session.roles.${user.role}`)}</span>
+                <span className="text-sidebar-muted">{t(`session.roles.${user.role}`)}</span>
               </p>
-              <Button variant="outline" size="sm" onClick={() => signOut.mutate()}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-sidebar-border bg-transparent text-sidebar-foreground hover:border-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-foreground"
+                onClick={() => signOut.mutate()}
+              >
                 <LogOut aria-hidden className="size-4" />
                 {t("session.logout")}
               </Button>
@@ -74,11 +82,17 @@ export function AppLayout() {
         </aside>
         <div className="flex flex-1 flex-col">
           {user && !isAdmin && (
-            <p role="status" className="border-b bg-muted px-6 py-2 text-sm text-muted-foreground">
+            <p
+              role="status"
+              className="border-b border-info-soft-foreground/20 bg-info-soft px-6 py-2 text-sm text-info-soft-foreground"
+            >
               {t("session.readOnly")}
             </p>
           )}
-          <main id="main" className="flex-1 p-6">
+          <main
+            id="main"
+            className="flex-1 bg-gradient-to-b from-brand-soft/60 to-transparent to-[240px] p-6"
+          >
             <Outlet />
           </main>
         </div>

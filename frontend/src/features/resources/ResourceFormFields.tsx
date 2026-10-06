@@ -294,7 +294,10 @@ export function ResourceFormFields({
       </fieldset>
 
       {form.strategy === "none" && form.source === "openapi" && (
-        <p role="note" className="rounded-md border border-amber-500 p-3 text-sm">
+        <p
+          role="note"
+          className="rounded-md border border-warning-soft-foreground/30 bg-warning-soft p-3 text-sm text-warning-soft-foreground"
+        >
           {t("resources.editor.pagination.openapiMissing")}
         </p>
       )}

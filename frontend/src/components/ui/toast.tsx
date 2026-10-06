@@ -47,8 +47,9 @@ function ToastView({ item, onClose }: { item: ToastItem; onClose: (id: number) =
     <div
       role={error ? "alert" : "status"}
       className={cn(
-        "pointer-events-auto flex items-start gap-3 rounded-md border bg-background p-3 text-sm shadow-lg",
-        error && "border-destructive text-destructive",
+        "pointer-events-auto flex items-start gap-3 rounded-lg border border-l-4 border-l-success bg-card p-3 text-sm shadow-lift",
+        error &&
+          "border-destructive/40 border-l-destructive bg-destructive-soft text-destructive-soft-foreground",
       )}
     >
       <p className="flex-1">{item.message}</p>

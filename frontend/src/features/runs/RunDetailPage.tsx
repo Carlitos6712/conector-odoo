@@ -59,7 +59,7 @@ function RunBody({ run, now }: { run: RunDetail; now: number }) {
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold">{t("runs.detail.title", { id: run.id })}</h1>
           <RunStatusBadge status={run.status} />
-          {run.dry_run && <Badge variant="outline">{t("runs.dryRunBadge")}</Badge>}
+          {run.dry_run && <Badge variant="brand">{t("runs.dryRunBadge")}</Badge>}
         </div>
         {/* Screen readers hear status changes while the run is refreshed. */}
         <p role="status" className="sr-only">
@@ -70,7 +70,7 @@ function RunBody({ run, now }: { run: RunDetail; now: number }) {
           <p className="text-sm text-muted-foreground">{t("runs.detail.cancelPending")}</p>
         )}
         {stale && (
-          <p className="rounded-md border border-amber-500 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100">
+          <p className="rounded-md border border-warning-soft-foreground/30 bg-warning-soft p-3 text-sm text-warning-soft-foreground">
             {t("runs.detail.stale", { minutes: quietMinutes })}
           </p>
         )}

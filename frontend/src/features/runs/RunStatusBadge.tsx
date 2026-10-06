@@ -3,10 +3,10 @@ import { Badge, type BadgeProps } from "@/components/ui/badge";
 import type { RunStatus } from "@/features/runs/types";
 
 const VARIANT: Record<RunStatus, BadgeProps["variant"]> = {
-  queued: "outline",
-  running: "default",
+  queued: "secondary",
+  running: "info",
   succeeded: "success",
-  partial: "secondary",
+  partial: "warning",
   failed: "destructive",
   cancelled: "outline",
 };

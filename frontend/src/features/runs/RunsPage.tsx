@@ -218,7 +218,7 @@ export function RunsPage() {
                   <Link to={`/runs?job=${run.job_id}`} className="hover:underline">
                     {jobName(run)}
                   </Link>
-                  {run.dry_run && <Badge variant="outline">{t("runs.dryRunBadge")}</Badge>}
+                  {run.dry_run && <Badge variant="brand">{t("runs.dryRunBadge")}</Badge>}
                 </div>
               </TableCell>
               <TableCell>

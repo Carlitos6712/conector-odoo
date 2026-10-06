@@ -10,7 +10,7 @@ export function TestResultView({ result }: { result: ConnectionTestResult }) {
   return (
     <div className="flex flex-col gap-3">
       {result.ok && (
-        <p role="status" className="font-medium text-emerald-700 dark:text-emerald-400">
+        <p role="status" className="font-medium text-success-soft-foreground">
           {t("connections.status.ok")}
         </p>
       )}
@@ -26,7 +26,7 @@ export function TestResultView({ result }: { result: ConnectionTestResult }) {
             )}
           >
             {step.ok ? (
-              <CheckCircle2 aria-hidden className="mt-0.5 size-4 text-emerald-600" />
+              <CheckCircle2 aria-hidden className="mt-0.5 size-4 text-success" />
             ) : (
               <XCircle aria-hidden className="mt-0.5 size-4 text-destructive" />
             )}

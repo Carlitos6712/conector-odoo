@@ -82,7 +82,7 @@ function StatCard({
   children?: ReactNode;
 }) {
   return (
-    <Card className="transition-colors hover:bg-muted/40">
+    <Card className="transition-all hover:-translate-y-0.5 hover:shadow-lift">
       <Link to={to} className="flex h-full flex-col gap-1 p-4">
         <span className="text-sm text-muted-foreground">{label}</span>
         <span className="text-3xl font-semibold tabular-nums">{value}</span>

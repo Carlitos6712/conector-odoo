@@ -15,8 +15,8 @@ import { cn } from "@/lib/utils";
 type Series = "succeeded" | "partial" | "failed" | "other";
 /** Stack order, bottom to top. Color is never the only cue: totals and a table back it up. */
 const SERIES: readonly { key: Series; swatch: string }[] = [
-  { key: "succeeded", swatch: "bg-emerald-600" },
-  { key: "partial", swatch: "bg-amber-500" },
+  { key: "succeeded", swatch: "bg-success" },
+  { key: "partial", swatch: "bg-warning" },
   { key: "failed", swatch: "bg-destructive" },
   { key: "other", swatch: "bg-muted-foreground/40" },
 ];
