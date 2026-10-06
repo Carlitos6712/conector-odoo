@@ -46,7 +46,7 @@ Frontend
 Delivery
 - [x] D1 Playwright e2e vs SUWE fake
 - [x] D2 README + architecture diagram
-- [ ] D3 docker-compose multi-stage with Node
+- [x] D3 docker-compose multi-stage with Node
 
 ## Acceptance
 - `uv run pytest` green; mapping engine, adapter pagination, xref upsert, dry-run covered.
@@ -144,9 +144,14 @@ Delivery
 - D1: 7042d4e test(e2e): add Playwright suite for the sync flow, operator read-only role and login error- D1 docs: a4bd537 docs(odd): record D1 progress
 - D2: 7c9c0ad docs(readme): rewrite README for the admin UI and move the data API reference to docs
 - D2: 77295cf docs(architecture): add component and sync run diagrams
+- D2 docs: 33b9d0c docs(odd): record D2 progress
+- D3: 300b827 build(docker): build the admin UI into the image and add a /livez liveness probe
+- D3: 089301b docs(readme): document the Docker deployment of the admin UI
+- D3: 268b300 docs(readme): use a verified volume backup command
 Convention: a `docs(odd)` tracker commit cannot contain its own hash, so it is listed by the NEXT tracker commit (F6's tracker commit is listed by F7's); find any of them with `git log --grep 'docs(odd)'`.
 
 - D2: delegated direct (single writer; trigger: 2+ non-trivial docs files). Docs only, no TDD applicable; every command and env var checked against code.
+- D3: delegated direct (single writer; trigger: Dockerfile, compose, .dockerignore, health route + test, README, .env.example). TDD RED observed for `/livez` (404, test failed), then GREEN.
 
 ## Progress / verification
 Baseline: 612 passed on branch start.
@@ -236,5 +241,20 @@ D1 decisions: (1) Odoo is an in-repo fake (`tests/e2e_support/fake_odoo.py`, Fas
 
 D2: README rewritten (310 lines): architecture (2 Mermaid diagrams, also in docs/architecture.md), quick start, env table from config.py, security, walkthrough with SUWE blocker, adding a target API, testing, known limitations. Legacy data API/webhook/bulk reference moved verbatim to docs/data-api.md. .env.example gained the missing FRONTEND_DIST_DIR, SYNC_*, ADMIN_* variables. Verified: keygen snippet runs, `pytest -m integration` runs, npm scripts exist in frontend/ and e2e/. Not verified: Mermaid rendering (no renderer available; syntax re-read), the full frontend dev flow in a browser. Docker section is a marked placeholder for D3. Cross-cutting a11y pass not done in D2.
 
-## Next step
-D3 docker-compose multi-stage with Node (replace the README `### Docker` placeholder; set FRONTEND_DIST_DIR, ENCRYPTION_KEY, ADMIN_BOOTSTRAP_*); cross-cutting a11y pass still open.
+D3: `/livez` (process-only liveness, public, no Odoo call) added in routers/health.py because `/health` answers 503 when Odoo is down. Dockerfile now has 3 stages: node:22-bookworm-slim (`npm ci && npm run build`, npm cache mount), python:3.12-slim builder (uv 0.12, `--frozen --no-dev`, uv cache mounts), python:3.12-slim runtime with tini as PID 1, uid 10001, frontend dist copied to /app/frontend/dist and FRONTEND_DIST_DIR/ADMIN_DB_PATH/IDEMPOTENCY_DB_PATH fixed to the /app/data volume; no secret baked in. docker-compose.yml: required vars use `${VAR:?msg}` (ODOO_*, WEBHOOK_SECRET, ENCRYPTION_KEY, ADMIN_BOOTSTRAP_*), ADMIN_COOKIE_SECURE defaults true, CONNECTOR_PORT, named volume, `extra_hosts host.docker.internal:host-gateway`, `/livez` healthcheck, restart unless-stopped; no Odoo or SUWE fake bundled. Verified for real with project `conector_d3_test`, temp env file, host port 18123 (torn down with `down -v`, env file removed): image 266 MB; build ok; compose refuses to start without the required vars; healthy; `GET /` 200 text/html no-cache; `/assets/index-*.js` 200 `public, max-age=31536000, immutable`; `/runs` returns index.html; admin login with the bootstrap user 200 + cookie jar `/auth/me` ok; `/livez` 200, `/health` 503 (Odoo unreachable, as designed), `/openapi.json` JSON, unknown `/admin/api/*` 404 JSON, `/customers` 401 JSON (routes not shadowed); non-root uid 10001; databases created on the volume; user created via API survives `docker compose restart` (restart took 0.56 s, so SIGTERM is handled) and the session cookie still works. `uv run pytest`: 1634 passed + 1 new test, but `tests/rest/test_suwe_integration.py::test_lists_every_suwe_client_with_page_pagination` failed (live SUWE fake now returns 36 clients, not 37: external state changed, unrelated to D3; the D1 e2e reads the live count). ruff check/format and mypy src clean. Backup command in the README was run against a throwaway volume. Not verified: TLS proxy setup, `docker compose up` on a host without Linux `host-gateway` support, Odoo reached through host.docker.internal (no Odoo started by this task).
+
+## Final status
+
+All tasks (A, B, F, D1-D3) are done; `docker compose up -d --build` brings up the connector with the admin UI (acceptance met). Consolidated open gaps:
+- Login throttle is per username only; no per-IP throttle.
+- No SSRF blocklist for connection profile URLs (internal addresses are allowed; admin-only, documented).
+- No vault key rotation: changing ENCRYPTION_KEY makes stored secrets undecryptable.
+- No cross-cutting a11y / color-contrast audit (chart amber series untuned in dark mode).
+- Mapping dry-run has no sample-data view beyond the fields tested.
+- No per-day aggregate runs endpoint (dashboard chart uses the 200 latest runs).
+- Single replica only: in-process scheduler and local SQLite.
+- SUWE M2M (client-credentials) blocker for the real SUWE API remains.
+- Draft test-on-edit contract gap between frontend and backend remains.
+- The real `frontend/dist` was never smoke-tested before D3; now covered by the container checks above (SPA, immutable assets, deep link, API not shadowed).
+- The live SUWE fake integration test is sensitive to its current client count (37 vs 36 seen).
+- Convention: the tracker commit for D3 (`docs(odd)`) is listed by `git log --grep 'docs(odd)'`.
