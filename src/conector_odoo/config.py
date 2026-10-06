@@ -47,9 +47,14 @@ class Settings(BaseSettings):
     bulk_max_items: int = Field(default=DEFAULT_BULK_MAX_ITEMS, ge=1, le=MAX_BULK_MAX_ITEMS)
 
     connector_api_key: SecretStr | None = None
+    # Fernet key that encrypts connection-profile secrets at rest. No key is ever generated
+    # implicitly: storing or reading a secret without it fails with a clear error.
+    encryption_key: SecretStr | None = None
     webhook_secret: SecretStr
 
     idempotency_db_path: str = "./data/idempotency.sqlite3"
+    # Admin database (profiles, mappings, jobs, runs, users); migrated at startup.
+    admin_db_path: str = "./data/admin.db"
     # An ``in_progress`` key older than this is treated as abandoned (outcome unknown).
     idempotency_in_progress_timeout_seconds: float = DEFAULT_IN_PROGRESS_TIMEOUT_SECONDS
     # Records older than this are purged (at startup and every purge interval).

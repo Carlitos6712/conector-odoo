@@ -24,6 +24,7 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "BULK_MAX_ITEMS",
         "CONNECTOR_API_KEY",
         "IDEMPOTENCY_DB_PATH",
+        "ADMIN_DB_PATH",
         "LOG_LEVEL",
     ):
         monkeypatch.delenv(name, raising=False)

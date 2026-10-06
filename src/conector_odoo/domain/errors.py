@@ -59,3 +59,31 @@ class BatchPartiallyApplied(ConnectorError):
         super().__init__(message)
         self.created_ids = list(created_ids)
         self.failed_chunk = failed_chunk
+
+
+class ProfileNotFound(ConnectorError):
+    """No connection profile with the requested id."""
+
+
+class ProfileNameTaken(ConnectorError):
+    """Another connection profile already uses that (unique) name."""
+
+
+class ProfileInUse(ConnectorError):
+    """The profile is referenced by resources or jobs and cannot be deleted."""
+
+
+class ProfileValidationError(ConnectorError):
+    """The profile data is invalid (empty name, non-positive timeout, ...)."""
+
+
+class VaultError(ConnectorError):
+    """Base class for secret vault failures. Messages never contain secret material."""
+
+
+class VaultNotConfigured(VaultError):
+    """A secret must be encrypted/decrypted but no usable ``ENCRYPTION_KEY`` is configured."""
+
+
+class VaultDecryptionError(VaultError):
+    """A stored secret cannot be decrypted (wrong ``ENCRYPTION_KEY`` or corrupted data)."""

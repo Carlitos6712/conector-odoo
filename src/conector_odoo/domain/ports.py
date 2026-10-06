@@ -14,6 +14,12 @@ from conector_odoo.domain.entities import (
     SaleOrderData,
 )
 from conector_odoo.domain.events import OdooEvent
+from conector_odoo.domain.profiles import (
+    ConnectionProfile,
+    ProbeStep,
+    Secrets,
+    StoredProfile,
+)
 
 EventHandler = Callable[[OdooEvent], Awaitable[None]]
 
@@ -89,3 +95,52 @@ class EventBus(Protocol):
     async def publish(self, event: OdooEvent) -> bool:
         """Deliver the event to its handlers; ``True`` when every handler succeeded."""
         ...
+
+
+class ConnectionProfileRepository(Protocol):
+    """Persistence of connection profiles; secrets are handled only as an opaque blob."""
+
+    async def add(
+        self, profile: ConnectionProfile, secrets_blob: bytes | None
+    ) -> ConnectionProfile:
+        """Insert; raises ``ProfileNameTaken`` on a duplicate name."""
+        ...
+
+    async def update(
+        self, profile: ConnectionProfile, secrets_blob: bytes | None
+    ) -> ConnectionProfile:
+        """Replace every field of ``profile.id`` (``created_at`` is kept).
+
+        Raises ``ProfileNotFound`` / ``ProfileNameTaken``.
+        """
+        ...
+
+    async def get(self, profile_id: int) -> StoredProfile | None: ...
+
+    async def list(self) -> list[StoredProfile]: ...
+
+    async def delete(self, profile_id: int) -> None:
+        """Raises ``ProfileNotFound`` or ``ProfileInUse`` (referenced by resources/jobs)."""
+        ...
+
+
+class SecretVault(Protocol):
+    """Encrypts/decrypts a profile's ``Secrets``.
+
+    Raises ``VaultNotConfigured`` without a usable key and ``VaultDecryptionError`` when the blob
+    cannot be decrypted.
+    """
+
+    def encrypt(self, secrets: Secrets) -> bytes: ...
+
+    def decrypt(self, blob: bytes) -> Secrets: ...
+
+
+class ConnectionProbe(Protocol):
+    """Checks a connection of one profile type and returns its ordered steps.
+
+    Steps run in order (``url_valid``, ``reachable``, ``tls``, ``auth``); the first failing step
+    is the last one returned.
+    """
+
+    async def probe(self, profile: ConnectionProfile, secrets: Secrets) -> list[ProbeStep]: ...
