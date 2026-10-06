@@ -8,26 +8,109 @@ from fastapi.responses import JSONResponse
 
 from conector_odoo.config import Settings
 from conector_odoo.domain.errors import (
+    AdminForbidden,
+    AdminUserInvalid,
+    AdminUsernameTaken,
+    AdminUserNotFound,
+    AuthenticationFailed,
     BatchPartiallyApplied,
+    CatalogResourceNotFound,
     ConnectorError,
     CreatedButUnreadable,
+    CsrfInvalid,
+    JobAlreadyRunning,
+    LastAdminError,
+    LoginLocked,
+    MappingInUse,
+    MappingInvalid,
+    MappingNotFound,
     OdooAuthError,
     OdooNotFound,
     OdooPermissionError,
     OdooUnavailable,
     OdooValidationError,
+    OpenApiImportError,
+    ProfileInUse,
+    ProfileNameTaken,
+    ProfileNotFound,
+    ProfileValidationError,
+    RecordRejected,
+    RemoteAuthError,
+    RemoteUnavailable,
+    ResourceConfigInvalid,
+    ResourceNotFound,
+    RunNotResumable,
+    SessionInvalid,
+    SyncJobInUse,
+    SyncJobInvalid,
+    SyncJobNameTaken,
+    SyncJobNotFound,
+    SyncRunNotFound,
+    VaultDecryptionError,
+    VaultNotConfigured,
 )
+from conector_odoo.domain.mapping import MappingValidationFailed
 from conector_odoo.infrastructure.api.security import ApiKeyError
 
 logger = logging.getLogger(__name__)
 
 # (status, error code); the first matching entry wins, ``ConnectorError`` is the fallback.
-_MAPPING: tuple[tuple[type[ConnectorError], int, str], ...] = (
+_MAPPING: tuple[tuple[type[ConnectorError] | tuple[type[ConnectorError], ...], int, str], ...] = (
     (OdooAuthError, 401, "odoo_auth_error"),
     (OdooPermissionError, 403, "permission_denied"),
     (OdooNotFound, 404, "not_found"),
     (OdooValidationError, 422, "validation_error"),
     (OdooUnavailable, 502, "odoo_unavailable"),
+    # -- admin API (/admin/api) -------------------------------------------------------------
+    (SessionInvalid, 401, "unauthenticated"),
+    (AuthenticationFailed, 401, "invalid_credentials"),
+    (AdminForbidden, 403, "forbidden"),
+    (CsrfInvalid, 403, "csrf_invalid"),
+    (
+        (
+            ProfileNotFound,
+            CatalogResourceNotFound,
+            MappingNotFound,
+            SyncJobNotFound,
+            SyncRunNotFound,
+            AdminUserNotFound,
+        ),
+        404,
+        "not_found",
+    ),
+    (ResourceNotFound, 404, "resource_not_found"),
+    (
+        (
+            ProfileNameTaken,
+            ProfileInUse,
+            MappingInUse,
+            SyncJobNameTaken,
+            SyncJobInUse,
+            JobAlreadyRunning,
+            RunNotResumable,
+            AdminUsernameTaken,
+            LastAdminError,
+        ),
+        409,
+        "conflict",
+    ),
+    (OpenApiImportError, 422, "import_failed"),
+    (
+        (
+            ProfileValidationError,
+            ResourceConfigInvalid,
+            MappingInvalid,
+            SyncJobInvalid,
+            AdminUserInvalid,
+            RecordRejected,
+        ),
+        422,
+        "validation_error",
+    ),
+    (VaultNotConfigured, 503, "vault_not_configured"),
+    (VaultDecryptionError, 500, "vault_error"),
+    (RemoteAuthError, 502, "remote_auth_error"),
+    (RemoteUnavailable, 502, "remote_unavailable"),
 )
 
 
@@ -41,7 +124,13 @@ def scrub(text: str, settings: Settings) -> str:
     Settings enforce a minimum secret length, so masking every non-empty value cannot mangle
     ordinary text; a short secret that leaked would be worse than a mangled message.
     """
-    secrets = [settings.odoo_api_key, settings.webhook_secret, settings.connector_api_key]
+    secrets = [
+        settings.odoo_api_key,
+        settings.webhook_secret,
+        settings.connector_api_key,
+        settings.encryption_key,
+        settings.admin_bootstrap_password,
+    ]
     for secret in secrets:
         if secret is not None and secret.get_secret_value():
             text = text.replace(secret.get_secret_value(), "***")
@@ -145,7 +234,44 @@ async def _request_validation_error(request: Request, exc: Exception) -> JSONRes
     return JSONResponse(_body("validation_error", "; ".join(parts)), status_code=422)
 
 
+async def _login_locked(request: Request, exc: Exception) -> JSONResponse:
+    assert isinstance(exc, LoginLocked)
+    _log_failure(request, exc, 429, "login locked")
+    return JSONResponse(
+        _body("too_many_attempts", str(exc)),
+        status_code=429,
+        headers={"Retry-After": str(exc.retry_after_seconds)},
+    )
+
+
+async def _mapping_validation_failed(request: Request, exc: Exception) -> JSONResponse:
+    assert isinstance(exc, MappingValidationFailed)
+    detail = scrub(str(exc), request.app.state.settings)
+    _log_failure(request, exc, 422, detail)
+    body: dict[str, object] = {
+        "error": "validation_error",
+        "detail": detail,
+        "issues": [
+            {"path": i.path, "severity": i.severity.value, "message": i.message} for i in exc.issues
+        ],
+    }
+    return JSONResponse(body, status_code=422)
+
+
+async def _unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+    # Never echo the exception: it may carry paths, SQL or secrets. Details go to the log only.
+    logger.error(
+        "unhandled error",
+        exc_info=exc,
+        extra={"path": request.url.path, "request_id": _request_id(request)},
+    )
+    return JSONResponse(_body("internal_error", "internal server error"), status_code=500)
+
+
 def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(ConnectorError, _connector_error)
+    app.add_exception_handler(LoginLocked, _login_locked)
+    app.add_exception_handler(MappingValidationFailed, _mapping_validation_failed)
+    app.add_exception_handler(Exception, _unexpected_error)
     app.add_exception_handler(ApiKeyError, _api_key_error)
     app.add_exception_handler(RequestValidationError, _request_validation_error)

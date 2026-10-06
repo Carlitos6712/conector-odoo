@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from conector_odoo.infrastructure.sqlite import prepare_private_file
+from conector_odoo.infrastructure.sync.locks import connection_lock
 
 _TRACKING_TABLE = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -56,7 +57,14 @@ def migrate(conn: sqlite3.Connection, migrations: Sequence[Migration] | None = N
 
 
 def open_admin_database(path: str) -> sqlite3.Connection:
-    """Open (creating it privately if needed) the admin database with FKs on, fully migrated."""
+    """Open (creating it privately if needed) the admin database with FKs on, fully migrated.
+
+    INVARIANT: the connection is in AUTOCOMMIT mode (``isolation_level=None``). Every repository
+    writes with plain ``execute`` and never calls ``commit()``: each statement is its own
+    transaction, and multi-statement units open an explicit ``BEGIN``/``COMMIT`` themselves (see
+    the migrator and ``SqliteSyncRunRepository._transaction``). Switching to implicit
+    transactions would leave repository writes uncommitted, so keep it and keep
+    ``tests/migrations/test_startup.py`` passing."""
     if path != ":memory:":
         prepare_private_file(Path(path))
     conn = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
@@ -67,6 +75,17 @@ def open_admin_database(path: str) -> sqlite3.Connection:
         conn.close()
         raise
     return conn
+
+
+def close_admin_database(conn: sqlite3.Connection) -> None:
+    """Close the admin connection once the statements running in worker threads have finished.
+
+    Repositories run their blocking SQL in worker threads under the per-connection lock, and a
+    cancelled ``await`` does not stop such a thread. Closing the connection under that same lock
+    means shutdown waits for it, instead of freeing the connection under a running statement
+    (which can crash the interpreter)."""
+    with connection_lock(conn):
+        conn.close()
 
 
 def _check_contiguous(plan: Sequence[Migration]) -> None:

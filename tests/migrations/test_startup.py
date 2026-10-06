@@ -56,3 +56,48 @@ def test_admin_database_failure_closes_the_container(
         pass
     with pytest.raises(sqlite3.ProgrammingError):  # closed connection: the stores were released
         built[0].idempotency._conn.execute("SELECT 1")  # type: ignore[attr-defined]
+
+
+def test_closing_the_admin_database_waits_for_statements_in_worker_threads() -> None:
+    """A cancelled await leaves its worker thread running; close must not free the connection
+    under it (that crashed the interpreter in the full test suite)."""
+    import threading
+    import time
+
+    from conector_odoo.infrastructure.migrations import close_admin_database, open_admin_database
+    from conector_odoo.infrastructure.sync.locks import connection_lock
+
+    conn = open_admin_database(":memory:")
+    closed = threading.Event()
+    with connection_lock(conn):  # a repository statement is "running"
+        closer = threading.Thread(target=lambda: (close_admin_database(conn), closed.set()))
+        closer.start()
+        time.sleep(0.2)
+        assert not closed.is_set()
+    closer.join(5)
+    assert closed.is_set()
+    with pytest.raises(sqlite3.ProgrammingError):
+        conn.execute("SELECT 1")
+
+
+def test_admin_connection_is_autocommit_so_repository_writes_are_durable(tmp_path: Path) -> None:
+    """Repositories never commit: that relies on ``isolation_level=None`` (autocommit)."""
+    import asyncio
+
+    from conector_odoo.domain.mapping import Constant, MappingDefinition, MappingRule
+    from conector_odoo.infrastructure.mappings.repository import SqliteMappingRepository
+    from conector_odoo.infrastructure.migrations import close_admin_database, open_admin_database
+
+    path = tmp_path / "admin.db"
+    conn = open_admin_database(str(path))
+    try:
+        assert conn.isolation_level is None
+        definition = MappingDefinition("m", "a", "b", (MappingRule("x", Constant(1)),))
+        asyncio.run(SqliteMappingRepository(conn).save_new_version(definition))
+        other = sqlite3.connect(path)  # a second connection sees it without any explicit commit
+        try:
+            assert other.execute("SELECT COUNT(*) FROM mappings").fetchone() == (1,)
+        finally:
+            other.close()
+    finally:
+        close_admin_database(conn)

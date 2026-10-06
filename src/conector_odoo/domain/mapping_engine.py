@@ -202,6 +202,10 @@ def _typed_step(step: Step, value: Any) -> Any:
     raise StepFailure("unsupported typed step")
 
 
+# Beyond the range of a double there is nothing sensible to convert to int/float/cents.
+_MAX_EXPONENT = 308
+
+
 def _decimal(value: Any) -> Decimal:
     if isinstance(value, bool) or not isinstance(value, int | float | Decimal | str):
         raise StepFailure(f"expected a number, got {value!r}")
@@ -211,6 +215,9 @@ def _decimal(value: Any) -> Decimal:
         raise StepFailure(f"expected a number, got {value!r}") from None
     if not number.is_finite():
         raise StepFailure(f"expected a finite number, got {value!r}")
+    if abs(number.adjusted()) > _MAX_EXPONENT:
+        # ``int()`` / ``format()`` of ``1e999999999`` would allocate gigabytes: refuse up front.
+        raise StepFailure("number out of range")
     return number
 
 

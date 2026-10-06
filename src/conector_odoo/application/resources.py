@@ -24,7 +24,12 @@ from conector_odoo.domain.ports import (
 from conector_odoo.domain.profiles import ConnectionProfile, ProfileType, Secrets
 from conector_odoo.domain.records import Record, RecordFilter, ResourceSchema
 from conector_odoo.domain.resource_codec import validate_resource_config
-from conector_odoo.domain.resources import ResourceConfig, ResourceSource, StoredResource
+from conector_odoo.domain.resources import (
+    CatalogListing,
+    ResourceConfig,
+    ResourceSource,
+    StoredResource,
+)
 
 PREVIEW_MAX_LIMIT = 20
 _DISCOVERY_BATCH = 500
@@ -116,8 +121,13 @@ class ListResources:
         self._catalog = catalog
 
     async def execute(self, profile_id: int) -> list[StoredResource]:
+        return (await self.report(profile_id)).items
+
+    async def report(self, profile_id: int) -> CatalogListing:
+        """The readable entries plus the corrupt ones that were skipped. Raises
+        ``ProfileNotFound``."""
         await _profile(self._profiles, profile_id)
-        return await self._catalog.list(profile_id)
+        return await self._catalog.list_with_problems(profile_id)
 
 
 class GetResource:

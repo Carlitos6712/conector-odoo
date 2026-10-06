@@ -138,3 +138,24 @@ async def test_corrupt_stored_json_is_a_clear_domain_error(
     )
     with pytest.raises(ResourceConfigInvalid):
         await catalog.get(pid, "x")
+
+
+async def test_list_skips_a_corrupt_row_and_reports_it(
+    conn: sqlite3.Connection, catalog: SqliteResourceCatalogRepository
+) -> None:
+    pid = await make_profile(conn)
+    listing = EndpointSpec("GET", "/things")
+    await catalog.save(
+        pid, ResourceConfig("good", "Good", list_endpoint=listing), ResourceSource.MANUAL
+    )
+    await catalog.save(
+        pid, ResourceConfig("bad", "Bad", list_endpoint=listing), ResourceSource.MANUAL
+    )
+    conn.execute("UPDATE resources SET config_json = '{not json' WHERE name = 'bad'")
+    assert [s.config.name for s in await catalog.list(pid)] == ["good"]
+    report = await catalog.list_with_problems(pid)
+    assert [s.config.name for s in report.items] == ["good"]
+    assert [p.name for p in report.problems] == ["bad"]
+    assert "valid JSON" in report.problems[0].reason
+    with pytest.raises(ResourceConfigInvalid):  # a direct read still says so clearly
+        await catalog.get(pid, "bad")

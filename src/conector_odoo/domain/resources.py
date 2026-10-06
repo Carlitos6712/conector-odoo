@@ -90,3 +90,19 @@ class StoredResource:
     config: ResourceConfig
     source: ResourceSource
     updated_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class ResourceProblem:
+    """A catalog entry that could not be read (corrupt or unknown stored configuration)."""
+
+    name: str
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogListing:
+    """The readable entries of a catalog plus the ones that had to be skipped."""
+
+    items: list[StoredResource]
+    problems: list[ResourceProblem]

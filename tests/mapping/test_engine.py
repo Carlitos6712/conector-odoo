@@ -413,3 +413,27 @@ def test_record_is_not_mutated_and_output_is_independent() -> None:
 
 def test_transform_is_a_valid_top_level_expression_type() -> None:
     assert isinstance(steps(Direct("a"), Trim()), Transform)
+
+
+# -- huge exponents must not be materialised -----------------------------------------------------
+
+
+@pytest.mark.parametrize("step", [ToInt(), ToNumber()])
+@pytest.mark.parametrize("value", ["1e999999999", "-1E+400", "1e-999999999", "9" * 400, 10**400])
+def test_out_of_range_numbers_fail_the_step_quickly(step: Any, value: Any) -> None:
+    import time
+
+    started = time.perf_counter()
+    error = error_of(steps(Direct("v"), step), v=value)
+    assert time.perf_counter() - started < 1.0
+    assert error.step_index == 0 and "range" in error.message
+
+
+@pytest.mark.parametrize("step", [ToCents(), FromCents()])
+def test_out_of_range_amounts_fail_cents_steps_too(step: Any) -> None:
+    assert error_of(steps(Direct("v"), step), v="1e999999999").step_index == 0
+
+
+def test_large_but_sane_numbers_still_convert() -> None:
+    assert run(steps(Direct("v"), ToInt()), v="1e10") == 10_000_000_000
+    assert run(steps(Direct("v"), ToNumber()), v="12345678901234567890") == 12345678901234567890

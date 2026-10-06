@@ -167,3 +167,43 @@ class JobAlreadyRunning(ConnectorError):
 
 class RunNotResumable(ConnectorError):
     """The run cannot be resumed or retried in its current state."""
+
+
+class AuthenticationFailed(ConnectorError):
+    """Wrong username or password. Deliberately says nothing about which one."""
+
+
+class LoginLocked(ConnectorError):
+    """Too many failed logins for this username; retry after ``retry_after_seconds``."""
+
+    def __init__(self, retry_after_seconds: int) -> None:
+        super().__init__("too many failed login attempts; try again later")
+        self.retry_after_seconds = retry_after_seconds
+
+
+class SessionInvalid(ConnectorError):
+    """The session is unknown, expired or was rotated away."""
+
+
+class AdminUserNotFound(ConnectorError):
+    """No admin user with the requested id."""
+
+
+class AdminUsernameTaken(ConnectorError):
+    """Another admin user already has that (case-insensitive) username."""
+
+
+class AdminUserInvalid(ConnectorError):
+    """The admin user data is invalid (empty username, weak password, unknown role)."""
+
+
+class LastAdminError(ConnectorError):
+    """The operation would leave the system without an administrator."""
+
+
+class AdminForbidden(ConnectorError):
+    """The signed-in admin user's role does not allow this operation."""
+
+
+class CsrfInvalid(ConnectorError):
+    """A state-changing admin request lacks a valid CSRF token."""

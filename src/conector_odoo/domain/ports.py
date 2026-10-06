@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
+from conector_odoo.domain.auth import AdminSession, AdminUser, Role
 from conector_odoo.domain.entities import (
     Customer,
     CustomerData,
@@ -23,7 +24,12 @@ from conector_odoo.domain.profiles import (
     StoredProfile,
 )
 from conector_odoo.domain.records import Record, RecordFilter, ResourceSchema
-from conector_odoo.domain.resources import ResourceConfig, ResourceSource, StoredResource
+from conector_odoo.domain.resources import (
+    CatalogListing,
+    ResourceConfig,
+    ResourceSource,
+    StoredResource,
+)
 from conector_odoo.domain.sync import SyncJob
 from conector_odoo.domain.sync_runs import (
     RunCounters,
@@ -224,7 +230,13 @@ class ResourceCatalogRepository(Protocol):
         """Raises ``ResourceConfigInvalid`` when the stored JSON is unknown or corrupt."""
         ...
 
-    async def list(self, profile_id: int) -> list[StoredResource]: ...
+    async def list(self, profile_id: int) -> list[StoredResource]:
+        """The readable entries; a corrupt row is skipped (and logged), never fatal."""
+        ...
+
+    async def list_with_problems(self, profile_id: int) -> CatalogListing:
+        """Like ``list``, and also names every skipped entry with the reason."""
+        ...
 
     async def delete(self, profile_id: int, name: str) -> None:
         """Raises ``CatalogResourceNotFound``."""
@@ -374,3 +386,73 @@ class XRefRepository(Protocol):
     async def list(
         self, job_id: int, resource: str | None = None, limit: int = 100, offset: int = 0
     ) -> list[XRef]: ...
+
+
+class PasswordHasher(Protocol):
+    """One-way password hashing; ``verify`` never raises for a wrong or malformed hash."""
+
+    def hash(self, password: str) -> str: ...
+
+    def verify(self, password_hash: str, password: str) -> bool: ...
+
+
+class AdminUserRepository(Protocol):
+    """Persistence of local admin users (usernames are unique case-insensitively)."""
+
+    async def add(
+        self, username: str, password_hash: str, role: Role, created_at: datetime
+    ) -> AdminUser:
+        """Raises ``AdminUsernameTaken``."""
+        ...
+
+    async def get(self, user_id: int) -> AdminUser | None: ...
+
+    async def get_credentials(self, username: str) -> tuple[AdminUser, str] | None:
+        """The user and its password hash, looked up case-insensitively."""
+        ...
+
+    async def list(self) -> list[AdminUser]: ...
+
+    async def count(self) -> int: ...
+
+    async def count_admins(self) -> int: ...
+
+    async def update(
+        self, user_id: int, *, role: Role | None = None, password_hash: str | None = None
+    ) -> AdminUser:
+        """Change the given fields. Raises ``AdminUserNotFound``."""
+        ...
+
+    async def delete(self, user_id: int) -> None:
+        """Also removes the user's sessions. Raises ``AdminUserNotFound``."""
+        ...
+
+
+class SessionStore(Protocol):
+    """Server-side admin sessions keyed by the digest of the cookie token."""
+
+    async def create(self, session: AdminSession) -> None: ...
+
+    async def get(self, token_hash: str) -> AdminSession | None: ...
+
+    async def touch(self, token_hash: str, last_seen_at: datetime) -> None: ...
+
+    async def delete(self, token_hash: str) -> None: ...
+
+    async def delete_for_user(self, user_id: int) -> None: ...
+
+    async def purge_expired(self, now: datetime) -> int: ...
+
+
+class LoginThrottle(Protocol):
+    """Failed-login counter with a temporary lockout, per normalised username."""
+
+    async def retry_after(self, key: str, now: datetime) -> int:
+        """Seconds until the key may try again; ``0`` when it is not locked."""
+        ...
+
+    async def record_failure(
+        self, key: str, now: datetime, *, max_failures: int, lock_seconds: int
+    ) -> None: ...
+
+    async def reset(self, key: str) -> None: ...
