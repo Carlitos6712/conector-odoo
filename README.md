@@ -125,9 +125,40 @@ API docs of the data API: <http://localhost:8000/docs>.
 
 ### Docker
 
-> **D3 pending.** The current `Dockerfile` and `docker-compose.yml` build only the Python service
-> (data API and `/admin/api`, no frontend, no `ENCRYPTION_KEY`/`ADMIN_*` guidance). The multi-stage
-> build with Node and the compose instructions for the full stack will be written by task D3.
+One image serves the API and the admin UI: a Node stage builds `frontend/`, a Python 3.12 stage
+installs the locked dependencies with uv, and the runtime runs as a non-root user under `tini`.
+Odoo and the target REST API are **not** bundled; point the connector at them.
+
+```bash
+cp .env.example .env
+# Generate the vault key and paste it as ENCRYPTION_KEY:
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# Edit .env: ODOO_*, WEBHOOK_SECRET, ENCRYPTION_KEY, ADMIN_BOOTSTRAP_USER/PASSWORD
+
+docker compose up -d --build
+docker compose logs -f connector
+docker compose down          # keeps the data volume; add -v to delete it
+```
+
+The admin UI is at <http://localhost:8000/> (change the host port with `CONNECTOR_PORT`).
+Compose refuses to start while `ODOO_URL`, `ODOO_DB`, `ODOO_USER`, `ODOO_API_KEY`,
+`WEBHOOK_SECRET`, `ENCRYPTION_KEY` or `ADMIN_BOOTSTRAP_*` are unset.
+
+- **Cookie and TLS.** `ADMIN_COOKIE_SECURE` defaults to `true`, so browsers only send the session
+  cookie over HTTPS (localhost is exempt). Put a reverse proxy that terminates TLS in front of
+  port 8000 for any real deployment. Set `ADMIN_COOKIE_SECURE=false` only for plain-HTTP local use.
+- **Data.** Both SQLite databases (`admin.db`, `idempotency.sqlite3`) live on the named volume
+  `connector-data` mounted at `/app/data`. Back it up while the stack is stopped or idle:
+  `docker compose run --rm --no-deps -v "$PWD":/backup --entrypoint tar connector czf /backup/connector-data.tgz -C /app/data .`
+  Keep `ENCRYPTION_KEY` with the backup: without it stored secrets cannot be decrypted.
+- **Health.** The container healthcheck calls `GET /livez` (process only). `GET /health` also
+  calls Odoo and answers 503 when it is down, so it is not used as the liveness probe.
+- **Reaching Odoo or the SUWE fake on the Docker host.** `localhost` inside the container is the
+  container itself. Use `http://host.docker.internal:8069` (Odoo) or
+  `http://host.docker.internal:8000` (SUWE fake) in `ODOO_URL` and in the connection profiles;
+  compose maps that name to the host gateway through `extra_hosts`, which also works on Linux.
+- **Single replica.** Run one container: the scheduler is in-process and SQLite is local. Set
+  `SYNC_SCHEDULER_ENABLED=false` to disable cron jobs.
 
 ## Configuration
 
