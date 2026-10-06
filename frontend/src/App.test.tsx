@@ -40,9 +40,9 @@ describe("App", () => {
         <App />
         <Probe />
       </>,
-      "/",
+      "/settings",
     );
-    await screen.findByRole("heading", { name: "Panel" });
+    await screen.findByRole("heading", { name: "Ajustes" });
     await userEvent.setup().click(screen.getByRole("button", { name: "probe" }));
     expect(await screen.findByRole("heading", { name: "Iniciar sesión" })).toBeInTheDocument();
   });

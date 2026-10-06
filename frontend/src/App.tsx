@@ -5,6 +5,7 @@ import { setUnauthorizedHandler } from "@/api/client";
 import { SESSION_KEY } from "@/auth/api";
 import { RequireAuth } from "@/auth/RequireAuth";
 import { AppLayout } from "@/components/AppLayout";
+import { DashboardPage } from "@/features/dashboard/DashboardPage";
 import { ConnectionWizardPage } from "@/features/connections/ConnectionWizardPage";
 import { ConnectionsPage } from "@/features/connections/ConnectionsPage";
 import { JobWizardPage } from "@/features/jobs/JobWizardPage";
@@ -36,6 +37,7 @@ export function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route element={<RequireAuth />}>
         <Route element={<AppLayout />}>
+          <Route path="/" element={<DashboardPage />} />
           <Route path="/connections" element={<ConnectionsPage />} />
           <Route path="/connections/new" element={<ConnectionWizardPage />} />
           <Route path="/connections/:id/edit" element={<ConnectionWizardPage />} />
@@ -53,7 +55,10 @@ export function App() {
           <Route path="/runs" element={<RunsPage />} />
           <Route path="/runs/:id" element={<RunDetailPage />} />
           {NAV_ITEMS.filter(
-            (item) => !["connections", "resources", "mappings", "jobs", "runs"].includes(item.key),
+            (item) =>
+              !["dashboard", "connections", "resources", "mappings", "jobs", "runs"].includes(
+                item.key,
+              ),
           ).map((item) => (
             <Route
               key={item.key}
