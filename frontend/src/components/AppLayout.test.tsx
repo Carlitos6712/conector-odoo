@@ -39,6 +39,7 @@ describe("AppLayout navigation", () => {
       "Panel",
       "Conexiones",
       "Recursos",
+      "Registros",
       "Mapeos",
       "Tareas",
       "Ejecuciones",
