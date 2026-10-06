@@ -47,6 +47,7 @@ class ProfileIn(StrictModel):
     odoo_db: str | None = None
     odoo_login: str | None = None
     token_url: str | None = None
+    username: str | None = Field(default=None, max_length=256)
     scope: str | None = None
     api_key_header: str = "X-API-Key"
     secrets: SecretsIn | None = None
@@ -64,6 +65,7 @@ class ProfileIn(StrictModel):
             odoo_db=self.odoo_db,
             odoo_login=self.odoo_login,
             token_url=self.token_url,
+            username=self.username,
             scope=self.scope,
             api_key_header=self.api_key_header,
         )
@@ -86,6 +88,7 @@ class ProfileOut(BaseModel):
     odoo_db: str | None
     odoo_login: str | None
     token_url: str | None
+    username: str | None
     scope: str | None
     api_key_header: str
     has_secret: dict[str, bool]
@@ -108,6 +111,7 @@ class ProfileOut(BaseModel):
             odoo_db=view.odoo_db,
             odoo_login=view.odoo_login,
             token_url=view.token_url,
+            username=view.username,
             scope=view.scope,
             api_key_header=view.api_key_header,
             has_secret=view.has_secret,

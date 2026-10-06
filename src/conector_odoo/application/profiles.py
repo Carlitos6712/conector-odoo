@@ -42,6 +42,7 @@ class ProfileView:
     odoo_db: str | None
     odoo_login: str | None
     token_url: str | None
+    username: str | None
     scope: str | None
     api_key_header: str
     has_secret: dict[str, bool] = field(default_factory=dict)
@@ -66,6 +67,7 @@ def to_view(profile: ConnectionProfile) -> ProfileView:
         odoo_db=profile.odoo_db,
         odoo_login=profile.odoo_login,
         token_url=profile.token_url,
+        username=profile.username,
         scope=profile.scope,
         api_key_header=profile.api_key_header,
         has_secret={name: name in profile.secret_fields for name in SECRET_FIELDS},
