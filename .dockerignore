@@ -11,11 +11,24 @@ data/
 *.sqlite3
 .env
 .env.*
+!.env.example
 odd/
 odoo_addon/
+docs/
 dist/
 build/
 *.egg-info/
 Dockerfile
 docker-compose.yml
 .dockerignore
+
+# Frontend: rebuilt inside the image
+**/node_modules
+**/dist
+frontend/coverage
+
+# End-to-end suite and its state
+e2e/
+**/.state
+**/test-results
+**/playwright-report
