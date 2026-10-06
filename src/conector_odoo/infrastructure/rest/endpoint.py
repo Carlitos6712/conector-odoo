@@ -114,6 +114,11 @@ class RestRecordEndpoint:
         response = await self._http.request(spec.method, _path(spec, id), json=fields)
         return _written(cfg, response.content, response, fields, id)
 
+    async def delete(self, resource: str, id: str) -> None:
+        """REST resources have no delete endpoint in their config: deleting is not supported."""
+        await self._configs.get(resource)  # unknown resource -> ResourceNotFound
+        raise RecordRejected(f"resource {resource!r} does not support delete")
+
     # -- pagination ------------------------------------------------------------------------
 
     async def _pages(

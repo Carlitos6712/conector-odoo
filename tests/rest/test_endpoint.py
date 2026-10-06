@@ -225,3 +225,8 @@ async def test_configured_get_endpoint_keeps_priority_over_the_list() -> None:
     rec = await endpoint().get("items", "7")
     assert rec is not None and rec.id == "7"
     assert not list_route.called
+
+
+async def test_delete_is_not_supported_by_rest_resources() -> None:
+    with pytest.raises(RecordRejected, match="does not support delete"):
+        await endpoint().delete("items", "1")
