@@ -458,6 +458,12 @@ class XRefRepository(Protocol):
         self, job_id: int, resource: str | None = None, limit: int = 100, offset: int = 0
     ) -> list[XRef]: ...
 
+    async def forget_target(self, profile_id: int, resource: str, target_id: str) -> int:
+        """Delete the xref rows of every job whose target is (``profile_id``, ``resource``) and
+        that point at ``target_id``; returns how many. Used when that record was deleted outside
+        a sync run, so the next run recreates it instead of skipping or updating a missing id."""
+        ...
+
 
 class PasswordHasher(Protocol):
     """One-way password hashing; ``verify`` never raises for a wrong or malformed hash."""
