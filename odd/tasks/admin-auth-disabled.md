@@ -23,12 +23,13 @@ is local and used by company members only, so the user chose to skip authenticat
 
 ## Tasks
 - [x] T1 Backend: setting + synthetic session in `deps.py` + config validation + tests (RED first)
-- [ ] T2 Frontend: skip login when session already present + test
+- [x] T2 Frontend: skip login when session already present + test
 - [ ] T3 Launcher: export flag, bind 127.0.0.1; README + `.env.example` note
 - [ ] T4 Verify full suites, commit per work unit, PR
 
 ## Progress / evidence
 - T1: RED observed (7 failed, 1 passed in tests/admin_api/test_auth_disabled.py), then GREEN. Full backend `uv run pytest -q`: 1905 passed. ruff check/format clean. mypy: 97 pre-existing errors elsewhere, none new in touched files. CSRF is skipped when the flag is on. Commit: see git log (T1).
+- T2: /login already redirected when a session existed (Navigate in LoginPage). Added a regression test for that plus a RED-first test for the form flashing while /me is pending (1 failed), then LoginPage shows Loading while pending: GREEN. `npm test`: 627 passed; tsc and `npm run lint` clean. Logout button left as is (hiding it needs a server flag, not trivial).
 
 ## Next step
-T2.
+T3.
