@@ -84,6 +84,9 @@ class Settings(BaseSettings):
     # password: without both values the first admin must be created some other way.
     admin_bootstrap_user: str | None = None
     admin_bootstrap_password: SecretStr | None = None
+    # LOCAL USE ONLY: skips the admin login entirely; every request acts as a built-in admin.
+    # Anyone who can reach the port is an admin, so bind to localhost. Off by default.
+    admin_auth_disabled: bool = False
     admin_cookie_name: str = "admin_session"
     # Secure cookies are only sent over HTTPS (browsers exempt localhost); turn off for plain-HTTP
     # development behind no proxy only.
