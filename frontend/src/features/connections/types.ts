@@ -23,6 +23,8 @@ export interface Profile {
   odoo_db: string | null;
   odoo_login: string | null;
   token_url: string | null;
+  /** Non-secret user name of the app-password grant (its password is a vault secret). */
+  username: string | null;
   scope: string | null;
   api_key_header: string;
   has_secret: Partial<Record<SecretField, boolean>>;
@@ -48,6 +50,7 @@ export interface ProfileInput {
   odoo_db?: string | null;
   odoo_login?: string | null;
   token_url?: string | null;
+  username?: string | null;
   scope?: string | null;
   api_key_header?: string;
   secrets?: SecretsInput;

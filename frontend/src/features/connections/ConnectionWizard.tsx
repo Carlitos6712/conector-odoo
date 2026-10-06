@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import {
   stateFromProfile,
   toInput,
   usesTokenUrl,
+  usesUserPassword,
   validate,
   type FieldErrors,
   type FormState,
@@ -42,6 +43,9 @@ const SECRET_LABEL: Record<SecretField, string> = {
   client_secret: "clientSecret",
   password: "password",
 };
+
+/** Optional in the OAuth2 form: either the client secret or the username + password is enough. */
+const OPTIONAL_WITH_USER = new Set<SecretField>(["client_secret", "password"]);
 
 const isVaultMissing = (error: unknown) =>
   error instanceof ApiError && error.code === "vault_not_configured";
@@ -158,7 +162,7 @@ export function ConnectionWizard({ profile }: { profile?: Profile }) {
       label={label}
       error={message(errors[field])}
       hint={editing && stored[field] ? t("connections.wizard.secretStored") : undefined}
-      required={!stored[field]}
+      required={!stored[field] && !(usesUserPassword(state) && OPTIONAL_WITH_USER.has(field))}
     >
       {(props) => (
         <Input
@@ -354,9 +358,26 @@ export function ConnectionWizard({ profile }: { profile?: Profile }) {
                 </>
               )}
               {requiredSecrets(state).map((field) => (
-                <div key={field}>
+                <Fragment key={field}>
+                  {field === "password" && (
+                    <FormField
+                      name="username"
+                      label={t("connections.wizard.fields.username")}
+                      hint={t("connections.wizard.userPasswordHint")}
+                      required={false}
+                    >
+                      {(props) => (
+                        <Input
+                          {...props}
+                          autoComplete="off"
+                          value={state.username}
+                          onChange={(e) => set("username", e.target.value)}
+                        />
+                      )}
+                    </FormField>
+                  )}
                   {secretField(field, t(`connections.wizard.fields.${SECRET_LABEL[field]}`))}
-                </div>
+                </Fragment>
               ))}
             </>
           )}

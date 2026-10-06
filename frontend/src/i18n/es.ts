@@ -169,6 +169,8 @@ export const es = {
       },
       saving: "Guardando…",
       secretStored: "Guardado. Déjalo en blanco para conservar el valor actual.",
+      userPasswordHint:
+        "Opcional: indica usuario y contraseña (p. ej. una contraseña de aplicación de Authentik) en lugar del client secret.",
       tokenUrlOidcHint: "Opcional: si se omite, se descubre a partir de la URL base.",
       advanced: "Opciones avanzadas",
       fields: {
@@ -181,6 +183,7 @@ export const es = {
         apiKeyHeader: "Cabecera de la clave",
         bearer: "Token Bearer",
         password: "Contraseña",
+        username: "Usuario",
         tokenUrl: "URL del token",
         scope: "Ámbito (scope)",
         clientId: "Client ID",
