@@ -81,18 +81,36 @@ job with direction `bidirectional` and a `reverse_mapping`. Repeat on every mach
 2. `PUT /admin/api/jobs/<job-id>` with the job unchanged except `direction: "bidirectional"` and
    `reverse_mapping: {"name": "res.partner_to_clients", "version": null}`.
 
-The required `ref`->`uuid` rule limits the reverse leg of a job RUN: Odoo partners without `ref` (native
-ones) fail mapping and are not created in SUWE. Partners that do carry a `ref` (for example created by
-the other `suwe-*` jobs) are NOT filtered and would be created as clients. Do not run this job unless that
-is acceptable. Restore: `PUT` the job back with `direction: "a_to_b"` and `reverse_mapping: null`.
+3. Mark the partners written by the OTHER `suwe-*` jobs so the reverse pass can skip them. Marker: the
+   Odoo `res.partner` field `function` (Job Position, free char, unused by every SUWE mapping) set to
+   `suwe-sync`. For each forward mapping of jobs `suwe-groups-to-odoo`, `suwe-stores-to-odoo`,
+   `suwe-kyc-to-odoo`, `suwe-users-to-odoo` and `suwe-partners-to-odoo` (`groups_to_res.partner`,
+   `stores_to_res.partner`, `kyc_to_res.partner`, `users_to_res.partner`, `partners_to_res.partner`), add
+   the rule `{"target": "function", "expr": {"type": "constant", "value": "suwe-sync"}, "required": false}`
+   and `PUT /admin/api/mappings/<name>` (each became version 2; the jobs use `version: null`, so they
+   follow the latest). Do NOT add it to `clients_to_res.partner` (job 1), or client partners would be
+   skipped too. Then run each of those jobs once (`POST /admin/api/jobs/<id>/runs` with
+   `{"dry_run": false}`, one at a time): they update the existing partners through the xref and stamp
+   them (observed: 8 + 90 + 30 + 40 + 6 updates, 0 failed, 1 new partner for a SUWE group that had never
+   been synced).
+4. Set the reverse filter on job 1 (`PUT /admin/api/jobs/<job-id>`, whole job body unchanged except):
+   `"reverse_record_filter": {"equals": {}, "since": null, "raw": {"domain": [["function", "!=", "suwe-sync"]]}}`.
+   Odoo `!=` also matches empty values, so unmarked partners pass.
 
-A job now has a `reverse_record_filter` (same shape as `record_filter`: `equals`, `since`, `raw`; empty by
+A job has a `reverse_record_filter` (same shape as `record_filter`: `equals`, `since`, `raw`; empty by
 default) applied only to the reverse pass, so its field names belong to side B (for this job, Odoo
-`res.partner`; `raw` takes an Odoo domain such as `{"domain": [["is_company", "=", true]]}`). It is set with
-`PUT /admin/api/jobs/<job-id>`. No filter is set on this job yet: the partners created by the other
-`suwe-*` jobs carry the same fields as client partners (all set `ref`, `is_company`, `autopost_bills`), so
-Odoo data alone cannot tell them apart; only persons (`is_company = false`, from `kyc` and `users`) can be
-excluded safely. Do not run this job until a discriminator is chosen.
+`res.partner`; `raw` takes an Odoo domain). The write-through from the Records page is not filtered.
+
+What the reverse pass of job 1 still picks up: partners with a `ref` and no marker, that is the SUWE
+client partners (expected), plus any partner created by hand with a `ref`. Native partners without `ref`
+fail the required `ref`->`uuid` rule and are not created. A new partner written by another `suwe-*` job
+is marked on its first run (the mapping carries the marker); a partner written before step 3 stays
+unmarked until its job is re-run. The marker is a convention: someone clearing or editing `function` on
+a marked partner makes it eligible again.
+
+Restore: `PUT` job 1 with `reverse_record_filter` empty (`raw: null`), and optionally `direction: "a_to_b"`
+and `reverse_mapping: null`. To drop the marker, `PUT` the mappings of step 3 without the `function` rule
+(new versions) and re-run the jobs; the `function` values already written stay in Odoo until edited.
 
 ## 2. Behaviour of the mock you must know
 
