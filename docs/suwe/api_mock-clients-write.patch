@@ -1,0 +1,41 @@
+--- a/api_mock/routes_org.py
++++ b/api_mock/routes_org.py
+@@ -168,6 +168,38 @@
+     return client
+ 
+ 
++_CLIENT_DETAIL_KEYS = (
++    "uuid", "name", "legal_name", "tax_id", "group_fk", "group_name", "address", "city",
++    "province", "country", "created_at", "updated_at")
++_CLIENT_ALIASES = {"client": "name", "cif": "tax_id"}
++_CLIENT_WRITABLE = ("name", "legal_name", "tax_id", "address", "city", "province", "country")
++
++
++@route(R, "PATCH", "/organization/clients/{client_id}")
++async def update_client(client_id: str, request: Request):
++    c = _client_or_404(client_id)
++    data = await body(request)
++    for src, dst in _CLIENT_ALIASES.items():
++        if src in data and dst not in data:
++            data[dst] = data[src]
++    for key in _CLIENT_WRITABLE:
++        if key in data:
++            c[key] = data[key]
++    for src, dst in _CLIENT_ALIASES.items():
++        if src in c and dst in data:  # keep the list-view duplicates in sync
++            c[src] = data[dst]
++    c["updated_at"] = iso()
++    return {k: c[k] for k in _CLIENT_DETAIL_KEYS}
++
++
++@route(R, "DELETE", "/organization/clients/{client_id}")
++def delete_client(client_id: str):
++    c = _client_or_404(client_id)
++    CLIENTS.remove(c)
++    CLIENT_BY_ID.pop(client_id, None)
++    return {"deleted": True, "uuid": client_id}
++
++
+ @route(R, "GET", "/organization/clients/{client_id}/summary")
+ def client_summary(client_id: str):
+     c = _client_or_404(client_id)
