@@ -416,6 +416,25 @@ token flow could not be verified. The real SUWE (Authentik) service-token flow i
 - (b) a static API key or long-lived token issued by SUWE (works today as API key or Bearer);
 - (c) a refresh-token flow after one interactive login (not implemented).
 
+### OAuth2 with a username and app password (Authentik)
+
+An `oauth2_client_credentials` REST connection can authenticate as a user instead of with a client
+secret. When both **Username** and **Password** are set, the token request is
+`grant_type=client_credentials&client_id=...&username=...&password=...[&scope=...]` (no
+`client_secret`); otherwise the client id/secret grant is used as before. The username is a normal
+profile field; the password is stored encrypted in the vault and never returned by the API.
+
+1. In Authentik, create an app password under **Directory > Tokens and App passwords** with Intent
+   **App password**.
+2. In the connection wizard choose **Client credentials (OAuth2)** and fill in:
+   - Token URL: `https://<authentik>/application/o/token/`
+   - Client ID: the OAuth2 provider's client id
+   - Username: the Authentik user
+   - Password: the app password
+   - Scope: e.g. `openid profile email jwt-uuid`
+   - Client secret: leave empty
+3. Use **Test connection**; the access token is requested, cached and refreshed automatically.
+
 ## Adding a target API
 
 1. **Connection**: choose type REST, enter the base URL and an auth method, run the wizard test.
