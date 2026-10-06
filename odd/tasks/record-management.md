@@ -39,7 +39,7 @@ today and never touches remote data.
 - [x] T1 Port + Odoo adapter `delete`, per-record error mapping + tests (RED first)
 - [x] T2 Admin API records endpoints (list/get/patch/delete one) + xref cleanup on delete + tests
 - [x] T3 Frontend "Records" page: list, search, edit dialog, single delete with confirmation + tests
-- [ ] T4 README (feature + Odoo backup how-to), full suites green, work-unit commits
+- [x] T4 README (feature + Odoo backup how-to), full suites green, work-unit commits
 - [ ] T5 Live check against odoo-local on one disposable record (create via job, edit, delete) only after the user confirms
 
 ## Progress / evidence
@@ -64,5 +64,21 @@ today and never touches remote data.
   Admin-only edit/delete buttons, edit sends only changed writable fields, delete confirmation names record and
   model, states it is permanent, and shows Odoo's refusal. No bulk selection or delete-all anywhere.
 
+- T6 (route: delegated, writer; commit d1a040c): backend layer chosen, because `GetDashboard` already builds
+  `recent_failures` (frontend `attentionItems` just renders it). RED 2 failed + 3 passed
+  (`tests/unit/test_dashboard_attention.py`), GREEN 5 passed, full suite 2002 passed, ruff clean, mypy clean on the
+  touched module. A failed/partial run is dropped when a later non-dry succeeded run of the same job exists
+  (`_unresolved`); scans 25 failures per status then caps at 5. Runs history untouched. Frontend unchanged (no code
+  change needed; frontend suites not re-run).
+- T4 (route: delegated, writer; commit 31e5bc7): README sections "Records page", "Back up Odoo before destructive
+  work" (container names odoo-odoo-1 / odoo-db-1 from `docker ps`; DB name left as placeholder; restore commands not
+  executed) and "How data updates work" + manual test checklist, derived from `sync_runner.py`, `domain/sync.py`
+  and `tests/sync/test_xref_forget.py`. Not verified: whether the SUWE mock accepts writes.
+
 ## Next step
-T4 README/docs.
+T5 manual live check by the user.
+
+## Addendum (user request after T3)
+- [x] T4 README: Records page + Odoo backup how-to (no bulk delete by design) + update-logic explanation
+- [ ] T5 Live check: performed MANUALLY by the user after a service restart (parent restarts services; no automated deletes against real data)
+- [x] T6 Dashboard "Requiere atencion": hide failed runs superseded by a later successful run of the same job

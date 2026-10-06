@@ -17,6 +17,8 @@ from conector_odoo.domain.sync_runs import RunFilter, RunStatus, SyncRun
 RECENT_RUNS = 10
 RECENT_FAILURES = 5
 WINDOW = timedelta(hours=24)
+_FAILURE_SCAN = 25  # failures read per status before superseded ones are dropped
+_SUCCESS_SCAN = 10  # newest successes read per job to find a real (non-dry) one
 _WINDOW_RUN_CAP = 1000  # bounds the aggregation; busier systems see "at least" this many
 
 
@@ -71,8 +73,9 @@ class GetDashboard:
         failures: list[SyncRun] = []
         for status in (RunStatus.FAILED, RunStatus.PARTIAL):
             failures.extend(
-                await self._runs.list_runs(RunFilter(status=status), limit=RECENT_FAILURES)
+                await self._runs.list_runs(RunFilter(status=status), limit=_FAILURE_SCAN)
             )
+        failures = await self._unresolved(failures)
         failures.sort(key=lambda run: run.started_at, reverse=True)
         return DashboardSummary(
             profiles=len(await self._profiles.list()),
@@ -89,3 +92,18 @@ class GetDashboard:
                 if job.enabled and job.id is not None and isinstance(job.trigger, ScheduleTrigger)
             ],
         )
+
+    async def _unresolved(self, failures: list[SyncRun]) -> list[SyncRun]:
+        """Drop failures a later real (non-dry) successful run of the same job has superseded."""
+        latest_success: dict[int, datetime | None] = {}
+        for job_id in {run.job_id for run in failures}:
+            successes = await self._runs.list_runs(
+                RunFilter(job_id=job_id, status=RunStatus.SUCCEEDED), limit=_SUCCESS_SCAN
+            )
+            real = [run.started_at for run in successes if not run.dry_run]
+            latest_success[job_id] = max(real, default=None)
+        return [
+            run
+            for run in failures
+            if (done := latest_success[run.job_id]) is None or done <= run.started_at
+        ]
