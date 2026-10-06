@@ -96,7 +96,8 @@ Rules the runner follows (full algorithm in the docstring of `application/sync_r
 | Application | `src/conector_odoo/application/` | Use cases: sync runner, run launcher, scheduler, webhook triggers, mappings, jobs, profiles, auth, dashboard, plus the legacy customer, product and sale-order use cases. |
 | REST adapter | `infrastructure/rest/` | Pagination, auth (API key, bearer, OAuth2 client credentials, OIDC), retries, error normalisation. |
 | Odoo adapters | `infrastructure/odoo/` | Client with three transports; `records.py` is the model-generic endpoint, the other repositories serve the data API. |
-| Persistence | `infrastructure/{profiles,resources,mappings,sync,auth,migrations}/` | SQLite repositories, the secret vault and the versioned migrator. |
+| Persistence | `infrastructure/{profiles,resources,mappings,sync,auth,migrations}/` | SQLite repositories, the secret vault (Fernet with `MultiFernet` key rotation, `profiles/rotation.py`) and the versioned migrator. |
+| Management CLI | `src/conector_odoo/manage.py` | `python -m conector_odoo.manage check-vault \| rotate-vault-key`. |
 | Outbound policy | `domain/outbound.py`, `infrastructure/net/guard.py` | Pure SSRF rules (blocked address classes, `default`/`strict`) and the httpcore network backend that resolves a host once, validates every address and connects to the validated IP (Host and SNI untouched). Every client built from a user-supplied URL (REST, token and issuer URLs, probes, OpenAPI import, Odoo profiles) goes through it. |
 | Admin API | `infrastructure/admin_api/` | `/admin/api` routers, sessions, CSRF, roles, per-username and per-address login throttling. |
 | Static UI | `infrastructure/api/static_frontend.py` | Serves `frontend/dist` with an SPA fallback. |

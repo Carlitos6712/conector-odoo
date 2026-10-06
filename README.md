@@ -199,7 +199,8 @@ at least 16 characters where noted.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `ENCRYPTION_KEY` | unset | Fernet key for connection secrets. Without it, storing or reading a secret fails with a clear error. |
+| `ENCRYPTION_KEY` | unset | Primary Fernet key for connection secrets: the only key that encrypts. Without it, storing or reading a secret fails with a clear error. |
+| `ENCRYPTION_KEY_PREVIOUS` | unset | Comma-separated OLD Fernet keys, used to decrypt only, while a key rotation is in progress (see "Rotating the vault key"). Remove it once `rotate-vault-key` has moved every secret. |
 | `ADMIN_DB_PATH` | `./data/admin.db` | SQLite file for connections, mappings, jobs, runs and users (migrated at startup). |
 | `FRONTEND_DIST_DIR` | `./frontend/dist` | Built UI served at `/`. |
 | `SYNC_SCHEDULER_ENABLED` | `true` | Run cron jobs in-process. Set `false` to disable. |
@@ -232,14 +233,49 @@ at least 16 characters where noted.
 | Roles | `admin` (everything) and `operator` (read-only). One router-level guard denies by default; a test walks the OpenAPI route table and fails if a route answers anonymous callers, lets an operator mutate, or skips CSRF. Anything that contacts a remote system with stored credentials (test, preview, discover, import, dry-run) is a POST, so operators cannot trigger it. Every user may change their own password. |
 | Lockout | 5 failed logins per username lock it for 15 minutes (429 + `Retry-After`). Unknown usernames are throttled the same way and verify against a dummy hash, so message, status and timing match. |
 | Per-address throttle | 20 failures per client address in a sliding 15 minute window (any usernames, `POST /auth/login` and `/auth/password`) block that address with the same 429 and generic body, even for correct credentials; a blocked address stops adding rows. Counters live in SQLite (`login_ip_failures`), so restarts and several workers agree; old rows are purged on write. A successful login does not clear the address counter. IPv6 is grouped by /64. |
-| Secret vault | Connection secrets are encrypted with Fernet (`ENCRYPTION_KEY`) before they reach SQLite. They are write-only: the API returns `has_secret` flags, never values. No key is generated implicitly. |
+| Secret vault | Connection secrets are encrypted with Fernet (`ENCRYPTION_KEY`) before they reach SQLite. They are write-only: the API returns `has_secret` flags, never values. No key is generated implicitly. Keys rotate without re-entering secrets: `ENCRYPTION_KEY_PREVIOUS` (decrypt only) plus `python -m conector_odoo.manage rotate-vault-key`, which is transactional, all-or-nothing and idempotent. At startup the service logs (counts and profile ids, no secrets) whether the stored secrets open with the configured keys; `check-vault` reports the same on demand. |
 | Webhooks | `X-Odoo-Signature` = HMAC-SHA256 over `timestamp.body`, constant-time compare, timestamp tolerance, event-id deduplication. |
 | OpenAPI import | http/https only, 5 MB cap, YAML via `safe_load`, local `$ref` only. Redirects are followed by hand: max 3 hops, same host only, never https to http. |
 | Outbound URL policy (SSRF) | Every request made to a user-supplied URL (OpenAPI import including each redirect hop, REST base URL, token URL and OIDC issuer URL, connection tests, previews, sync runs, Odoo profile URLs on all three protocols) is checked when the TCP connection is made: the host is resolved once, ALL returned addresses must pass, and the connection goes to the validated IP, so DNS rebinding cannot swap the target between check and use (Host header and TLS SNI/certificate checks still use the name). Always blocked: link-local (`169.254.0.0/16`, `fe80::/10`, so `169.254.169.254` and `fd00:ec2::254`), `0.0.0.0/8`, `::`, multicast, reserved ranges, Alibaba metadata `100.100.100.200`, and IPv4 embedded in IPv4-mapped, NAT64 and 6to4 addresses. Private, loopback and ULA ranges are allowed by default (Odoo and the dev fakes are usually internal); `OUTBOUND_URL_POLICY=strict` blocks them unless the host is in `OUTBOUND_ALLOWED_HOSTS`. API answers are a typed 422 `outbound_url_blocked` (connection tests report a failed step instead); the message names the rule, never the URL. Proxy environment variables are ignored by these clients, because a proxy would resolve the target itself. |
 
-Key loss: if `ENCRYPTION_KEY` is lost or changed, every stored secret becomes undecryptable
-(`VaultDecryptionError`) and each connection must be re-entered. Back the key up separately from the
-database. There is no key-rotation tool: rotating means re-entering all secrets under the new key.
+Key loss: if `ENCRYPTION_KEY` is lost and no old key is available, every stored secret becomes
+undecryptable (`VaultDecryptionError`) and each connection must be re-entered. Back the key up
+separately from the database. To change the key without losing anything, follow the rotation
+runbook below instead of just replacing `ENCRYPTION_KEY`.
+
+### Rotating the vault key
+
+Rotation moves every stored secret from the old key to a new one. Do it when a key may have leaked,
+when someone who knew it leaves, or on your regular key schedule.
+
+1. **Back up first** (the volume command in the Docker section, or a copy of `ADMIN_DB_PATH`). Keep
+   the old key with that backup: the backup is only readable with the key it was made under.
+2. **Generate the new key**:
+   `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
+3. **Configure both keys** in `.env`: `ENCRYPTION_KEY=<new key>` and
+   `ENCRYPTION_KEY_PREVIOUS=<old key>` (several old keys may be listed, comma-separated). Restart:
+   `docker compose up -d`. Connections keep working (old secrets still decrypt); the startup log
+   warns that N profile(s) still use a previous key.
+4. **Dry run**, then rotate (the running container has the keys; the command shares its data
+   volume, and the database write lock keeps it safe next to the running service):
+
+   ```bash
+   docker compose exec connector python -m conector_odoo.manage rotate-vault-key --dry-run
+   docker compose exec connector python -m conector_odoo.manage rotate-vault-key
+   docker compose exec connector python -m conector_odoo.manage check-vault
+   ```
+
+   Without Docker, run the same `python -m conector_odoo.manage ...` with the service's
+   environment. Exit code 0 means success, 1 means refused, 2 means a configuration problem.
+5. **Drop the old key**: remove `ENCRYPTION_KEY_PREVIOUS` from `.env` and run `docker compose up -d`
+   again. Keep the old key as long as you keep backups that were made before the rotation.
+
+The command rewrites all secrets in one transaction. If any secret cannot be decrypted by any
+configured key it refuses, writes nothing and lists the profile ids (for example a profile that
+was encrypted with a key you no longer have); fix it by adding that key to
+`ENCRYPTION_KEY_PREVIOUS` or by re-entering those secrets in the UI, then run it again. Running it
+twice is harmless: secrets already under the primary key are not touched. Its output has counts
+and profile ids only, never keys or secrets.
 
 Not done, by design or yet:
 
