@@ -73,6 +73,16 @@ resource config has no write endpoints.
     (previous config saved in the session scratchpad only; it had just the list endpoint).
   - Earlier manual tests (record-management T5): Odoo partner "Supermercados Aurora" recreated as id 220.
   - Mock data: reset to fixtures by the container restart.
+  - Job 1 `suwe-clients-to-odoo` changed from `a_to_b` / no reverse mapping to `bidirectional` with
+    `reverse_mapping` = new mapping `res.partner_to_clients` v1 (Odoo `res.partner` -> `clients`: name,
+    city, vat->tax_id, street->address, ref->uuid required). No schedule, never run since. Previous job
+    JSON saved in the session scratchpad: `job1.before.json` (mapping `clients_to_res.partner` v3 untouched,
+    copy in `mapping.clients_to_res.partner.before.json`). Restore: `PUT /admin/api/jobs/1` with the saved
+    JSON (without `id`/`next_fire`); optionally `DELETE /admin/api/mappings/res.partner_to_clients`.
+    RUN RISK: the reverse pass has no filter; native Odoo partners lack `ref`, so the required rule makes
+    them fail mapping (not created), but partners with a `ref` (e.g. from other `suwe-*` jobs) would be
+    created as SUWE clients. Do not run job 1 casually.
+  - Live check: throwaway client created/edited/deleted from both sides (Odoo partner 223, now gone).
 - T4 (writer, delegated): `CreateRecord` + `RecordWrite`; `UpdateRecord`/`DeleteRecord` take `RecordPropagator`;
   `POST /{resource}` (201); PATCH/POST return `{id, fields, propagation[], warnings[]}`; DELETE now returns
   200 `{propagation, warnings}` instead of 204 (T5 frontend and T6 README must reflect it). Delete order:

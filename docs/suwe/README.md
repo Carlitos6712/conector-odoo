@@ -69,6 +69,23 @@ Endpoints of the resource (all relative to the connection base URL `http://local
 Keep the rest of the existing config (pagination, `items_path`). The previous config only had the list
 endpoint.
 
+### 1.3 Connector job: `suwe-clients-to-odoo` made bidirectional
+
+Also **connector data**. Write-through from the Records page only reaches the counterpart of an enabled
+job with direction `bidirectional` and a `reverse_mapping`. Repeat on every machine:
+
+1. Save the mapping `res.partner_to_clients` (`PUT /admin/api/mappings/res.partner_to_clients` with
+   `source_profile_id` = Odoo profile, `target_profile_id` = SUWE profile). Source `res.partner`, target
+   `clients`, direct rules: `name`->`name`, `city`->`city`, `vat`->`tax_id`, `street`->`address`,
+   `ref`->`uuid` with `required: true`.
+2. `PUT /admin/api/jobs/<job-id>` with the job unchanged except `direction: "bidirectional"` and
+   `reverse_mapping: {"name": "res.partner_to_clients", "version": null}`.
+
+The required `ref`->`uuid` rule limits the reverse leg of a job RUN: Odoo partners without `ref` (native
+ones) fail mapping and are not created in SUWE. Partners that do carry a `ref` (for example created by
+the other `suwe-*` jobs) are NOT filtered and would be created as clients. Do not run this job unless that
+is acceptable. Restore: `PUT` the job back with `direction: "a_to_b"` and `reverse_mapping: null`.
+
 ## 2. Behaviour of the mock you must know
 
 - State is **in memory**: restarting the container resets the data to the fixtures and drops created,
