@@ -33,7 +33,14 @@ from conector_odoo.application.profiles import (
     TestConnection,
     UpdateProfile,
 )
-from conector_odoo.application.records import DeleteRecord, GetRecord, ListRecords, UpdateRecord
+from conector_odoo.application.record_propagation import RecordPropagator
+from conector_odoo.application.records import (
+    CreateRecord,
+    DeleteRecord,
+    GetRecord,
+    ListRecords,
+    UpdateRecord,
+)
 from conector_odoo.application.resources import (
     DeleteResource,
     DiscoverResources,
@@ -100,6 +107,7 @@ class ResourceServices:
 class RecordServices:
     list: ListRecords
     get: GetRecord
+    create: CreateRecord
     update: UpdateRecord
     delete: DeleteRecord
 
@@ -206,6 +214,7 @@ def build_admin_services(
         clock=_now,
         sleep=asyncio.sleep,
     )
+    propagator = RecordPropagator(job_repo, mapping_repo, xref_repo, endpoints, clock=_now)
     trigger = TriggerSyncJob(runner)
     scheduler = SyncScheduler(
         job_repo,
@@ -261,8 +270,9 @@ def build_admin_services(
         records=RecordServices(
             list=ListRecords(profile_repo, endpoints),
             get=GetRecord(profile_repo, endpoints),
-            update=UpdateRecord(profile_repo, endpoints),
-            delete=DeleteRecord(profile_repo, endpoints, xref_repo),
+            create=CreateRecord(profile_repo, endpoints, propagator),
+            update=UpdateRecord(profile_repo, endpoints, propagator),
+            delete=DeleteRecord(profile_repo, endpoints, xref_repo, propagator),
         ),
         mappings=MappingServices(
             repo=mapping_repo,

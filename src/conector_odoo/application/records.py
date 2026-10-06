@@ -7,13 +7,19 @@ no collection-level or filter-based delete: removing many records is a backup-an
 Deleting a record that is the target of a sync job also forgets the cross-references pointing at
 it. Otherwise an unchanged source record would keep matching its stale xref hash and the next run
 would skip it forever (a changed one would be re-created, see ``SyncRunner``).
+
+Create, edit and delete are written through to the counterpart of every enabled bidirectional job
+(``RecordPropagator``). The primary write is never rolled back: a counterpart problem comes back as
+a ``PropagationOutcome`` with a warning.
 """
 
 import logging
+import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
+from conector_odoo.application.record_propagation import PropagationOutcome, RecordPropagator
 from conector_odoo.domain.errors import ProfileNotFound, RecordRejected, ResourceNotFound
 from conector_odoo.domain.ports import (
     ConnectionProfileRepository,
@@ -42,6 +48,14 @@ class RecordPage:
     limit: int
     offset: int
     has_more: bool
+
+
+@dataclass(frozen=True, slots=True)
+class RecordWrite:
+    """The record as written on the targeted profile plus what happened to its counterparts."""
+
+    record: Record
+    propagation: tuple[PropagationOutcome, ...] = ()
 
 
 class _Base:
@@ -131,16 +145,50 @@ class GetRecord(_Base):
         return record
 
 
-class UpdateRecord(_Base):
-    async def execute(
-        self, profile_id: int, resource: str, record_id: str, fields: dict[str, Any]
-    ) -> Record:
-        """Edit ONE record. Only fields of the resource schema that are not read-only are
-        accepted. Raises ``RecordRejected`` (field errors per name) and ``ResourceNotFound``."""
+class CreateRecord(_Base):
+    def __init__(
+        self,
+        profiles: ConnectionProfileRepository,
+        endpoints: EndpointProvider,
+        propagator: RecordPropagator,
+    ) -> None:
+        super().__init__(profiles, endpoints)
+        self._propagator = propagator
+
+    async def execute(self, profile_id: int, resource: str, fields: dict[str, Any]) -> RecordWrite:
+        """Create ONE record, then create (or adopt) its counterpart in every bidirectional job.
+
+        Raises ``RecordRejected`` (field errors per name) and ``ResourceNotFound``."""
         endpoint = await self._endpoint(profile_id)
         schema = await endpoint.describe(resource)
         _check_editable(schema, fields)
-        return await endpoint.update(resource, record_id, fields)
+        created = await endpoint.create(resource, fields, uuid.uuid4().hex)
+        outcomes = await self._propagator.propagate_create(profile_id, resource, created)
+        return RecordWrite(created, tuple(outcomes))
+
+
+class UpdateRecord(_Base):
+    def __init__(
+        self,
+        profiles: ConnectionProfileRepository,
+        endpoints: EndpointProvider,
+        propagator: RecordPropagator,
+    ) -> None:
+        super().__init__(profiles, endpoints)
+        self._propagator = propagator
+
+    async def execute(
+        self, profile_id: int, resource: str, record_id: str, fields: dict[str, Any]
+    ) -> RecordWrite:
+        """Edit ONE record, then write the change through to its counterparts. Only fields of the
+        resource schema that are not read-only are accepted. Raises ``RecordRejected`` (field
+        errors per name) and ``ResourceNotFound``."""
+        endpoint = await self._endpoint(profile_id)
+        schema = await endpoint.describe(resource)
+        _check_editable(schema, fields)
+        updated = await endpoint.update(resource, record_id, fields)
+        outcomes = await self._propagator.propagate_update(profile_id, resource, record_id, updated)
+        return RecordWrite(updated, tuple(outcomes))
 
 
 def _check_editable(schema: ResourceSchema, fields: dict[str, Any]) -> None:
@@ -164,15 +212,21 @@ class DeleteRecord(_Base):
         profiles: ConnectionProfileRepository,
         endpoints: EndpointProvider,
         xrefs: XRefRepository,
+        propagator: RecordPropagator,
     ) -> None:
         super().__init__(profiles, endpoints)
         self._xrefs = xrefs
+        self._propagator = propagator
 
-    async def execute(self, profile_id: int, resource: str, record_id: str) -> None:
-        """Delete ONE record, then forget the sync cross-references that point at it.
+    async def execute(
+        self, profile_id: int, resource: str, record_id: str
+    ) -> tuple[PropagationOutcome, ...]:
+        """Delete ONE record, delete its counterparts, then forget the remaining xrefs.
 
         Raises ``ResourceNotFound`` (the stale xrefs are still forgotten: the record is gone) and
         ``RecordRejected`` when the remote refuses (xrefs untouched, the record still exists).
+        A counterpart that refuses keeps its pair linked, so the other xrefs are left alone too:
+        the next job run reconciles them.
         """
         endpoint = await self._endpoint(profile_id)
         try:
@@ -180,10 +234,14 @@ class DeleteRecord(_Base):
         except ResourceNotFound:
             await self._forget(profile_id, resource, record_id)
             raise
-        await self._forget(profile_id, resource, record_id)
+        outcomes = await self._propagator.propagate_delete(profile_id, resource, record_id)
+        if not any(o.action == "failed" for o in outcomes):
+            await self._forget(profile_id, resource, record_id)
+        return tuple(outcomes)
 
     async def _forget(self, profile_id: int, resource: str, record_id: str) -> None:
         try:
             await self._xrefs.forget_target(profile_id, resource, record_id)
+            await self._xrefs.forget_source(profile_id, resource, record_id)
         except Exception:  # the record is already deleted: report that, never fail the request
             logger.exception("could not forget the sync cross-references of a deleted record")

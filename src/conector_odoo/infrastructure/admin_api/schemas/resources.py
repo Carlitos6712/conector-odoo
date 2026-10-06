@@ -3,7 +3,8 @@ from typing import Any, Self
 
 from pydantic import BaseModel, Field, model_validator
 
-from conector_odoo.application.records import RecordPage
+from conector_odoo.application.record_propagation import PropagationOutcome
+from conector_odoo.application.records import RecordPage, RecordWrite
 from conector_odoo.application.resources import DiscoveredResource, PreviewResult
 from conector_odoo.domain.records import FieldSpec, FieldType, Record, ResourceSchema
 from conector_odoo.domain.resources import (
@@ -287,3 +288,59 @@ class RecordPatchIn(StrictModel):
     """The fields to change on ONE record, by name; fields left out are not touched."""
 
     fields: dict[str, Any]
+
+
+class PropagationOut(BaseModel):
+    """What happened to the counterpart of a written record for one bidirectional job.
+
+    ``side`` is the side of the edited record (``source`` = A, ``target`` = B); ``action`` is
+    ``created``, ``updated``, ``deleted``, ``skipped`` or ``failed`` (then ``warning`` is set)."""
+
+    job_id: int | None
+    job_name: str
+    side: str
+    action: str
+    counterpart_id: str | None
+    warning: str | None
+
+    @classmethod
+    def of(cls, outcome: PropagationOutcome) -> Self:
+        return cls(
+            job_id=outcome.job_id,
+            job_name=outcome.job_name,
+            side=outcome.side.value,
+            action=outcome.action,
+            counterpart_id=outcome.counterpart_id,
+            warning=outcome.warning,
+        )
+
+
+def _warnings(outcomes: tuple[PropagationOutcome, ...]) -> list[str]:
+    return [f"{o.job_name}: {o.warning}" for o in outcomes if o.warning]
+
+
+class RecordWriteOut(RecordOut):
+    """The written record plus the per-job write-through report (``warnings`` is ready to show)."""
+
+    propagation: list[PropagationOut]
+    warnings: list[str]
+
+    @classmethod
+    def from_write(cls, write: RecordWrite) -> Self:
+        return cls(
+            id=write.record.id,
+            fields=dict(write.record.fields),
+            propagation=[PropagationOut.of(o) for o in write.propagation],
+            warnings=_warnings(write.propagation),
+        )
+
+
+class RecordDeleteOut(BaseModel):
+    propagation: list[PropagationOut]
+    warnings: list[str]
+
+    @classmethod
+    def of(cls, outcomes: tuple[PropagationOutcome, ...]) -> Self:
+        return cls(
+            propagation=[PropagationOut.of(o) for o in outcomes], warnings=_warnings(outcomes)
+        )
