@@ -1,4 +1,6 @@
-# Odoo and the target REST API are external: point ODOO_URL and the connection profiles at them.
+# Odoo and the target REST API are external. Enter their connection parameters in the admin UI
+# (Connections): the Odoo profile you activate there is remembered across restarts. The ODOO_*
+# variables below are OPTIONAL (legacy mode, used only while no profile is active).
 # Copy .env.example to .env and fill it in; required values fail fast when missing.
 # Terminate TLS in a reverse proxy in front of port 8000 (the session cookie is Secure by default).
 services:
@@ -6,10 +8,12 @@ services:
     build: .
     image: conector-odoo:latest
     environment:
-      ODOO_URL: ${ODOO_URL:?set ODOO_URL in .env}
-      ODOO_DB: ${ODOO_DB:?set ODOO_DB in .env}
-      ODOO_USER: ${ODOO_USER:?set ODOO_USER in .env}
-      ODOO_API_KEY: ${ODOO_API_KEY:?set ODOO_API_KEY in .env}
+      # Optional legacy connection: all four must be set together, otherwise they are ignored.
+      ODOO_URL: ${ODOO_URL:-}
+      ODOO_DB: ${ODOO_DB:-}
+      ODOO_USER: ${ODOO_USER:-}
+      ODOO_API_KEY: ${ODOO_API_KEY:-}
+      # Defaults for the active Odoo connection, whatever its source.
       ODOO_PROTOCOL: ${ODOO_PROTOCOL:-jsonrpc}
       WEBHOOK_SECRET: ${WEBHOOK_SECRET:?set WEBHOOK_SECRET in .env}
       CONNECTOR_API_KEY: ${CONNECTOR_API_KEY:-}

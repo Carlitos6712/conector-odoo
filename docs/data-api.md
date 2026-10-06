@@ -4,14 +4,14 @@ Reference for the original FastAPI -> Odoo data API and the Odoo -> connector we
 
 ## Odoo connection
 
-The data API and the webhook handlers use the single Odoo instance configured with the `ODOO_*` variables (the admin UI manages its own, separate connections).
+The data API uses the **active Odoo connection**: the Odoo connection profile activated in the admin UI (remembered across restarts, switchable without a restart), or, when none is active, the legacy `ODOO_URL/DB/USER/API_KEY` variables if all four are set. With neither, every data endpoint answers `503` with `{"error": "odoo_not_configured", ...}` and `/health` reports `"odoo": "not_configured"`. The webhook handlers do not call Odoo. See "Active Odoo connection" in the [README](../README.md#active-odoo-connection).
 
 ### Create an Odoo API key
 
 1. In Odoo, open the user's Preferences > Account Security > **New API Key**.
 2. Give it a description, confirm with your password, and copy the key (it is shown once).
-3. Put it in `ODOO_API_KEY`; Odoo accepts it in place of the password, so the connector never needs
-   one. Use a dedicated user with the minimum access rights it needs (contacts, products, sales).
+3. Enter it as the API key of an Odoo connection profile in the admin UI (or, in legacy mode, put it
+   in `ODOO_API_KEY`); Odoo accepts it in place of the password, so the connector never needs one. Use a dedicated user with the minimum access rights it needs (contacts, products, sales).
 
 ### Protocols
 

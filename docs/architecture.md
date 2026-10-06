@@ -46,6 +46,51 @@ Reading guide:
 - The data API (customers, products, sale orders) is the original, Odoo-only part of the service. It
   keeps its own repositories and the idempotency store; see [data-api.md](data-api.md).
 
+## The active Odoo connection
+
+The data API does not own a fixed Odoo client. `Container.odoo` is an `OdooConnectionProvider`
+(`infrastructure/odoo/provider.py`) that holds the current `OdooClient` and the legacy repositories
+built on it, and can be swapped while the service runs. The decision logic is the
+`ActiveOdooConnection` use case (`application/active_odoo.py`), which talks only to ports
+(`OdooRuntime`, `AppSettingsRepository`, `ConnectionProbe`, `SecretVault`).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Admin (PUT /admin/api/odoo/active)
+    participant U as ActiveOdooConnection
+    participant P as OdooConnectionProvider
+    participant D as app_settings (SQLite)
+    participant Q as Data API request
+    A->>U: activate(profile_id)
+    U->>P: prepare_profile (build client, no I/O)
+    U->>U: probe the profile (url, reachable, tls, auth)
+    alt probe fails
+        U->>P: discard candidate
+        U-->>A: 422 odoo_activation_failed (failing step); old connection untouched
+    else probe passes
+        U->>D: persist active profile + last_connected_at
+        U->>P: commit (atomic swap)
+        P->>P: retire old client, close it after its last lease
+        U-->>A: 200 new status
+    end
+    Q->>P: acquire lease (per request, kept until the response ends)
+    P-->>Q: current connection, or 503 odoo_not_configured
+```
+
+- **Leases.** Every legacy request takes a lease (`get_odoo_lease`, a yield dependency that lasts
+  until the response, streamed exports included). A swap installs the new connection in one
+  synchronous step, so no request sees a half-built client; the retired client is closed when its
+  last lease is released (or at once if idle). Shutdown closes everything.
+- **Startup resolution.** Active profile in `app_settings` (it must still exist, be an Odoo profile
+  and decrypt) > legacy `ODOO_*` when all four are set (source `env`) > none. A broken active
+  profile becomes a warning and a fallback, never a startup failure. No probe runs at startup.
+- **Persistence.** Migration 7 adds `app_settings(key, value, updated_at)`. Keys:
+  `odoo.active_profile_id`, `odoo.last_connected_at`, `odoo.last_connected_profile_id` and
+  `odoo.profile.<id>.last_connected_at`. Deleting the active profile is refused (409).
+- **Scope.** This connection serves only the legacy data API and `/health`. Sync jobs keep using
+  the profiles they name, through `ProfileEndpoints`, independent of which profile is active.
+
 ## One sync run
 
 ```mermaid

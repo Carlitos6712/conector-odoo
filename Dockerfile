@@ -49,7 +49,7 @@ COPY --from=frontend --chown=app:app /build/dist /app/frontend/dist
 USER app
 
 # Both SQLite databases (idempotency keys + admin DB) live on the volume. No secret is baked in:
-# ODOO_*, WEBHOOK_SECRET, ENCRYPTION_KEY and ADMIN_BOOTSTRAP_* come from the environment.
+# WEBHOOK_SECRET, ENCRYPTION_KEY and ADMIN_BOOTSTRAP_* come from the environment.
 ENV IDEMPOTENCY_DB_PATH=/app/data/idempotency.sqlite3 \
     ADMIN_DB_PATH=/app/data/admin.db \
     FRONTEND_DIST_DIR=/app/frontend/dist
