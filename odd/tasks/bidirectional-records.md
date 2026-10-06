@@ -97,11 +97,16 @@ resource config has no write endpoints.
   handled, `delete_path` in the resource form, `SyncRecordsDialog` (jobs where source or target is the
   resource; posts `/jobs/{id}/runs`, polls runs, refreshes list). Parent re-ran npm test/typecheck/lint.
   Gaps: create button not hidden for REST resources without a create endpoint; run poll not cancelled on unmount.
+- Reverse-pass filter (writer, delegated): commit 1fa6e06. `SyncJob.reverse_record_filter` (migration 8, API
+  `JobIn/JobOut`, runner reverse pass uses it; forward pass keeps `record_filter`); write-through stays
+  unfiltered. 6 RED then green. Parent re-ran: uv run pytest 2063 passed, npm test 684 passed.
 
 ## Pending (found while working)
-- Reverse pass of a bidirectional run ignores the job `record_filter` (always empty `RecordFilter()`), so
-  "Sync now" on job 1 can create in SUWE any Odoo partner that has a `ref` and no xref. Needs a reverse-pass
-  filter (source change); mitigated only by the required `ref` rule.
+- Job 1 `reverse_record_filter` is NOT set: Odoo data has no safe discriminator between SUWE clients and
+  partners written by the other `suwe-*` jobs (groups/stores/partners are all `is_company=true`, no
+  categories). Only `is_company=false` (70 kyc/users partners) is safely excludable. Partners 221 and 222
+  (`ref` R345678, A123456) match no SUWE uuid and would be created as clients. Decision pending (user).
+  Job wizard UI has no field for the filter (API only; the wizard carries it through unchanged).
 - Create from the connector: the id field cannot be supplied, so SUWE `client_id` cannot be chosen (see `docs/suwe/README.md` section 4).
 
 ## Done outside the T-list (user requests during the session)
