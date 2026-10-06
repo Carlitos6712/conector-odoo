@@ -41,13 +41,18 @@ mean would-create / would-update / would-skip and a bounded sample of mapped rec
 Time (``clock``) and waiting (``sleep``) are injected so the runner is deterministic in tests.
 """
 
-import hashlib
-import json
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from conector_odoo.application.sync_records import (
+    build_xref,
+    content_hash,
+    create_key,
+    find_adoptable,
+    load_mapping,
+)
 from conector_odoo.domain.errors import (
     ConnectorError,
     MappingNotFound,
@@ -69,7 +74,7 @@ from conector_odoo.domain.ports import (
     XRefRepository,
 )
 from conector_odoo.domain.records import Record, RecordFilter
-from conector_odoo.domain.sync import ConflictRule, Direction, MappingRef, SyncJob, TriggerKind
+from conector_odoo.domain.sync import ConflictRule, Direction, SyncJob, TriggerKind
 from conector_odoo.domain.sync_runs import (
     ErrorKind,
     RunCounters,
@@ -138,11 +143,6 @@ class _Ctx:
     passes: tuple[_Pass, ...]
     state: _State
     only: dict[str, list[str]] | None  # pass name -> source ids; None = every record
-
-
-def content_hash(fields: dict[str, Any]) -> str:
-    canonical = json.dumps(fields, sort_keys=True, separators=(",", ":"), default=str)
-    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 class SyncRunner:
@@ -340,10 +340,10 @@ class SyncRunner:
     async def _build_passes(self, job: SyncJob) -> tuple[_Pass, ...]:
         a_endpoint = await self._endpoints(job.source.profile_id)
         b_endpoint = await self._endpoints(job.target.profile_id)
-        forward_map = await self._load_mapping(job.mapping)
+        forward_map = await load_mapping(self._mappings, job.mapping)
         reverse_map = None
         if job.reverse_mapping is not None and job.direction is not Direction.A_TO_B:
-            reverse_map = await self._load_mapping(job.reverse_mapping)
+            reverse_map = await load_mapping(self._mappings, job.reverse_mapping)
         passes: list[_Pass] = []
         if job.direction in (Direction.A_TO_B, Direction.BIDIRECTIONAL):
             passes.append(
@@ -376,12 +376,6 @@ class SyncRunner:
                 )
             )
         return tuple(passes)
-
-    async def _load_mapping(self, ref: MappingRef) -> MappingDefinition:
-        stored = await self._mappings.get(ref.name, ref.version)
-        if stored is None:
-            raise MappingNotFound(f"mapping {ref.name!r} (version {ref.version}) not found")
-        return stored.definition
 
     async def _final_status(self, run: SyncRun, state: _State) -> RunStatus:
         """``succeeded`` without errors; ``failed`` when every outcome was a failed record;
@@ -618,8 +612,7 @@ class SyncRunner:
     async def _create(
         self, ctx: _Ctx, pass_: _Pass, source_id: str, fields: dict[str, Any], digest: str
     ) -> Record:
-        marker = "" if pass_.forward else "rev:"
-        key = f"sync:{ctx.job.id}:{marker}{source_id}:{digest}"
+        key = create_key(ctx.job.id, pass_.forward, source_id, digest)
         return await pass_.dst.create(pass_.dst_resource, fields, key)
 
     async def _find_xref(self, ctx: _Ctx, pass_: _Pass, source_id: str) -> XRef | None:
@@ -641,19 +634,14 @@ class SyncRunner:
     ) -> None:
         """Store both hashes; the opposite one is computed from the record just written, which is
         what makes the opposite pass treat that record as unchanged (echo prevention)."""
-        other = None
-        if pass_.other_mapping is not None:
-            other = content_hash(apply_mapping(pass_.other_mapping, written).fields)
-        written_id = written.id or ""
-        forward = pass_.forward
         await self._xrefs.upsert(
-            XRef(
-                job_id=ctx.job.id or 0,
-                resource=ctx.job.source.resource,
-                source_id=source_id if forward else written_id,
-                target_id=written_id if forward else source_id,
-                content_hash=digest if forward else other,
-                reverse_hash=other if forward else digest,
+            build_xref(
+                ctx.job,
+                forward=pass_.forward,
+                source_id=source_id,
+                written=written,
+                digest=digest,
+                other_mapping=pass_.other_mapping,
                 synced_at=self._clock(),
             )
         )
@@ -725,14 +713,7 @@ class SyncRunner:
 
     async def _adopt(self, ctx: _Ctx, pass_: _Pass, fields: dict[str, Any]) -> str | None:
         """Id of an existing destination record matching the job's ``field:<name>`` key."""
-        key_field = ctx.job.key_field
-        if key_field is None:
-            return None
-        value = Record(None, fields).get(key_field)
-        if value is None:
-            return None
-        found = await pass_.dst.find_by(pass_.dst_resource, key_field, value)
-        return None if found is None else found.id
+        return await find_adoptable(ctx.job, pass_.dst, pass_.dst_resource, fields)
 
     def _sample(
         self, ctx: _Ctx, action: str, source_id: str, target_id: str | None, fields: dict[str, Any]

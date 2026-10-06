@@ -464,6 +464,15 @@ class XRefRepository(Protocol):
         a sync run, so the next run recreates it instead of skipping or updating a missing id."""
         ...
 
+    async def forget_source(self, profile_id: int, resource: str, source_id: str) -> int:
+        """Like ``forget_target`` for the source side: every job whose source is
+        (``profile_id``, ``resource``) and whose xref points at ``source_id``."""
+        ...
+
+    async def forget(self, job_id: int, resource: str, source_id: str) -> int:
+        """Delete the xref of one job for the pair whose side-A id is ``source_id``."""
+        ...
+
 
 class PasswordHasher(Protocol):
     """One-way password hashing; ``verify`` never raises for a wrong or malformed hash."""

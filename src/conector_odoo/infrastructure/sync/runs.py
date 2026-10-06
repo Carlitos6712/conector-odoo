@@ -369,6 +369,29 @@ class SqliteXRefRepository:
     async def forget_target(self, profile_id: int, resource: str, target_id: str) -> int:
         return await asyncio.to_thread(self._forget_target, profile_id, resource, target_id)
 
+    async def forget_source(self, profile_id: int, resource: str, source_id: str) -> int:
+        return await asyncio.to_thread(self._forget_source, profile_id, resource, source_id)
+
+    async def forget(self, job_id: int, resource: str, source_id: str) -> int:
+        return await asyncio.to_thread(self._forget, job_id, resource, source_id)
+
+    def _forget_source(self, profile_id: int, resource: str, source_id: str) -> int:
+        with self._lock:
+            cursor = self._conn.execute(
+                "DELETE FROM xref WHERE source_id = ? AND job_id IN "
+                "(SELECT id FROM sync_jobs WHERE source_profile_id = ? AND source_resource = ?)",
+                (source_id, profile_id, resource),
+            )
+            return cursor.rowcount
+
+    def _forget(self, job_id: int, resource: str, source_id: str) -> int:
+        with self._lock:
+            cursor = self._conn.execute(
+                "DELETE FROM xref WHERE job_id = ? AND resource = ? AND source_id = ?",
+                (job_id, resource, source_id),
+            )
+            return cursor.rowcount
+
     def _forget_target(self, profile_id: int, resource: str, target_id: str) -> int:
         with self._lock:
             cursor = self._conn.execute(
