@@ -117,6 +117,31 @@ npm run dev                   # http://localhost:5173 ; VITE_BACKEND_URL overrid
 Sign in with the bootstrap user. The first admin is created only when no admin exists, so the two
 `ADMIN_BOOTSTRAP_*` variables can be removed afterwards. More users: **Ajustes** > **Usuarios**.
 
+### Launcher
+
+`scripts/launch.sh` starts the backend and the frontend dev server in one command (also available
+as the `/launch` command in Claude Code). It needs `.env` (see above), `uv` and `npm`.
+
+```bash
+bash scripts/launch.sh            # start (default)
+bash scripts/launch.sh status
+bash scripts/launch.sh logs       # last 25 lines of each service
+bash scripts/launch.sh restart
+bash scripts/launch.sh stop
+bash scripts/launch.sh start --docker   # docker compose instead (UI on CONNECTOR_PORT, default 8000)
+```
+
+- UI: <http://localhost:5173/>. API docs: <http://localhost:8001/docs>.
+- The backend defaults to port **8001**, not 8000, because 8000 is often taken by other local dev
+  containers. If something else owns the port, uvicorn fails with `address already in use` and the
+  UI proxy ends up talking to the other service.
+- Override with `BACKEND_PORT` and `FRONTEND_PORT`. The launcher derives `VITE_BACKEND_URL` from
+  `BACKEND_PORT`, so the dev proxy follows; set `VITE_BACKEND_URL` yourself to point elsewhere.
+- Each service runs in its own process group (PID files and logs in `.run/`), so `stop` and
+  `restart` end the whole npm/vite and uvicorn trees.
+- The backend refuses to start when `WEBHOOK_SECRET`, or `ODOO_API_KEY` when set, has fewer than
+  16 characters. Check `logs` if the UI loads but the API does not answer.
+
 ### Active Odoo connection
 
 The connector talks to ONE Odoo at a time for the data API (`/customers`, `/products`,
