@@ -27,6 +27,7 @@ _METHODS = {
     "get": {"GET"},
     "create": {"POST", "PUT"},
     "update": {"PUT", "PATCH", "POST"},
+    "delete": {"DELETE"},
 }
 
 
@@ -46,6 +47,7 @@ def validate_resource_config(cfg: ResourceConfig) -> None:
         "get": cfg.get_endpoint,
         "create": cfg.create_endpoint,
         "update": cfg.update_endpoint,
+        "delete": cfg.delete_endpoint,
     }
     if not any(endpoints.values()):
         raise ResourceConfigInvalid("a resource needs at least one endpoint")
@@ -77,7 +79,7 @@ def _validate_endpoint(operation: str, spec: EndpointSpec) -> None:
         )
     if "{" in _PLACEHOLDER.sub("", path) or "}" in _PLACEHOLDER.sub("", path):
         raise ResourceConfigInvalid(f"{operation} endpoint path has an unbalanced brace")
-    needs_id = operation in ("get", "update")
+    needs_id = operation in ("get", "update", "delete")
     if needs_id != ("{id}" in path):
         raise ResourceConfigInvalid(
             f"{operation} endpoint path {'must' if needs_id else 'must not'} contain {{id}}"
@@ -122,6 +124,7 @@ def resource_config_to_json(cfg: ResourceConfig) -> str:
                 ("get", cfg.get_endpoint),
                 ("create", cfg.create_endpoint),
                 ("update", cfg.update_endpoint),
+                ("delete", cfg.delete_endpoint),
             )
             if spec is not None
         },
@@ -178,6 +181,7 @@ def resource_config_from_json(text: str) -> ResourceConfig:
         get_endpoint=_endpoint(endpoints, "get"),
         create_endpoint=_endpoint(endpoints, "create"),
         update_endpoint=_endpoint(endpoints, "update"),
+        delete_endpoint=_endpoint(endpoints, "delete"),
         items_path=_str(data, "items_path"),
         item_path=_str(data, "item_path"),
         id_field=_str(data, "id_field"),

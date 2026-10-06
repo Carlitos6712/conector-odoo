@@ -57,6 +57,7 @@ class ResourceConfigModel(StrictModel):
     get_endpoint: EndpointModel | None = None
     create_endpoint: EndpointModel | None = None
     update_endpoint: EndpointModel | None = None
+    delete_endpoint: EndpointModel | None = None
     items_path: str = ""
     item_path: str = ""
     id_field: str = "id"
@@ -76,6 +77,7 @@ class ResourceConfigModel(StrictModel):
             get_endpoint=endpoint(self.get_endpoint),
             create_endpoint=endpoint(self.create_endpoint),
             update_endpoint=endpoint(self.update_endpoint),
+            delete_endpoint=endpoint(self.delete_endpoint),
             items_path=self.items_path,
             item_path=self.item_path,
             id_field=self.id_field,
@@ -109,6 +111,7 @@ class ResourceConfigModel(StrictModel):
             get_endpoint=endpoint(config.get_endpoint),
             create_endpoint=endpoint(config.create_endpoint),
             update_endpoint=endpoint(config.update_endpoint),
+            delete_endpoint=endpoint(config.delete_endpoint),
             items_path=config.items_path,
             item_path=config.item_path,
             id_field=config.id_field,

@@ -320,6 +320,13 @@ def test_update_prefers_patch_over_put() -> None:
     assert one(run(spec)).update_endpoint == EndpointSpec("PATCH", "/things/{id}")
 
 
+def test_delete_on_the_item_path_becomes_the_delete_endpoint() -> None:
+    spec = doc({"/things/{id}": {"get": {"responses": OK}, "delete": {"responses": OK}}})
+    cfg = one(run(spec))
+    assert cfg.delete_endpoint == EndpointSpec("DELETE", "/things/{id}")
+    assert one(run(doc({"/things/{id}": {"get": {"responses": OK}}}))).delete_endpoint is None
+
+
 def test_item_wrapped_in_data_sets_item_path() -> None:
     wrapped = {
         "type": "object",

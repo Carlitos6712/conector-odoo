@@ -76,9 +76,9 @@ today and never touches remote data.
   and `tests/sync/test_xref_forget.py`. Not verified: whether the SUWE mock accepts writes.
 
 ## Next step
-T5 manual live check by the user.
+All tasks done.
 
 ## Addendum (user request after T3)
 - [x] T4 README: Records page + Odoo backup how-to (no bulk delete by design) + update-logic explanation
-- [ ] T5 Live check: performed MANUALLY by the user after a service restart (parent restarts services; no automated deletes against real data)
+- [x] T5 Live check run by the assistant on user request (job 1 clients -> res.partner via admin API): baseline rerun 36 skipped; Odoo edit survives rerun (skipped); mapping v2 + only_records -> updated=1 and source overwrote the Odoo edit, rerun skipped; mapping reverted (v3); DELETE partner 10 -> rerun created=1, next rerun 36 skipped; dry run 36 skipped. Side effect: Aurora partner recreated as id 220 (old id 10 gone).
 - [x] T6 Dashboard "Requiere atencion": hide failed runs superseded by a later successful run of the same job

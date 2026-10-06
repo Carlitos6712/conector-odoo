@@ -26,6 +26,7 @@ def full() -> ResourceConfig:
         get_endpoint=EndpointSpec("GET", "/organization/clients/{id}"),
         create_endpoint=EndpointSpec("POST", "/organization/clients"),
         update_endpoint=EndpointSpec("PATCH", "/organization/clients/{id}"),
+        delete_endpoint=EndpointSpec("DELETE", "/organization/clients/{id}"),
         items_path="items",
         item_path="data",
         id_field="uuid",
@@ -46,6 +47,12 @@ def test_round_trip_is_lossless_and_versioned() -> None:
     text = resource_config_to_json(cfg)
     assert json.loads(text)["version"] == 1
     assert resource_config_from_json(text) == cfg
+
+
+def test_config_stored_without_delete_endpoint_still_loads() -> None:
+    data = json.loads(resource_config_to_json(full()))
+    del data["endpoints"]["delete"]
+    assert resource_config_from_json(json.dumps(data)).delete_endpoint is None
 
 
 def test_round_trip_of_minimal_config() -> None:
@@ -94,6 +101,8 @@ def test_valid_config_passes() -> None:
         ({"get_endpoint": EndpointSpec("GET", "/x")}, "{id}"),
         ({"get_endpoint": EndpointSpec("GET", "/x/{client_id}")}, "{client_id}"),
         ({"update_endpoint": EndpointSpec("PATCH", "/x")}, "{id}"),
+        ({"delete_endpoint": EndpointSpec("DELETE", "/x")}, "{id}"),
+        ({"delete_endpoint": EndpointSpec("POST", "/x/{id}")}, "method"),
         ({"create_endpoint": EndpointSpec("POST", "/x/{id}")}, "{id}"),
         ({"get_endpoint": EndpointSpec("POST", "/x/{id}")}, "method"),
         ({"filter_param_map": {"": "q"}}, "filter_param_map"),

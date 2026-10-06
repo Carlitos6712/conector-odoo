@@ -4,7 +4,7 @@ Heuristics (all best effort; anything unclear becomes a warning, never an error)
 
 - a path without placeholders is a *collection* (``/clients``) and ``<collection>/{param}`` is its
   *item*; both are grouped into one resource;
-- list = GET collection, create = POST collection, get = GET item, update = PATCH (else PUT) item;
+- list = GET collection, create = POST collection, get = GET item, update = PATCH (else PUT) item, delete = DELETE item;
 - items path, id field, schema fields and pagination are read from the response schema and the
   query parameters of the list operation.
 
@@ -234,6 +234,9 @@ class OpenApiImporter:
                 EndpointSpec(update_method.upper(), f"{collection}/{{id}}")
                 if update_method
                 else None
+            ),
+            delete_endpoint=(
+                EndpointSpec("DELETE", f"{collection}/{{id}}") if "delete" in group.item else None
             ),
             items_path=items_path,
             item_path=item_path,

@@ -678,6 +678,11 @@ once so every xref exists.
    a record deleted directly in Odoo, outside the connector).
 4. Check the result in **Runs** (counters, errors) and, for a rehearsal, run the job with dry run first.
 
+### Changes needed in the SUWE clone
+
+The connector writes back to a clone of SUWE (mock API). The changes made there, how to apply them on
+another machine and the pending ones are in [`docs/suwe/README.md`](docs/suwe/README.md).
+
 ## Adding a target API
 
 1. **Connection**: choose type REST, enter the base URL and an auth method, run the wizard test.
