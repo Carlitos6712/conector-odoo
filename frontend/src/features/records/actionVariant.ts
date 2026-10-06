@@ -4,7 +4,7 @@ import type { PropagationOutcome } from "@/features/records/types";
 const VARIANT: Record<PropagationOutcome["action"], BadgeProps["variant"]> = {
   created: "success",
   updated: "info",
-  deleted: "warning",
+  deleted: "brand",
   skipped: "secondary",
   failed: "destructive",
 };
