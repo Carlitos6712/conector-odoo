@@ -1,5 +1,7 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { activeOdooFixture, noOdooFixture } from "@/features/connections/fixtures";
+import type { ActiveOdoo } from "@/features/connections/types";
 import { dashboardFixture } from "@/features/dashboard/fixtures";
 import { DashboardPage } from "@/features/dashboard/DashboardPage";
 import type { Dashboard } from "@/features/dashboard/types";
@@ -27,9 +29,10 @@ interface Overrides {
   dashboard?: Dashboard | (() => Response);
   recent?: Run[] | (() => Response);
   jobList?: (() => Response) | undefined;
+  odoo?: ActiveOdoo | (() => Response);
 }
 
-function routes({ role = "admin", dashboard, recent, jobList }: Overrides = {}) {
+function routes({ role = "admin", dashboard, recent, jobList, odoo }: Overrides = {}) {
   const pick = <T,>(value: T | (() => Response) | undefined, fallback: T) =>
     typeof value === "function" ? (value as () => Response)() : json(value ?? fallback);
   return {
@@ -38,6 +41,7 @@ function routes({ role = "admin", dashboard, recent, jobList }: Overrides = {}) 
     "GET /runs?limit=200": () =>
       typeof recent === "function" ? recent() : json({ items: recent ?? [] }),
     "GET /jobs": jobList ?? (() => json({ items: jobs })),
+    "GET /odoo/active": () => pick(odoo, activeOdooFixture()),
   };
 }
 
@@ -294,5 +298,71 @@ describe("DashboardPage", () => {
         before + 1,
       ),
     );
+  });
+});
+
+describe("DashboardPage active Odoo", () => {
+  it("shows a compact card with the active connection and a link to Connections", async () => {
+    stubApi(routes());
+    await renderApp(<DashboardPage />, "/");
+    const card = await screen.findByRole("region", { name: "Odoo activo" });
+    expect(await within(card).findByText("Odoo producción")).toBeInTheDocument();
+    expect(within(card).getByText("Activa")).toBeInTheDocument();
+    expect(within(card).getByText(/^hace /)).toBeInTheDocument();
+    expect(within(card).getByRole("link", { name: "Ver conexiones" })).toHaveAttribute(
+      "href",
+      "/connections",
+    );
+  });
+
+  it("describes an environment connection as legacy", async () => {
+    stubApi(
+      routes({
+        odoo: activeOdooFixture({ source: "env", profile_id: null, profile_name: null }),
+      }),
+    );
+    await renderApp(<DashboardPage />, "/");
+    const card = await screen.findByRole("region", { name: "Odoo activo" });
+    expect(await within(card).findByText("Entorno (heredada, solo lectura)")).toBeInTheDocument();
+  });
+
+  it("flags a missing Odoo connection in the card and in the attention list", async () => {
+    stubApi(routes({ odoo: noOdooFixture }));
+    await renderApp(<DashboardPage />, "/");
+    const card = await screen.findByRole("region", { name: "Odoo activo" });
+    expect(await within(card).findByText("Sin conexión Odoo activa")).toBeInTheDocument();
+    const attention = screen.getByRole("region", { name: "Requiere atención" });
+    const link = await within(attention).findByRole("link", {
+      name: /No hay ninguna conexión Odoo activa: la API de datos responde 503/,
+    });
+    expect(link).toHaveAttribute("href", "/connections");
+    expect(within(attention).queryByText("Todo en orden.")).not.toBeInTheDocument();
+  });
+
+  it("flags the fallback case in the attention list", async () => {
+    stubApi(
+      routes({
+        odoo: activeOdooFixture({ source: "env", status: "fallback", warning: "x" }),
+      }),
+    );
+    await renderApp(<DashboardPage />, "/");
+    const attention = screen.getByRole("region", { name: "Requiere atención" });
+    expect(
+      await within(attention).findByRole("link", { name: /no se pudo cargar al arrancar/ }),
+    ).toHaveAttribute("href", "/connections");
+  });
+
+  it("raises no attention item while an Odoo connection is healthy", async () => {
+    stubApi(routes());
+    await renderApp(<DashboardPage />, "/");
+    expect(await screen.findByText("Todo en orden.")).toBeInTheDocument();
+  });
+
+  it("keeps working when the active connection cannot be read", async () => {
+    stubApi(routes({ odoo: () => json({ error: "internal_error", detail: "" }, 500) }));
+    await renderApp(<DashboardPage />, "/");
+    const card = await screen.findByRole("region", { name: "Odoo activo" });
+    expect(await within(card).findByRole("alert")).toBeInTheDocument();
+    expect(await screen.findByText("Todo en orden.")).toBeInTheDocument();
   });
 });

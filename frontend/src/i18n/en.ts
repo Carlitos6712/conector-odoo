@@ -161,6 +161,14 @@ export const en: Translation = {
       next: "Next",
       back: "Back",
       save: "Save connection",
+      saveAndActivate: "Save and activate",
+      activation: {
+        running: "Testing and activating…",
+        savedNotActive:
+          "The connection was saved, but it could not be activated. Fix the problem and retry, or activate it later from the list.",
+        retry: "Retry activation",
+        goToList: "Go to connections",
+      },
       saving: "Saving…",
       secretStored: "Stored. Leave blank to keep the current value.",
       tokenUrlOidcHint: "Optional: when omitted it is discovered from the base URL.",
@@ -1051,6 +1059,15 @@ export const en: Translation = {
       failedRun: "Run #{{id}} of “{{job}}”: {{status}}",
       staleRun: "Run #{{id}} of “{{job}}”: no heartbeat for over 15 minutes",
       repeated: "“{{job}}” has failed {{count}} times in a row",
+      odooNone:
+        "No Odoo connection is active: the data API answers 503. Set one up in Connections.",
+      odooFallback:
+        "The active Odoo profile could not be loaded at startup and another source is in use. Check it in Connections.",
+    },
+    odoo: {
+      title: "Active Odoo",
+      none: "No active Odoo connection",
+      view: "View connections",
     },
     recent: {
       title: "Recent runs",

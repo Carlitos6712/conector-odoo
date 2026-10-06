@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { Route, Routes } from "react-router-dom";
 import { ConnectionWizardPage } from "@/features/connections/ConnectionWizardPage";
 import {
+  activationFailure,
+  activeOdooFixture,
   failingTest,
   odooProfileFixture,
   passingTest,
@@ -312,5 +314,139 @@ describe("ConnectionWizard edit", () => {
     expect(
       await within(await screen.findByRole("alert")).findByText(/ya no existe/),
     ).toBeInTheDocument();
+  });
+});
+
+describe("ConnectionWizard save and activate", () => {
+  async function reachOdooReview(user: ReturnType<typeof userEvent.setup>) {
+    await pickKind(user, "Odoo");
+    await user.type(screen.getByLabelText("Nombre"), "Odoo producción");
+    await user.type(screen.getByLabelText("URL base"), "https://odoo.example.com");
+    await user.type(screen.getByLabelText("Base de datos"), "prod");
+    await user.type(screen.getByLabelText("Usuario de Odoo"), "admin");
+    await user.type(screen.getByLabelText("Clave de API"), "odoo-key-1234");
+    await user.click(screen.getByRole("button", { name: "Siguiente" }));
+    await user.click(screen.getByRole("button", { name: "Siguiente" }));
+  }
+
+  it("is offered for Odoo connections only", async () => {
+    stubApi(baseRoutes());
+    await renderApp(<Harness />, "/connections/new");
+    const user = userEvent.setup();
+    await pickKind(user, "API REST");
+    await fillRestBearer(user);
+    await user.click(screen.getByRole("button", { name: "Siguiente" }));
+    await user.click(screen.getByRole("button", { name: "Siguiente" }));
+    expect(screen.getByRole("button", { name: "Guardar conexión" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Guardar y activar" })).not.toBeInTheDocument();
+  });
+
+  it("saves the profile, then activates the saved id", async () => {
+    const order: string[] = [];
+    const fetchMock = stubApi({
+      ...baseRoutes(),
+      "POST /profiles": () => {
+        order.push("save");
+        return json(odooProfileFixture, 201);
+      },
+      "PUT /odoo/active": () => {
+        order.push("activate");
+        return json(activeOdooFixture());
+      },
+    });
+    await renderApp(<Harness />, "/connections/new");
+    const user = userEvent.setup();
+    await reachOdooReview(user);
+    await user.click(screen.getByRole("button", { name: "Guardar y activar" }));
+    expect(await screen.findByText("lista de conexiones")).toBeInTheDocument();
+    expect(order).toEqual(["save", "activate"]);
+    expect(bodyOf(fetchMock, "PUT", "/odoo/active")).toEqual({ profile_id: 2 });
+  });
+
+  it("plain save does not activate", async () => {
+    const fetchMock = stubApi({
+      ...baseRoutes(),
+      "POST /profiles": () => json(odooProfileFixture, 201),
+    });
+    await renderApp(<Harness />, "/connections/new");
+    const user = userEvent.setup();
+    await reachOdooReview(user);
+    await user.click(screen.getByRole("button", { name: "Guardar conexión" }));
+    await screen.findByText("lista de conexiones");
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(false);
+  });
+
+  it("does not activate when saving fails", async () => {
+    const fetchMock = stubApi({
+      ...baseRoutes(),
+      "POST /profiles": () => json({ error: "conflict", detail: "name taken" }, 409),
+    });
+    await renderApp(<Harness />, "/connections/new");
+    const user = userEvent.setup();
+    await reachOdooReview(user);
+    await user.click(screen.getByRole("button", { name: "Guardar y activar" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/Ya existe una conexión/);
+    expect(fetchMock.mock.calls.some(([url]) => url === "/admin/api/odoo/active")).toBe(false);
+  });
+
+  it("keeps the saved profile and shows the failing step when activation fails, then retries", async () => {
+    let attempts = 0;
+    const fetchMock = stubApi({
+      ...baseRoutes(),
+      "POST /profiles": () => json(odooProfileFixture, 201),
+      "PUT /odoo/active": () => {
+        attempts += 1;
+        return attempts === 1 ? json(activationFailure, 422) : json(activeOdooFixture());
+      },
+    });
+    await renderApp(<Harness />, "/connections/new");
+    const user = userEvent.setup();
+    await reachOdooReview(user);
+    await user.click(screen.getByRole("button", { name: "Guardar y activar" }));
+
+    const notice = await screen.findByText(/La conexión se ha guardado, pero no se pudo activar/);
+    expect(notice.closest('[role="alert"]')).not.toBeNull();
+    expect(document.querySelector('[data-state="failed"]')).toHaveAttribute("data-step", "auth");
+    expect(screen.queryByText("lista de conexiones")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Guardar y activar" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Reintentar la activación" }));
+    expect(await screen.findByText("lista de conexiones")).toBeInTheDocument();
+    const creates = fetchMock.mock.calls.filter(
+      ([url, init]) => url === "/admin/api/profiles" && init?.method === "POST",
+    );
+    expect(creates).toHaveLength(1);
+  });
+
+  it("can leave for the list after a failed activation, keeping the profile", async () => {
+    stubApi({
+      ...baseRoutes(),
+      "POST /profiles": () => json(odooProfileFixture, 201),
+      "PUT /odoo/active": () => json(activationFailure, 422),
+    });
+    await renderApp(<Harness />, "/connections/new");
+    const user = userEvent.setup();
+    await reachOdooReview(user);
+    await user.click(screen.getByRole("button", { name: "Guardar y activar" }));
+    await screen.findByText(/La conexión se ha guardado, pero no se pudo activar/);
+    await user.click(screen.getByRole("button", { name: "Ir a las conexiones" }));
+    expect(await screen.findByText("lista de conexiones")).toBeInTheDocument();
+  });
+
+  it("also works when editing an Odoo connection", async () => {
+    const fetchMock = stubApi({
+      ...baseRoutes(),
+      "GET /profiles/2": () => json(odooProfileFixture),
+      "PUT /profiles/2": () => json(odooProfileFixture),
+      "PUT /odoo/active": () => json(activeOdooFixture()),
+    });
+    await renderApp(<Harness />, "/connections/2/edit");
+    const user = userEvent.setup();
+    await screen.findByLabelText("Nombre");
+    await user.click(screen.getByRole("button", { name: "Siguiente" }));
+    await user.click(screen.getByRole("button", { name: "Siguiente" }));
+    await user.click(screen.getByRole("button", { name: "Guardar y activar" }));
+    await screen.findByText("lista de conexiones");
+    expect(bodyOf(fetchMock, "PUT", "/odoo/active")).toEqual({ profile_id: 2 });
   });
 });

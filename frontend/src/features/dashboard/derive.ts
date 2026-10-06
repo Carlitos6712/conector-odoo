@@ -1,3 +1,4 @@
+import type { ActiveOdoo } from "@/features/connections/types";
 import type { Dashboard, ScheduledJob } from "@/features/dashboard/types";
 import { nextFires } from "@/features/jobs/cron";
 import type { Job } from "@/features/jobs/types";
@@ -110,4 +111,14 @@ export function nextFireOf(scheduled: ScheduledJob, now: Date): NextFire | null 
   if (scheduled.next_fire) return { at: scheduled.next_fire, estimated: false };
   const [next] = nextFires(scheduled.cron, now, 1);
   return next ? { at: next.toISOString(), estimated: true } : null;
+}
+
+/**
+ * What is wrong with the Odoo connection, if anything: nothing connected (the data API answers
+ * 503) or a fallback after the stored profile failed to load. Unknown (not loaded) raises nothing.
+ */
+export function odooAttention(active: ActiveOdoo | undefined): "none" | "fallback" | null {
+  if (!active) return null;
+  if (active.source === "none") return "none";
+  return active.status === "fallback" ? "fallback" : null;
 }

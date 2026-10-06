@@ -159,6 +159,14 @@ export const es = {
       next: "Siguiente",
       back: "Atrás",
       save: "Guardar conexión",
+      saveAndActivate: "Guardar y activar",
+      activation: {
+        running: "Probando y activando…",
+        savedNotActive:
+          "La conexión se ha guardado, pero no se pudo activar. Corrige el problema y reintenta, o actívala más tarde desde la lista.",
+        retry: "Reintentar la activación",
+        goToList: "Ir a las conexiones",
+      },
       saving: "Guardando…",
       secretStored: "Guardado. Déjalo en blanco para conservar el valor actual.",
       tokenUrlOidcHint: "Opcional: si se omite, se descubre a partir de la URL base.",
@@ -1064,6 +1072,15 @@ export const es = {
       failedRun: "Ejecución #{{id}} de «{{job}}»: {{status}}",
       staleRun: "Ejecución #{{id}} de «{{job}}»: sin señal desde hace más de 15 minutos",
       repeated: "«{{job}}» ha fallado {{count}} veces seguidas",
+      odooNone:
+        "No hay ninguna conexión Odoo activa: la API de datos responde 503. Configúrala en Conexiones.",
+      odooFallback:
+        "El perfil Odoo activo no se pudo cargar al arrancar y se está usando otra fuente. Revísalo en Conexiones.",
+    },
+    odoo: {
+      title: "Odoo activo",
+      none: "Sin conexión Odoo activa",
+      view: "Ver conexiones",
     },
     recent: {
       title: "Ejecuciones recientes",

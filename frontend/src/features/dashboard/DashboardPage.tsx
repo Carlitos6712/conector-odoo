@@ -18,11 +18,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useActiveOdoo } from "@/features/connections/hooks";
+import { LastConnected } from "@/features/connections/LastConnected";
 import { DASHBOARD_KEY } from "@/features/dashboard/api";
 import {
   attentionItems,
   dashboardRefetchInterval,
   nextFireOf,
+  odooAttention,
   runsByDay,
   type AttentionItem,
 } from "@/features/dashboard/derive";
@@ -133,6 +136,44 @@ function Summary({ query }: { query: ReturnType<typeof useDashboard> }) {
   );
 }
 
+function ActiveOdooCard() {
+  const { t } = useTranslation();
+  const query = useActiveOdoo();
+  if (query.isPending) return <Loading />;
+  if (query.isError) return <ErrorState error={query.error} onRetry={() => void query.refetch()} />;
+  const active = query.data;
+  const none = active.source === "none";
+  return (
+    <Card className="flex flex-col gap-2 p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        {none ? (
+          <span className="font-medium text-destructive">{t("dashboard.odoo.none")}</span>
+        ) : (
+          <span className="font-medium">{active.profile_name ?? t("connections.kinds.odoo")}</span>
+        )}
+        <Badge variant={active.status === "active" ? "success" : "outline"}>
+          {t(`connections.active.status.${active.status}`)}
+        </Badge>
+      </div>
+      {!none && (
+        <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
+          <dt className="text-muted-foreground">{t("connections.active.fields.source")}</dt>
+          <dd>{t(`connections.active.source.${active.source}`)}</dd>
+          <dt className="text-muted-foreground">{t("connections.active.fields.lastConnected")}</dt>
+          <dd>
+            <LastConnected iso={active.last_connected_at} now={query.dataUpdatedAt} />
+          </dd>
+        </dl>
+      )}
+      <div>
+        <Button variant="ghost" size="sm" asChild>
+          <Link to="/connections">{t("dashboard.odoo.view")}</Link>
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
 function AttentionPanel({
   dashboard,
   recent,
@@ -145,6 +186,7 @@ function AttentionPanel({
   jobName: (id: number) => string;
 }) {
   const { t } = useTranslation();
+  const activeOdoo = useActiveOdoo();
   if (dashboard.isPending) return <Loading />;
   if (dashboard.isError)
     return <ErrorState error={dashboard.error} onRetry={() => void dashboard.refetch()} />;
@@ -156,7 +198,8 @@ function AttentionPanel({
     now: dashboard.dataUpdatedAt,
   });
   const incomplete = recent.isError || jobs.isError;
-  if (items.length === 0) {
+  const odoo = odooAttention(activeOdoo.data);
+  if (items.length === 0 && odoo === null) {
     if (recent.isPending || jobs.isPending) return <Loading />;
     return incomplete ? (
       <p role="status" className="text-sm text-muted-foreground">
@@ -194,6 +237,17 @@ function AttentionPanel({
   return (
     <>
       <ul className="flex flex-col gap-2">
+        {odoo !== null && (
+          <li className="rounded-lg border border-destructive/40">
+            <Link to="/connections" className="block p-3 text-sm hover:underline">
+              {t(
+                odoo === "none"
+                  ? "dashboard.attention.odooNone"
+                  : "dashboard.attention.odooFallback",
+              )}
+            </Link>
+          </li>
+        )}
         {items.map((item) => {
           const { to, text } = describe(item);
           const key =
@@ -410,6 +464,9 @@ export function DashboardPage() {
       </div>
       <Section id="dash-summary" title={t("dashboard.summary.title")}>
         <Summary query={dashboard} />
+      </Section>
+      <Section id="dash-odoo" title={t("dashboard.odoo.title")}>
+        <ActiveOdooCard />
       </Section>
       <Section id="dash-attention" title={t("dashboard.attention.title")}>
         <AttentionPanel dashboard={dashboard} recent={recent} jobs={jobs} jobName={jobName} />
