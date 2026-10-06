@@ -4,6 +4,7 @@ import { AboutSection } from "@/features/settings/AboutSection";
 import { AccountSection } from "@/features/settings/AccountSection";
 import { PreferencesSection } from "@/features/settings/PreferencesSection";
 import { UsersSection } from "@/features/settings/UsersSection";
+import { VaultSection } from "@/features/settings/VaultSection";
 
 export function SettingsPage() {
   const { t } = useTranslation();
@@ -14,6 +15,7 @@ export function SettingsPage() {
       <AccountSection />
       <PreferencesSection />
       {isAdmin && <UsersSection />}
+      {isAdmin && <VaultSection />}
       <AboutSection />
     </section>
   );

@@ -51,6 +51,7 @@ from conector_odoo.domain.errors import (
     SyncJobNotFound,
     SyncRunNotFound,
     VaultDecryptionError,
+    VaultKeyAlreadyConfigured,
     VaultNotConfigured,
 )
 from conector_odoo.domain.mapping import MappingValidationFailed
@@ -98,6 +99,7 @@ _MAPPING: tuple[tuple[type[ConnectorError] | tuple[type[ConnectorError], ...], i
             RunNotResumable,
             AdminUsernameTaken,
             LastAdminError,
+            VaultKeyAlreadyConfigured,
         ),
         409,
         "conflict",

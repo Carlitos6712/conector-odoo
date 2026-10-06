@@ -17,6 +17,7 @@ from conector_odoo.infrastructure.admin_api.routers import (
     resources,
     runs,
     users,
+    vault,
 )
 
 PREFIX = "/admin/api"
@@ -35,4 +36,5 @@ def include_admin_api(app: FastAPI) -> None:
     protected.include_router(mappings.router)
     protected.include_router(jobs.router)
     protected.include_router(runs.router)
+    protected.include_router(vault.router)
     app.include_router(protected)

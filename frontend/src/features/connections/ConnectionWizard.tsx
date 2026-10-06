@@ -28,6 +28,8 @@ import {
   useUpdateProfile,
 } from "@/features/connections/hooks";
 import { TestResultView } from "@/features/connections/TestResultView";
+import { ApiError } from "@/api/client";
+import { GenerateVaultKey } from "@/features/vault/GenerateVaultKey";
 import type { Profile, ProfileKind, SecretField } from "@/features/connections/types";
 
 const STEP_IDS = ["kind", "data", "test", "review"] as const;
@@ -40,6 +42,9 @@ const SECRET_LABEL: Record<SecretField, string> = {
   client_secret: "clientSecret",
   password: "password",
 };
+
+const isVaultMissing = (error: unknown) =>
+  error instanceof ApiError && error.code === "vault_not_configured";
 
 /** Four-step create/edit wizard. Typed credentials live only in this component's state. */
 export function ConnectionWizard({ profile }: { profile?: Profile }) {
@@ -54,6 +59,7 @@ export function ConnectionWizard({ profile }: { profile?: Profile }) {
   const [step, setStep] = useState(editing ? 1 : 0);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [vaultMissing, setVaultMissing] = useState(false);
   // Set once the profile exists server-side, so a failed activation never re-creates it.
   const [savedId, setSavedId] = useState<number | null>(null);
   const { toast } = useToast();
@@ -66,6 +72,7 @@ export function ConnectionWizard({ profile }: { profile?: Profile }) {
   const testing = testDraft.isPending || testSaved.isPending;
   const testResult = testDraft.data ?? testSaved.data ?? null;
   const testError = testDraft.error ?? testSaved.error ?? null;
+  const showVaultPrompt = vaultMissing || isVaultMissing(testError);
 
   // Drop every mutation's variables (they carry credentials) when the wizard goes away.
   const resets = [create.reset, update.reset, activate.reset, testDraft.reset, testSaved.reset];
@@ -116,6 +123,7 @@ export function ConnectionWizard({ profile }: { profile?: Profile }) {
     const onError = (error: unknown) => {
       const described = describeProfileError(error, "save");
       setSaveError(t(described.messageKey, described.params));
+      if (isVaultMissing(error)) setVaultMissing(true);
       if (Object.keys(described.fieldErrors).length > 0) {
         setErrors(described.fieldErrors);
         goTo(1);
@@ -129,6 +137,13 @@ export function ConnectionWizard({ profile }: { profile?: Profile }) {
     const existing = profile?.id ?? savedId;
     if (existing !== null) update.mutate({ id: existing, input }, { onSuccess, onError });
     else create.mutate(input, { onSuccess, onError });
+  }
+
+  function onKeyGenerated() {
+    setVaultMissing(false);
+    setSaveError(null);
+    testDraft.reset();
+    testSaved.reset();
   }
 
   const saving = create.isPending || update.isPending || activate.isPending;
@@ -174,6 +189,8 @@ export function ConnectionWizard({ profile }: { profile?: Profile }) {
           {saveError}
         </p>
       )}
+
+      {showVaultPrompt && <GenerateVaultKey onGenerated={onKeyGenerated} />}
 
       {stepId === "kind" && (
         <fieldset className="flex flex-col gap-3">

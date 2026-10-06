@@ -61,6 +61,7 @@ from conector_odoo.infrastructure.auth.repository import (
 from conector_odoo.infrastructure.endpoints import ProfileEndpoints
 from conector_odoo.infrastructure.mappings.repository import SqliteMappingRepository
 from conector_odoo.infrastructure.openapi.importer import OpenApiImporter
+from conector_odoo.infrastructure.profiles.key_file import VaultKeySetup
 from conector_odoo.infrastructure.profiles.odoo_probe import OdooConnectionProbe
 from conector_odoo.infrastructure.profiles.repository import SqliteConnectionProfileRepository
 from conector_odoo.infrastructure.profiles.rest_probe import RestConnectionProbe
@@ -135,6 +136,7 @@ class AdminServices:
     scheduler: SyncScheduler
     dashboard: GetDashboard
     webhook_trigger: HandleWebhookTrigger
+    vault_key: VaultKeySetup
 
     async def aclose(self) -> None:
         """Stop in-flight background runs (left resumable), then release the endpoints they use.
@@ -269,6 +271,7 @@ def build_admin_services(
             profile_repo, mapping_repo, job_repo, run_repo, _now, scheduler.next_fire
         ),
         webhook_trigger=HandleWebhookTrigger(job_repo, trigger),
+        vault_key=VaultKeySetup(settings),
     )
 
 
