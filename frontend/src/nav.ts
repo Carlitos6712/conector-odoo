@@ -25,5 +25,5 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { key: "mappings", path: "/mappings", icon: GitCompareArrows },
   { key: "jobs", path: "/jobs", icon: CalendarClock },
   { key: "runs", path: "/runs", icon: History },
-  { key: "settings", path: "/settings", icon: Settings, adminOnly: true },
+  { key: "settings", path: "/settings", icon: Settings },
 ];

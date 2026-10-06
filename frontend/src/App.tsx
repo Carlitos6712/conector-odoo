@@ -18,10 +18,9 @@ import { MappingsPage } from "@/features/mappings/MappingsPage";
 import { ImportPage } from "@/features/resources/ImportPage";
 import { ResourceEditorPage } from "@/features/resources/ResourceEditorPage";
 import { ResourcesPage } from "@/features/resources/ResourcesPage";
-import { NAV_ITEMS } from "@/nav";
+import { SettingsPage } from "@/features/settings/SettingsPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
-import { PlaceholderPage } from "@/pages/PlaceholderPage";
 
 export function App() {
   const queryClient = useQueryClient();
@@ -54,18 +53,7 @@ export function App() {
           <Route path="/jobs/:id/edit" element={<JobWizardPage />} />
           <Route path="/runs" element={<RunsPage />} />
           <Route path="/runs/:id" element={<RunDetailPage />} />
-          {NAV_ITEMS.filter(
-            (item) =>
-              !["dashboard", "connections", "resources", "mappings", "jobs", "runs"].includes(
-                item.key,
-              ),
-          ).map((item) => (
-            <Route
-              key={item.key}
-              path={item.path}
-              element={<PlaceholderPage section={item.key} />}
-            />
-          ))}
+          <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Route>

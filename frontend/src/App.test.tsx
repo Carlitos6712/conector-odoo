@@ -10,11 +10,14 @@ import { json, renderApp, sessionBody, stubApi } from "@/test/utils";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("App", () => {
-  it("renders placeholder sections inside the shell", async () => {
-    stubApi({ "GET /auth/me": () => json(sessionBody()) });
+  it("renders the settings page inside the shell", async () => {
+    stubApi({
+      "GET /auth/me": () => json(sessionBody()),
+      "GET /users": () => json({ items: [] }),
+    });
     await renderApp(<App />, "/settings");
     expect(await screen.findByRole("heading", { name: "Ajustes" })).toBeInTheDocument();
-    expect(screen.getByText(/disponible próximamente/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Mi cuenta" })).toBeInTheDocument();
   });
 
   it("shows a not-found page for unknown routes", async () => {
@@ -28,6 +31,7 @@ describe("App", () => {
   it("sends the user to login when a later call answers 401", async () => {
     stubApi({
       "GET /auth/me": () => json(sessionBody()),
+      "GET /users": () => json({ items: [] }),
       "GET /jobs": () => json({ error: "unauthorized", detail: "expired" }, 401),
     });
     function Probe() {

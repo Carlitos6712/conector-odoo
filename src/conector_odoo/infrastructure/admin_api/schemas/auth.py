@@ -47,3 +47,8 @@ class UserPatchIn(StrictModel):
         if self.role is None and self.password is None:
             raise ValueError("provide a role or a password")
         return self
+
+
+class PasswordChangeIn(StrictModel):
+    current_password: str = Field(min_length=1, max_length=MAX_PASSWORD_LENGTH)
+    new_password: str = Field(min_length=1, max_length=MAX_PASSWORD_LENGTH)

@@ -8,6 +8,7 @@ from conector_odoo.domain.errors import (
     AdminUserInvalid,
     AdminUsernameTaken,
     AuthenticationFailed,
+    CurrentPasswordInvalid,
     LastAdminError,
     LoginLocked,
     SessionInvalid,
@@ -194,3 +195,44 @@ def test_auth_config_defaults_are_sane() -> None:
     assert config.max_failures >= 3 and config.lockout_seconds >= 60
     assert timedelta(seconds=config.session_ttl_seconds) <= timedelta(days=1)
     assert AuthService is not None
+
+
+async def test_change_password_rotates_every_session_and_swaps_the_password(
+    world: AuthWorld,
+) -> None:
+    await seed(world)
+    first = await world.auth.login("alice", PASSWORD)
+    other = await world.auth.login("alice", PASSWORD)
+    changed = await world.auth.change_password(first.user, PASSWORD, "a much newer password")
+    assert changed.token not in (first.token, other.token) and changed.csrf_token
+    for stale in (first.token, other.token):
+        with pytest.raises(SessionInvalid):
+            await world.auth.authenticate(stale)
+    assert (await world.auth.authenticate(changed.token)).user.id == first.user.id
+    with pytest.raises(AuthenticationFailed):
+        await world.auth.login("alice", PASSWORD)
+    await world.auth.login("alice", "a much newer password")
+
+
+async def test_change_password_checks_the_current_password_and_the_policy(
+    world: AuthWorld,
+) -> None:
+    await seed(world)
+    user = (await world.auth.login("alice", PASSWORD)).user
+    with pytest.raises(CurrentPasswordInvalid):
+        await world.auth.change_password(user, "not the password!", "a much newer password")
+    with pytest.raises(AdminUserInvalid):
+        await world.auth.change_password(user, PASSWORD, "short")
+    with pytest.raises(AdminUserInvalid):
+        await world.auth.change_password(user, PASSWORD, PASSWORD)
+    await world.auth.login("alice", PASSWORD)  # unchanged
+
+
+async def test_change_password_failures_are_throttled(world: AuthWorld) -> None:
+    await seed(world)
+    user = (await world.auth.login("alice", PASSWORD)).user
+    for _ in range(5):
+        with pytest.raises(CurrentPasswordInvalid):
+            await world.auth.change_password(user, "not the password!", "a much newer password")
+    with pytest.raises(LoginLocked):
+        await world.auth.change_password(user, PASSWORD, "a much newer password")

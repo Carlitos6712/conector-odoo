@@ -41,6 +41,15 @@ export async function login(username: string, password: string): Promise<Session
   return remember(session);
 }
 
+/** Own password change (any role). The answer is the rotated session: adopt its CSRF token. */
+export async function changePassword(current: string, next: string): Promise<Session> {
+  const session = await api.post<Session>("/auth/password", {
+    current_password: current,
+    new_password: next,
+  });
+  return remember(session);
+}
+
 export async function logout(): Promise<void> {
   try {
     await api.post<void>("/auth/logout", undefined, { handleUnauthorized: false });

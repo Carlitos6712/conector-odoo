@@ -18,6 +18,7 @@ from conector_odoo.domain.errors import (
     ConnectorError,
     CreatedButUnreadable,
     CsrfInvalid,
+    CurrentPasswordInvalid,
     JobAlreadyRunning,
     LastAdminError,
     LoginLocked,
@@ -64,6 +65,8 @@ _MAPPING: tuple[tuple[type[ConnectorError] | tuple[type[ConnectorError], ...], i
     # -- admin API (/admin/api) -------------------------------------------------------------
     (SessionInvalid, 401, "unauthenticated"),
     (AuthenticationFailed, 401, "invalid_credentials"),
+    # 422, not 401: the user IS authenticated, and a 401 would make clients drop the session.
+    (CurrentPasswordInvalid, 422, "invalid_current_password"),
     (AdminForbidden, 403, "forbidden"),
     (CsrfInvalid, 403, "csrf_invalid"),
     (

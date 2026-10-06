@@ -173,6 +173,10 @@ class AuthenticationFailed(ConnectorError):
     """Wrong username or password. Deliberately says nothing about which one."""
 
 
+class CurrentPasswordInvalid(ConnectorError):
+    """A self-service password change supplied the wrong current password."""
+
+
 class LoginLocked(ConnectorError):
     """Too many failed logins for this username; retry after ``retry_after_seconds``."""
 
