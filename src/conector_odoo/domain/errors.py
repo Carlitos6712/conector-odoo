@@ -110,6 +110,11 @@ class RemoteUnavailable(ConnectorError):
     """The remote system is unreachable, timed out or failed unexpectedly."""
 
 
+class OutboundUrlBlocked(RemoteUnavailable):
+    """The outbound URL policy refused a destination (scheme, or an address class such as
+    link-local or cloud metadata). Messages name the rule, never the URL or host."""
+
+
 class RemoteAuthError(ConnectorError):
     """The remote system rejected the credentials or the session."""
 
