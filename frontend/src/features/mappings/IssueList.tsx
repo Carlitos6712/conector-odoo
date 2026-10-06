@@ -19,7 +19,9 @@ export function IssueList({
       {issues.map((issue, index) => (
         <li
           key={`${issue.path}-${index}`}
-          className={issue.severity === "error" ? "text-destructive" : "text-amber-700"}
+          className={
+            issue.severity === "error" ? "text-destructive" : "text-warning-soft-foreground"
+          }
         >
           <span className="font-medium">{t(`mappings.issues.${issue.severity}`)}</span>{" "}
           <code className="break-all text-xs">{issue.path}</code>: {issue.message}

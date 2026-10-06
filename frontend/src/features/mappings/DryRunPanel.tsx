@@ -179,7 +179,7 @@ export function DryRunPanel({
         blocked && <p className="text-xs text-muted-foreground">{t("mappings.dryRun.blocked")}</p>
       )}
       {stale && (
-        <p role="status" className="text-sm text-amber-700">
+        <p role="status" className="text-sm text-warning-soft-foreground">
           {t("mappings.dryRun.stale")}
         </p>
       )}

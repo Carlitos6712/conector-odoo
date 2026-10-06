@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { Play, RefreshCw } from "lucide-react";
+import { ArrowRight, Play, RefreshCw } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
@@ -82,7 +82,7 @@ function StatCard({
   children?: ReactNode;
 }) {
   return (
-    <Card className="transition-colors hover:bg-muted/40">
+    <Card className="transition-all hover:-translate-y-0.5 hover:shadow-lift">
       <Link to={to} className="flex h-full flex-col gap-1 p-4">
         <span className="text-sm text-muted-foreground">{label}</span>
         <span className="text-3xl font-semibold tabular-nums">{value}</span>
@@ -165,11 +165,13 @@ function ActiveOdooCard() {
           </dd>
         </dl>
       )}
-      <div>
-        <Button variant="ghost" size="sm" asChild>
-          <Link to="/connections">{t("dashboard.odoo.view")}</Link>
-        </Button>
-      </div>
+      <Link
+        to="/connections"
+        className="inline-flex w-fit items-center gap-1 rounded-sm text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+      >
+        {t("dashboard.odoo.view")}
+        <ArrowRight aria-hidden className="size-4" />
+      </Link>
     </Card>
   );
 }

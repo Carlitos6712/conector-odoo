@@ -9,8 +9,11 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () =>
       ? t("common.networkError")
       : t("common.unexpectedError");
   return (
-    <div role="alert" className="flex flex-col items-start gap-3 p-6">
-      <p className="text-destructive">{message}</p>
+    <div
+      role="alert"
+      className="flex flex-col items-start gap-3 rounded-xl border border-destructive/30 bg-destructive-soft p-6"
+    >
+      <p className="text-destructive-soft-foreground">{message}</p>
       {onRetry && (
         <Button variant="outline" onClick={onRetry}>
           {t("common.retry")}

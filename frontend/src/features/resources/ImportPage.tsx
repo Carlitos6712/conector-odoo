@@ -341,7 +341,7 @@ export function ImportPage() {
         <>
           <section
             aria-label={t("resources.import.warningsTitle", { count: warnings.length })}
-            className="flex flex-col gap-2 rounded-md border border-amber-500 p-4"
+            className="flex flex-col gap-2 rounded-md border border-warning-soft-foreground/30 bg-warning-soft p-4 text-warning-soft-foreground"
           >
             <h2 className="font-semibold">
               {t("resources.import.warningsTitle", { count: warnings.length })}

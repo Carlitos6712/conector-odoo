@@ -1,3 +1,4 @@
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { FormField } from "@/features/connections/FormField";
@@ -32,10 +33,8 @@ export function RecordFormFields({
           >
             {(control) =>
               spec.type === "boolean" ? (
-                <input
+                <Checkbox
                   {...control}
-                  type="checkbox"
-                  className="size-4"
                   checked={value === true}
                   onChange={(e) => onChange(spec.name, e.target.checked)}
                 />

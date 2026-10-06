@@ -1,5 +1,7 @@
 import { useTranslation } from "react-i18next";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { actionVariant } from "@/features/records/actionVariant";
 import type { PropagationReport, WriteKind } from "@/features/records/types";
 
 export interface WriteSummary extends PropagationReport {
@@ -28,7 +30,10 @@ export function WriteReport({
   const { t } = useTranslation();
   const { propagation } = summary;
   return (
-    <div role="status" className="flex flex-col gap-2 rounded-md border p-3 text-sm">
+    <div
+      role="status"
+      className="flex flex-col gap-2 rounded-lg border border-l-4 border-l-primary bg-card p-3 text-sm shadow-soft"
+    >
       <div className="flex items-start justify-between gap-3">
         <p className="font-medium">{t(`records.report.${summary.kind}`)}</p>
         <Button variant="ghost" size="sm" onClick={onDismiss}>
@@ -45,15 +50,19 @@ export function WriteReport({
             <li key={`${o.job_id ?? "x"}-${index}`}>
               <span className="font-medium">{o.job_name}</span>
               {": "}
-              {t(`records.report.action.${o.action}`)}
+              <Badge variant={actionVariant(o.action)}>
+                {t(`records.report.action.${o.action}`)}
+              </Badge>
               {o.counterpart_id ? ` (#${o.counterpart_id})` : ""}
-              {o.warning && <span className="block text-destructive">{o.warning}</span>}
+              {o.warning && (
+                <span className="block text-destructive-soft-foreground">{o.warning}</span>
+              )}
             </li>
           ))}
         </ul>
       )}
       {extraWarnings(summary).map((w) => (
-        <p key={w} className="text-destructive">
+        <p key={w} className="text-destructive-soft-foreground">
           {w}
         </p>
       ))}

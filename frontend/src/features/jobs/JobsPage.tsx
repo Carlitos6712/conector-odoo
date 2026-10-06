@@ -126,7 +126,7 @@ export function JobsPage() {
               <TableCell className="text-xs">{endpointLabel(job.source, profiles.data)}</TableCell>
               <TableCell className="text-xs">{endpointLabel(job.target, profiles.data)}</TableCell>
               <TableCell>
-                <Badge variant="outline">{t(`jobs.directions.${job.direction}`)}</Badge>
+                <Badge variant="brand">{t(`jobs.directions.${job.direction}`)}</Badge>
               </TableCell>
               <TableCell>
                 <TriggerSummary trigger={job.trigger} />
