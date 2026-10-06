@@ -126,3 +126,16 @@ class CatalogResourceNotFound(ConnectorError):
 class OpenApiImportError(ConnectorError):
     """An OpenAPI/Swagger document cannot be fetched or parsed (too large, bad scheme, not a
     supported document)."""
+
+
+class MappingInvalid(ConnectorError):
+    """A stored or submitted mapping document is malformed (unknown expression or step type,
+    wrong field types, unsupported schema version); the message names the offending path."""
+
+
+class MappingNotFound(ConnectorError):
+    """No saved mapping with that name (or version)."""
+
+
+class MappingInUse(ConnectorError):
+    """The mapping is referenced by a sync job and cannot be deleted."""
