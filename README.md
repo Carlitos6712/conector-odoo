@@ -128,6 +128,12 @@ The connector talks to ONE Odoo at a time for the data API (`/customers`, `/prod
 3. The activated profile is remembered across restarts. Activate another one at any time, no
    restart needed: in-flight requests finish on the old connection, which is then closed.
 
+In the UI (**Conexiones**): the "Conexión Odoo activa" panel shows which Odoo is live and where it
+comes from (profile, legacy environment or none, with a banner when nothing is connected). On an
+Odoo profile use "Usar como conexión activa" (the row action), or finish the wizard with "Guardar y
+activar". A failed test shows the failing step and keeps the previous connection. "Desconectar"
+forgets the active profile. Operators see the panel and the "Activa" badge but cannot change it.
+
 Resolution at startup: the remembered active profile (if it still exists and decrypts) > the legacy
 `ODOO_*` variables when ALL four are set (source `env`) > none. A broken active profile logs a
 warning and falls back; it never stops the service. With no connection at all the service starts,
@@ -344,7 +350,8 @@ Follow the sidebar order in the UI. Operators see everything but cannot change a
 1. **Connections.** Create a REST connection (base URL, auth: API key, Bearer, OAuth2 client
    credentials or OIDC) and an Odoo connection (URL, database, login, API key). The wizard tests each
    step (URL, reachability, TLS, auth) before you save. Secrets are write-only. Activate one Odoo
-   connection as the live one for the data API (see "Active Odoo connection").
+   connection as the live one for the data API with "Usar como conexión activa" or "Guardar y
+   activar" (see "Active Odoo connection"); no `.env` editing is needed.
 2. **Resources.** A resource describes one REST collection: list endpoint, `items_path`, `id_field`
    and pagination (`none`, `page`, `offset` or `cursor`). Create it by hand or import candidates from
    an OpenAPI 3.x / Swagger 2.0 document, then check it with the live preview. Odoo models need no
