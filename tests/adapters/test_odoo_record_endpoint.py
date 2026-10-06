@@ -124,6 +124,8 @@ def _match(row: dict[str, Any], term: Any) -> bool:
         return bool(actual > value)
     if op == ">=":
         return actual not in (None, False) and bool(actual >= value)
+    if op == "ilike":
+        return isinstance(actual, str) and str(value).lower() in actual.lower()
     raise AssertionError(f"fake does not support {op}")
 
 

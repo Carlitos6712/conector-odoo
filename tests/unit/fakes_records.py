@@ -106,3 +106,6 @@ class InMemoryRecordEndpoint:
         if id not in table:
             raise ResourceNotFound(f"{resource}/{id}")
         del table[id]
+        for key, replay in list(self._replays.items()):  # a deleted record is not replayable
+            if key[0] == resource and replay.id == id:
+                del self._replays[key]

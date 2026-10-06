@@ -14,6 +14,7 @@ from conector_odoo.infrastructure.admin_api.routers import (
     mappings,
     odoo,
     profiles,
+    records,
     resources,
     runs,
     users,
@@ -33,6 +34,7 @@ def include_admin_api(app: FastAPI) -> None:
     protected.include_router(profiles.router)
     protected.include_router(odoo.router)
     protected.include_router(resources.router)
+    protected.include_router(records.router)
     protected.include_router(mappings.router)
     protected.include_router(jobs.router)
     protected.include_router(runs.router)

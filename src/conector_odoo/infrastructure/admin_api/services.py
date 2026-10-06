@@ -33,6 +33,7 @@ from conector_odoo.application.profiles import (
     TestConnection,
     UpdateProfile,
 )
+from conector_odoo.application.records import DeleteRecord, GetRecord, ListRecords, UpdateRecord
 from conector_odoo.application.resources import (
     DeleteResource,
     DiscoverResources,
@@ -96,6 +97,14 @@ class ResourceServices:
 
 
 @dataclass(frozen=True)
+class RecordServices:
+    list: ListRecords
+    get: GetRecord
+    update: UpdateRecord
+    delete: DeleteRecord
+
+
+@dataclass(frozen=True)
 class MappingServices:
     repo: MappingRepository
     get: GetMapping
@@ -128,6 +137,7 @@ class AdminServices:
     active_odoo: ActiveOdooConnection
     profiles: ProfileServices
     resources: ResourceServices
+    records: RecordServices
     mappings: MappingServices
     jobs: JobServices
     runs: RunServices
@@ -186,10 +196,11 @@ def build_admin_services(
     mapping_repo = SqliteMappingRepository(conn)
     job_repo = SqliteSyncJobRepository(conn)
     run_repo = SqliteSyncRunRepository(conn)
+    xref_repo = SqliteXRefRepository(conn)
     runner = SyncRunner(
         job_repo,
         run_repo,
-        SqliteXRefRepository(conn),
+        xref_repo,
         mapping_repo,
         endpoints,
         clock=_now,
@@ -246,6 +257,12 @@ def build_admin_services(
                 lambda profile, secrets: endpoints.build_odoo(profile, secrets),
             ),
             importer=OpenApiImporter(policy=policy),
+        ),
+        records=RecordServices(
+            list=ListRecords(profile_repo, endpoints),
+            get=GetRecord(profile_repo, endpoints),
+            update=UpdateRecord(profile_repo, endpoints),
+            delete=DeleteRecord(profile_repo, endpoints, xref_repo),
         ),
         mappings=MappingServices(
             repo=mapping_repo,

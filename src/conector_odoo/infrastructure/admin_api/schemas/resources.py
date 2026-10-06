@@ -1,8 +1,9 @@
 from datetime import datetime
-from typing import Self
+from typing import Any, Self
 
 from pydantic import BaseModel, Field, model_validator
 
+from conector_odoo.application.records import RecordPage
 from conector_odoo.application.resources import DiscoveredResource, PreviewResult
 from conector_odoo.domain.records import FieldSpec, FieldType, Record, ResourceSchema
 from conector_odoo.domain.resources import (
@@ -259,3 +260,27 @@ class ImportReportOut(BaseModel):
             warnings=list(report.warnings),
             base_path=report.base_path,
         )
+
+
+class RecordPageOut(BaseModel):
+    items: list[RecordOut]
+    schema_: ResourceSchemaOut = Field(serialization_alias="schema")
+    limit: int
+    offset: int
+    has_more: bool
+
+    @classmethod
+    def of(cls, page: RecordPage) -> Self:
+        return cls(
+            items=[RecordOut.of(r) for r in page.items],
+            schema_=ResourceSchemaOut.of(page.schema),
+            limit=page.limit,
+            offset=page.offset,
+            has_more=page.has_more,
+        )
+
+
+class RecordPatchIn(StrictModel):
+    """The fields to change on ONE record, by name; fields left out are not touched."""
+
+    fields: dict[str, Any]
