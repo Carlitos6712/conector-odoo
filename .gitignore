@@ -13,3 +13,6 @@ node_modules/
 
 # Local launcher state
 .run/
+
+# Local runtime data (SQLite databases)
+data/
