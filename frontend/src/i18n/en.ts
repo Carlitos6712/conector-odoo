@@ -367,12 +367,13 @@ export const en: Translation = {
       label: "Label",
       endpoints: "Endpoints",
       endpointsHint:
-        "Paths relative to the connection base URL. Leave blank the operations the API does not support; at least one is required. Detail and update use «{id}».",
+        "Paths relative to the connection base URL. Leave blank the operations the API does not support; at least one is required. Detail, update and delete use «{id}».",
       method: "Method",
       listPath: "List endpoint (GET)",
       getPath: "Detail endpoint (GET)",
       createPath: "Create endpoint",
       updatePath: "Update endpoint",
+      deletePath: "Delete endpoint (DELETE)",
       shape: "Response shape",
       idField: "Identifier field",
       idFieldHint: "Field of each record that identifies it, e.g. id or uuid.",
@@ -1254,6 +1255,42 @@ export const en: Translation = {
     noProfiles: "Create a connection first to browse its records.",
     editRow: "Edit {{name}}",
     deleteRow: "Delete {{name}}",
+    createRecord: "Create record",
+    create: {
+      title: "Create record",
+      intro: "A new record will be created in {{model}}. The system assigns the identifier.",
+      save: "Create",
+    },
+    counterpart: {
+      create:
+        "If a bidirectional job covers this resource, the record is also created on the counterpart in the other system.",
+      edit: "If a bidirectional job links this record, the change also applies to its counterpart in the other system (the edited side wins). If the counterpart fails, the change made here is never undone: you are warned and the next job run reconciles it.",
+      delete:
+        "If a bidirectional job links this record, its counterpart in the other system is deleted too. If the counterpart fails, the deletion made here is never undone: you are warned about the failure.",
+    },
+    report: {
+      create: "Record created.",
+      update: "Record updated.",
+      delete: "Record deleted.",
+      none: "No bidirectional job covers this resource, so nothing was propagated to another system.",
+      dismiss: "Close",
+      action: {
+        created: "created on the counterpart",
+        updated: "updated on the counterpart",
+        deleted: "deleted on the counterpart",
+        skipped: "skipped, counterpart unchanged",
+        failed: "failed on the counterpart",
+      },
+    },
+    sync: {
+      button: "Sync now",
+      noJobs: "No enabled job reads or writes this resource.",
+      title: "Sync now",
+      body: "These jobs that use this resource will run now, for real, in the background:",
+      bidirectional:
+        "A bidirectional job may also push changes in both directions, not only towards this resource.",
+      confirm: "Sync",
+    },
     edit: {
       title: "Edit {{name}}",
       intro: "Record {{id}} of {{model}}. Only the fields you change are sent.",

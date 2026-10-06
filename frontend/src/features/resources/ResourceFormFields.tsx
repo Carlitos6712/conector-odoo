@@ -172,7 +172,7 @@ function EndpointRow({
   methods,
 }: {
   props: FieldsProps;
-  field: "list_path" | "get_path" | "create_path" | "update_path";
+  field: "list_path" | "get_path" | "create_path" | "update_path" | "delete_path";
   label: string;
   hint?: string;
   methodField?: "create_method" | "update_method";
@@ -267,6 +267,7 @@ export function ResourceFormFields({
           methodField="update_method"
           methods={UPDATE_METHODS}
         />
+        <EndpointRow props={props} field="delete_path" label={t("resources.editor.deletePath")} />
       </fieldset>
 
       <fieldset className="grid gap-4 sm:grid-cols-2">

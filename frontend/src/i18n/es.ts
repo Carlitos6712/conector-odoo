@@ -367,12 +367,13 @@ export const es = {
       label: "Etiqueta",
       endpoints: "Endpoints",
       endpointsHint:
-        "Rutas relativas a la URL base de la conexión. Deja en blanco las operaciones que la API no admite; hace falta al menos una. Las de detalle y actualización usan «{id}».",
+        "Rutas relativas a la URL base de la conexión. Deja en blanco las operaciones que la API no admite; hace falta al menos una. Las de detalle, actualización y borrado usan «{id}».",
       method: "Método",
       listPath: "Endpoint de lista (GET)",
       getPath: "Endpoint de detalle (GET)",
       createPath: "Endpoint de creación",
       updatePath: "Endpoint de actualización",
+      deletePath: "Endpoint de borrado (DELETE)",
       shape: "Forma de la respuesta",
       idField: "Campo identificador",
       idFieldHint: "Campo de cada registro que lo identifica, p. ej. id o uuid.",
@@ -1267,6 +1268,42 @@ export const es = {
     noProfiles: "Crea primero una conexión para consultar sus registros.",
     editRow: "Editar {{name}}",
     deleteRow: "Eliminar {{name}}",
+    createRecord: "Crear registro",
+    create: {
+      title: "Crear registro",
+      intro: "Se creará un registro nuevo en {{model}}. El identificador lo asigna el sistema.",
+      save: "Crear",
+    },
+    counterpart: {
+      create:
+        "Si un job bidireccional cubre este recurso, el registro también se crea en la contraparte del otro sistema.",
+      edit: "Si un job bidireccional enlaza este registro, el cambio también se aplica a su contraparte en el otro sistema (gana el lado editado). Si la contraparte falla, el cambio hecho aquí nunca se deshace: se avisa y el siguiente run del job lo reconcilia.",
+      delete:
+        "Si un job bidireccional enlaza este registro, también se elimina su contraparte en el otro sistema. Si la contraparte falla, el borrado hecho aquí nunca se deshace: se avisa del fallo.",
+    },
+    report: {
+      create: "Registro creado.",
+      update: "Registro actualizado.",
+      delete: "Registro eliminado.",
+      none: "Ningún job bidireccional cubre este recurso, así que no se ha propagado nada a otro sistema.",
+      dismiss: "Cerrar",
+      action: {
+        created: "creado en la contraparte",
+        updated: "actualizado en la contraparte",
+        deleted: "eliminado en la contraparte",
+        skipped: "omitido, sin cambios en la contraparte",
+        failed: "fallido en la contraparte",
+      },
+    },
+    sync: {
+      button: "Sincronizar ahora",
+      noJobs: "Ningún job activo lee o escribe este recurso.",
+      title: "Sincronizar ahora",
+      body: "Se ejecutarán ahora, de verdad y en segundo plano, estos jobs que usan este recurso:",
+      bidirectional:
+        "Un job bidireccional puede además empujar cambios en ambos sentidos, no solo hacia este recurso.",
+      confirm: "Sincronizar",
+    },
     edit: {
       title: "Editar {{name}}",
       intro: "Registro {{id}} de {{model}}. Solo se envían los campos que cambies.",

@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { odooProfileFixture, profileFixture } from "@/features/connections/fixtures";
+import { jobFixture, runFixture } from "@/features/jobs/fixtures";
 import { pageFixture, partnerSchema } from "@/features/records/fixtures";
 import { RecordsPage } from "@/features/records/RecordsPage";
 import { storedFixture } from "@/features/resources/fixtures";
@@ -15,6 +16,7 @@ function routes(role: Role, extra: Record<string, () => Response | Promise<Respo
     "GET /auth/me": () => json(sessionBody(role)),
     "GET /profiles": () => json({ items: [profileFixture(), odooProfileFixture] }),
     [LIST]: () => json(pageFixture()),
+    "GET /jobs": () => json({ items: [] }),
     ...extra,
   };
 }
@@ -213,7 +215,8 @@ describe("RecordsPage resource picker", () => {
       routes("admin", {
         ...RESOURCES,
         "GET /profiles/1/records/clients?limit=50&offset=0": () => json(restPage()),
-        "PATCH /profiles/1/records/clients/c-1": () => json({ id: "c-1", fields: {} }),
+        "PATCH /profiles/1/records/clients/c-1": () =>
+          json({ id: "c-1", fields: {}, propagation: [], warnings: [] }),
       }),
     );
     await renderApp(<RecordsPage />, "/records?profile=1");
@@ -299,7 +302,13 @@ describe("RecordsPage edit", () => {
   it("shows only writable fields and sends only the changed ones", async () => {
     const fetchMock = stubApi(
       routes("admin", {
-        [PATCH]: () => json({ id: 7, fields: { name: "Ada Lovelace", city: "París" } }),
+        [PATCH]: () =>
+          json({
+            id: 7,
+            fields: { name: "Ada Lovelace", city: "París" },
+            propagation: [],
+            warnings: [],
+          }),
       }),
     );
     await renderApp(<RecordsPage />);
@@ -407,5 +416,295 @@ describe("RecordsPage delete", () => {
       "cannot delete res.partner 7: used in invoices",
     );
     expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+  });
+});
+
+const outcome = (overrides = {}) => ({
+  job_id: 3,
+  job_name: "Clientes bidireccional",
+  side: "target",
+  action: "updated",
+  counterpart_id: "c-9",
+  warning: null,
+  ...overrides,
+});
+
+describe("RecordsPage create", () => {
+  const POST = "POST /profiles/2/records/res.partner";
+
+  async function openCreate() {
+    await userEvent.click(await screen.findByRole("button", { name: "Crear registro" }));
+    return screen.findByRole("dialog");
+  }
+
+  it("is offered to admins only", async () => {
+    stubApi(routes("operator"));
+    await renderApp(<RecordsPage />);
+    await screen.findByText("Ada Lovelace");
+    expect(screen.queryByRole("button", { name: "Crear registro" })).not.toBeInTheDocument();
+  });
+
+  it("shows the writable fields, never the id, and says the counterpart is created too", async () => {
+    stubApi(routes("admin"));
+    await renderApp(<RecordsPage />);
+    const dialog = await openCreate();
+    expect(within(dialog).getByLabelText("Nombre")).toHaveValue("");
+    expect(within(dialog).getByLabelText("Ciudad")).toBeInTheDocument();
+    expect(within(dialog).queryByLabelText("ID")).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText("Modificado")).not.toBeInTheDocument();
+    expect(dialog).toHaveTextContent(/contraparte/i);
+  });
+
+  it("posts the filled fields, closes and reports the propagation", async () => {
+    let created = false;
+    const fetchMock = stubApi(
+      routes("admin", {
+        [POST]: () => {
+          created = true;
+          return json(
+            {
+              id: 9,
+              fields: { name: "Grace" },
+              propagation: [outcome({ action: "created" })],
+              warnings: [],
+            },
+            201,
+          );
+        },
+        [LIST]: () =>
+          json(
+            created
+              ? pageFixture({ items: [{ id: 9, fields: { name: "Grace Hopper" } }] })
+              : pageFixture(),
+          ),
+      }),
+    );
+    await renderApp(<RecordsPage />);
+    const dialog = await openCreate();
+    await userEvent.type(within(dialog).getByLabelText("Nombre"), "Grace");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Crear" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    const [, init] = callsTo(fetchMock, "POST")[0]!;
+    expect(JSON.parse(String(init?.body))).toEqual({ fields: { name: "Grace", active: false } });
+    expect(await screen.findByText("Grace Hopper")).toBeInTheDocument();
+    const report = await screen.findByRole("status");
+    expect(report).toHaveTextContent("Registro creado");
+    expect(report).toHaveTextContent("Clientes bidireccional");
+    expect(report).toHaveTextContent(/creado en la contraparte/i);
+  });
+
+  it("keeps the dialog open and shows per-field errors", async () => {
+    stubApi(
+      routes("admin", {
+        [POST]: () =>
+          json(
+            { error: "validation_error", detail: "cannot edit res.partner: name: required" },
+            422,
+          ),
+      }),
+    );
+    await renderApp(<RecordsPage />);
+    const dialog = await openCreate();
+    await userEvent.type(within(dialog).getByLabelText("Nombre"), "x");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Crear" }));
+    expect(await within(dialog).findByText("required")).toBeInTheDocument();
+  });
+});
+
+describe("RecordsPage propagation report", () => {
+  const PATCH = "PATCH /profiles/2/records/res.partner/7";
+  const DELETE = "DELETE /profiles/2/records/res.partner/7";
+
+  async function editCity() {
+    await userEvent.click(await screen.findByRole("button", { name: "Editar Ada Lovelace" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.type(within(dialog).getByLabelText("Ciudad"), "x");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Guardar" }));
+  }
+
+  it("says clearly that nothing was propagated when no bidirectional job covers the resource", async () => {
+    stubApi(
+      routes("admin", {
+        [PATCH]: () => json({ id: 7, fields: {}, propagation: [], warnings: [] }),
+      }),
+    );
+    await renderApp(<RecordsPage />);
+    await editCity();
+    const report = await screen.findByRole("status");
+    expect(report).toHaveTextContent("Registro actualizado");
+    expect(report).toHaveTextContent(/ningún job bidireccional/i);
+    expect(report).toHaveTextContent(/no se ha propagado nada/i);
+  });
+
+  it("lists each job with its action and shows the warnings of failed counterparts", async () => {
+    stubApi(
+      routes("admin", {
+        [PATCH]: () =>
+          json({
+            id: 7,
+            fields: {},
+            propagation: [
+              outcome(),
+              outcome({
+                job_id: 4,
+                job_name: "Otro job",
+                action: "failed",
+                warning: "SUWE respondió 500",
+              }),
+            ],
+            warnings: ["Otro job: SUWE respondió 500"],
+          }),
+      }),
+    );
+    await renderApp(<RecordsPage />);
+    await editCity();
+    const report = await screen.findByRole("status");
+    expect(report).toHaveTextContent("Clientes bidireccional");
+    expect(report).toHaveTextContent(/actualizado en la contraparte/i);
+    expect(within(report).getByText("Otro job")).toBeInTheDocument();
+    expect(report).toHaveTextContent(/fallido/i);
+    expect(report).toHaveTextContent("SUWE respondió 500");
+    expect(report).not.toHaveTextContent(/no se ha propagado nada/i);
+    await userEvent.click(within(report).getByRole("button", { name: "Cerrar" }));
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("reads the DELETE 200 body and reports it", async () => {
+    stubApi(
+      routes("admin", {
+        [DELETE]: () =>
+          json({
+            propagation: [outcome({ action: "deleted" })],
+            warnings: [],
+          }),
+      }),
+    );
+    await renderApp(<RecordsPage />);
+    await userEvent.click(await screen.findByRole("button", { name: "Eliminar Ada Lovelace" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Eliminar definitivamente" }));
+    const report = await screen.findByRole("status");
+    expect(report).toHaveTextContent("Registro eliminado");
+    expect(report).toHaveTextContent(/eliminado en la contraparte/i);
+  });
+
+  it("explains the counterpart in the edit and delete dialogs", async () => {
+    stubApi(routes("admin"));
+    await renderApp(<RecordsPage />);
+    await userEvent.click(await screen.findByRole("button", { name: "Editar Ada Lovelace" }));
+    const edit = await screen.findByRole("dialog");
+    expect(edit).toHaveTextContent(/contraparte en el otro sistema/i);
+    expect(edit).toHaveTextContent(/gana el lado editado/i);
+    expect(edit).toHaveTextContent(/nunca se deshace/i);
+    await userEvent.click(within(edit).getByRole("button", { name: "Cancelar" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Eliminar Ada Lovelace" }));
+    const del = await screen.findByRole("alertdialog");
+    expect(del).toHaveTextContent(/contraparte en el otro sistema/i);
+    expect(del).toHaveTextContent(/nunca se deshace/i);
+  });
+});
+
+describe("RecordsPage sync now", () => {
+  const matching = jobFixture({
+    id: 7,
+    name: "Odoo a SUWE",
+    source: { profile_id: 2, resource: "res.partner" },
+    target: { profile_id: 1, resource: "clients" },
+    direction: "bidirectional",
+  });
+  const asTarget = jobFixture({
+    id: 8,
+    name: "SUWE a Odoo",
+    source: { profile_id: 1, resource: "clients" },
+    target: { profile_id: 2, resource: "res.partner" },
+  });
+  const unrelated = jobFixture({
+    id: 9,
+    name: "Otro recurso",
+    source: { profile_id: 2, resource: "res.country" },
+    target: { profile_id: 1, resource: "countries" },
+  });
+  const disabled = jobFixture({
+    id: 10,
+    name: "Apagado",
+    enabled: false,
+    target: { profile_id: 1, resource: "clients" },
+    source: { profile_id: 2, resource: "res.partner" },
+  });
+  const jobs = () => json({ items: [matching, asTarget, unrelated, disabled] });
+
+  it("is disabled with an explanation when no enabled job touches this resource", async () => {
+    stubApi(routes("admin", { "GET /jobs": () => json({ items: [unrelated, disabled] }) }));
+    await renderApp(<RecordsPage />);
+    await screen.findByText("Ada Lovelace");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Sincronizar ahora" })).toBeDisabled(),
+    );
+    expect(screen.getByText(/ningún job activo/i)).toBeInTheDocument();
+  });
+
+  it("lists the matching jobs, warns about bidirectional pushes and runs them for real", async () => {
+    let started = false;
+    const fetchMock = stubApi(
+      routes("admin", {
+        "GET /jobs": jobs,
+        "POST /jobs/7/runs": () => json(runFixture({ id: 50, job_id: 7, status: "queued" }), 202),
+        "POST /jobs/8/runs": () => json(runFixture({ id: 51, job_id: 8, status: "queued" }), 202),
+        "GET /runs/50": () => json(runFixture({ id: 50, status: "succeeded" })),
+        "GET /runs/51": () => json(runFixture({ id: 51, status: "succeeded" })),
+        [LIST]: () => {
+          const page = started
+            ? pageFixture({ items: [{ id: 1, fields: { name: "Sincronizado" } }] })
+            : pageFixture();
+          return json(page);
+        },
+      }),
+    );
+    await renderApp(<RecordsPage />);
+    await screen.findByText("Ada Lovelace");
+    const button = await screen.findByRole("button", { name: "Sincronizar ahora" });
+    await waitFor(() => expect(button).toBeEnabled());
+    await userEvent.click(button);
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog).toHaveTextContent("Odoo a SUWE");
+    expect(dialog).toHaveTextContent("SUWE a Odoo");
+    expect(dialog).not.toHaveTextContent("Otro recurso");
+    expect(dialog).not.toHaveTextContent("Apagado");
+    expect(dialog).toHaveTextContent(/en ambos sentidos/i);
+    started = true;
+    await userEvent.click(within(dialog).getByRole("button", { name: "Sincronizar" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    const posts = callsTo(fetchMock, "POST");
+    expect(posts).toHaveLength(2);
+    expect(JSON.parse(String(posts[0]![1]?.body))).toEqual({ dry_run: false });
+    const links = await screen.findAllByRole("link", { name: "Ver ejecución" });
+    expect(links.map((l) => l.getAttribute("href"))).toEqual(["/runs/50", "/runs/51"]);
+    expect(await screen.findByText("Sincronizado")).toBeInTheDocument();
+  });
+
+  it("reports a job that could not be started without hiding the ones that did", async () => {
+    stubApi(
+      routes("admin", {
+        "GET /jobs": jobs,
+        "POST /jobs/7/runs": () => json({ error: "run_conflict", detail: "already running" }, 409),
+        "POST /jobs/8/runs": () => json(runFixture({ id: 51, job_id: 8, status: "queued" }), 202),
+        "GET /runs/51": () => json(runFixture({ id: 51, status: "succeeded" })),
+      }),
+    );
+    await renderApp(<RecordsPage />);
+    await screen.findByText("Ada Lovelace");
+    const button = await screen.findByRole("button", { name: "Sincronizar ahora" });
+    await waitFor(() => expect(button).toBeEnabled());
+    await userEvent.click(button);
+    await userEvent.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Sincronizar" }),
+    );
+    expect(await screen.findByRole("link", { name: "Ver ejecución" })).toHaveAttribute(
+      "href",
+      "/runs/51",
+    );
+    expect(
+      await screen.findByText(/Odoo a SUWE/, { selector: "[role=alert] *" }),
+    ).toBeInTheDocument();
   });
 });

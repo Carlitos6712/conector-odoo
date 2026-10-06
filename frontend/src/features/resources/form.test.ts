@@ -57,6 +57,18 @@ describe("resource form <-> config", () => {
     expect(input.update_endpoint).toEqual({ method: "PATCH", path: "/clients/{id}" });
   });
 
+  it("keeps the delete endpoint (always DELETE) through the form", () => {
+    const config = configFixture({ delete_endpoint: { method: "DELETE", path: "/clients/{id}" } });
+    const form = formFromConfig(config, "manual", "1");
+    expect(form.delete_path).toBe("/clients/{id}");
+    expect(toInput(form).delete_endpoint).toEqual({ method: "DELETE", path: "/clients/{id}" });
+    expect(toInput(valid({ delete_path: " " })).delete_endpoint).toBeNull();
+    expect(serverFieldToForm("delete_endpoint")).toBe("delete_path");
+    expect(validateForm(valid({ delete_path: "/c" }), []).delete_path).toBe(
+      "resources.validation.needsId",
+    );
+  });
+
   it("parses filter lines", () => {
     expect(parseFilterMap("status=state\n\n email = mail ")).toEqual({
       status: "state",

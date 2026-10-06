@@ -21,6 +21,7 @@ export interface ResourceFormState {
   create_method: string;
   update_path: string;
   update_method: string;
+  delete_path: string;
   id_field: string;
   items_path: string;
   item_path: string;
@@ -56,6 +57,7 @@ export const emptyForm = (profileId = ""): ResourceFormState => ({
   create_method: "POST",
   update_path: "",
   update_method: "PATCH",
+  delete_path: "",
   id_field: "id",
   items_path: "",
   item_path: "",
@@ -92,6 +94,7 @@ export function formFromConfig(
     create_method: config.create_endpoint?.method ?? "POST",
     update_path: config.update_endpoint?.path ?? "",
     update_method: config.update_endpoint?.method ?? "PATCH",
+    delete_path: config.delete_endpoint?.path ?? "",
     id_field: config.id_field,
     items_path: config.items_path,
     item_path: config.item_path,
@@ -145,6 +148,7 @@ export function toInput(form: ResourceFormState): ResourceInput {
     get_endpoint: endpoint("GET", form.get_path),
     create_endpoint: endpoint(form.create_method, form.create_path),
     update_endpoint: endpoint(form.update_method, form.update_path),
+    delete_endpoint: endpoint("DELETE", form.delete_path),
     items_path: form.items_path.trim(),
     item_path: form.item_path.trim(),
     id_field: form.id_field.trim(),
@@ -173,6 +177,7 @@ const SERVER_FIELDS: Record<string, string> = {
   get_endpoint: "get_path",
   create_endpoint: "create_path",
   update_endpoint: "update_path",
+  delete_endpoint: "delete_path",
   pagination: "strategy",
   filter_param_map: "filter_text",
 };
@@ -225,6 +230,7 @@ export function validateForm(
     ["get_path", form.get_path, true],
     ["create_path", form.create_path, false],
     ["update_path", form.update_path, true],
+    ["delete_path", form.delete_path, true],
   ] as const;
   for (const [key, value, needsId] of paths) {
     const error = pathError(value, needsId);

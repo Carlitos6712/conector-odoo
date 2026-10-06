@@ -11,7 +11,7 @@ import {
 import { recordLabel } from "@/features/records/columns";
 import { describeRecordError } from "@/features/records/errors";
 import { useDeleteRecord } from "@/features/records/hooks";
-import type { RecordTarget, RemoteRecord } from "@/features/records/types";
+import type { PropagationReport, RecordTarget, RemoteRecord } from "@/features/records/types";
 
 /**
  * Confirmation for deleting ONE record. It names the record and the model, says the deletion is
@@ -21,10 +21,12 @@ export function DeleteRecordDialog({
   target,
   record,
   onClose,
+  onWritten,
 }: {
   target: RecordTarget;
   record: RemoteRecord | null;
   onClose: () => void;
+  onWritten: (report: PropagationReport) => void;
 }) {
   const { t } = useTranslation();
   const remove = useDeleteRecord(target);
@@ -46,6 +48,7 @@ export function DeleteRecordDialog({
               })
             : ""}
         </DialogDescription>
+        <p className="text-sm text-muted-foreground">{t("records.counterpart.delete")}</p>
         {failure && (
           <div role="alert" className="flex flex-col gap-1 text-sm text-destructive">
             <p>{t(failure.messageKey)}</p>
@@ -59,7 +62,15 @@ export function DeleteRecordDialog({
           <Button
             variant="destructive"
             disabled={remove.isPending}
-            onClick={() => record && remove.mutate(record.id, { onSuccess: onClose })}
+            onClick={() =>
+              record &&
+              remove.mutate(record.id, {
+                onSuccess: (result) => {
+                  onWritten(result);
+                  onClose();
+                },
+              })
+            }
           >
             {t("records.delete.confirm")}
           </Button>

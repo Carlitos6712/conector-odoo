@@ -38,6 +38,7 @@ export interface ResourceConfig {
   get_endpoint: EndpointSpec | null;
   create_endpoint: EndpointSpec | null;
   update_endpoint: EndpointSpec | null;
+  delete_endpoint: EndpointSpec | null;
   items_path: string;
   item_path: string;
   id_field: string;
