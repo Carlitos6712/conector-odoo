@@ -49,6 +49,7 @@ class FakeEndpoint:
         self.schema = schema
         self.sample_limits: list[int] = []
         self.closed = False
+        self.warnings: list[str] = []
 
     async def aclose(self) -> None:
         self.closed = True
@@ -184,6 +185,20 @@ async def test_preview_rest_returns_sample_and_schema_and_never_secrets(env: Env
     assert isinstance(provider, CatalogResourceConfigProvider)
     assert SECRET not in repr(result)
     assert SECRET not in repr(result.schema)
+
+
+async def test_preview_surfaces_the_endpoint_warnings(env: Env) -> None:
+    pid = await env.add_profile()
+    await env.save.execute(pid, things())
+    env.endpoint.warnings.append("more records exist than the list returned")
+    result = await env.preview.execute(pid, "things", 3)
+    assert result.warnings == ("more records exist than the list returned",)
+
+
+async def test_preview_has_no_warnings_by_default(env: Env) -> None:
+    pid = await env.add_profile()
+    await env.save.execute(pid, things())
+    assert (await env.preview.execute(pid, "things", 3)).warnings == ()
 
 
 @pytest.mark.parametrize(("asked", "used"), [(0, 1), (-5, 1), (7, 7), (500, PREVIEW_MAX_LIMIT)])

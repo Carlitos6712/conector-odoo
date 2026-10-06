@@ -290,3 +290,23 @@ async def test_target_record_deleted_remotely_is_recreated() -> None:
     xref = await world.xrefs.get_target(job.id, "customers", "1")
     assert xref is not None and xref.target_id != "1"
     assert world.rest.records["clients"][xref.target_id].get("full_name") == "Back"
+
+
+async def test_source_warnings_are_recorded_on_the_run_without_failing_it() -> None:
+    world = build_world()
+    seed(world)
+    world.odoo.warnings = ["list is paginated but strategy is none"]  # type: ignore[attr-defined]
+    job = await world.add_job()
+    assert job.id is not None
+    run = await world.runner.run(job.id)
+    assert run.status is RunStatus.SUCCEEDED
+    assert run.options["warnings"] == ["list is paginated but strategy is none"]
+
+
+async def test_a_run_without_source_warnings_has_no_warnings_option() -> None:
+    world = build_world()
+    seed(world)
+    job = await world.add_job()
+    assert job.id is not None
+    run = await world.runner.run(job.id)
+    assert "warnings" not in run.options

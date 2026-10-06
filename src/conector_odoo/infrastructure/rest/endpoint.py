@@ -24,6 +24,8 @@ from conector_odoo.infrastructure.rest.http import RestHttpClient
 from conector_odoo.infrastructure.rest.jsonpath import MISSING, dig
 
 _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_TOTAL_PATHS = ("total", "count", "meta.total", "pagination.total")
+_TOTAL_PAGES_PATHS = ("total_pages", "meta.total_pages", "pagination.total_pages", "pages")
 _DATETIME = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}")
 
 
@@ -38,6 +40,7 @@ class RestRecordEndpoint:
         self._http = http
         self._configs = configs
         self._scan_batch_size = scan_batch_size
+        self.warnings: list[str] = []  # non-fatal findings, deduplicated, read by preview/runner
 
     async def aclose(self) -> None:
         await self._http.aclose()
@@ -140,9 +143,25 @@ class RestRecordEndpoint:
     async def _single_page(
         self, cfg: ResourceConfig, spec: EndpointSpec, params: dict[str, Any], size: int
     ) -> AsyncIterator[list[Record]]:
-        records, _ = await self._fetch_page(cfg, spec, dict(params))
+        records, body = await self._fetch_page(cfg, spec, dict(params))
+        self._warn_if_truncated(cfg, body, len(records))
         if records:
             yield records
+
+    def _warn_if_truncated(self, cfg: ResourceConfig, body: Any, returned: int) -> None:
+        """The strategy is ``none`` but the response itself proves there are more records."""
+        pg = cfg.pagination
+        total = _first_int(body, (pg.total_path, *_TOTAL_PATHS))
+        total_pages = _first_int(body, (pg.total_pages_path, *_TOTAL_PAGES_PATHS))
+        if total is not None and total > returned:
+            detail = f"the response reports {total} records but only {returned} were returned"
+        elif total_pages is not None and total_pages > 1:
+            detail = f"the response reports {total_pages} pages but only the first was read"
+        else:
+            return
+        message = f"{cfg.name}: {detail}; set a pagination strategy to read them all"
+        if message not in self.warnings:
+            self.warnings.append(message)
 
     async def _page_strategy(
         self, cfg: ResourceConfig, spec: EndpointSpec, params: dict[str, Any], size: int
@@ -210,6 +229,16 @@ class RestRecordEndpoint:
                 raise RemoteUnavailable(f"{cfg.name}: the server repeated cursor {cursor!r}")
             seen_cursors.add(cursor)
         raise _exceeded(cfg)
+
+
+def _first_int(body: Any, paths: tuple[str | None, ...]) -> int | None:
+    for path in paths:
+        if path is None:
+            continue
+        value = dig(body, path)
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+    return None
 
 
 def _check_not_repeated(

@@ -209,12 +209,14 @@ class ResourceSchemaOut(BaseModel):
 class PreviewOut(BaseModel):
     records: list[RecordOut]
     schema_: ResourceSchemaOut = Field(serialization_alias="schema")
+    warnings: list[str] = Field(default_factory=list)
 
     @classmethod
     def of(cls, result: PreviewResult) -> Self:
         return cls(
             records=[RecordOut.of(r) for r in result.records],
             schema_=ResourceSchemaOut.of(result.schema),
+            warnings=list(result.warnings),
         )
 
 

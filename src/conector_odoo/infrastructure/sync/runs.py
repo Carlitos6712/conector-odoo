@@ -90,8 +90,11 @@ class SqliteSyncRunRepository:
         *,
         error: str | None = None,
         sample: Sequence[dict[str, Any]] = (),
+        warnings: Sequence[str] = (),
     ) -> None:
-        await asyncio.to_thread(self._finish, run_id, status, finished_at, counters, error, sample)
+        await asyncio.to_thread(
+            self._finish, run_id, status, finished_at, counters, error, sample, warnings
+        )
 
     async def request_cancel(self, run_id: int) -> bool:
         return await asyncio.to_thread(self._request_cancel, run_id)
@@ -227,8 +230,15 @@ class SqliteSyncRunRepository:
         counters: RunCounters,
         error: str | None,
         sample: Sequence[dict[str, Any]],
+        warnings: Sequence[str],
     ) -> None:
         with self._lock:
+            if warnings:
+                self._conn.execute(
+                    "UPDATE sync_runs SET options_json = json_set(options_json, '$.warnings', "
+                    "json(?)) WHERE id = ?",
+                    (json.dumps(list(warnings)), run_id),
+                )
             self._conn.execute(
                 "UPDATE sync_runs SET status = ?, finished_at = ?, heartbeat_at = ?, created = ?, "
                 "updated = ?, skipped = ?, failed = ?, conflicts = ?, error = ?, sample_json = ? "

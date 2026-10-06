@@ -128,6 +128,7 @@ class _State:
     error_total: int = 0
     sample: list[dict[str, Any]] = field(default_factory=list)
     resolved: dict[str, list[str]] = field(default_factory=dict)  # side -> refs processed ok
+    warnings: list[str] = field(default_factory=list)  # non-fatal notes from the sources
 
 
 @dataclass(frozen=True, slots=True)
@@ -409,6 +410,7 @@ class SyncRunner:
             state.counters,
             error=error,
             sample=state.sample,
+            warnings=state.warnings,
         )
 
     async def _flush_errors(self, run: SyncRun, state: _State) -> None:
@@ -444,6 +446,9 @@ class SyncRunner:
             if seen:
                 break
             skip_until = None  # the checkpoint record is gone: replay; xref hashes keep it safe
+        for warning in getattr(pass_.src, "warnings", ()):
+            if warning not in state.warnings:
+                state.warnings.append(warning)
         state.checkpoint = {**state.checkpoint, "pass": pass_.name, "done": True}
         await self._runs.save_progress(ctx.run.id, state.counters, state.checkpoint, self._clock())
 
