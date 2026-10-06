@@ -450,3 +450,43 @@ describe("ConnectionWizard save and activate", () => {
     expect(bodyOf(fetchMock, "PUT", "/odoo/active")).toEqual({ profile_id: 2 });
   });
 });
+
+describe("ConnectionWizard vault not configured", () => {
+  it("offers to generate the key when saving fails, then lets the user save again", async () => {
+    let keyReady = false;
+    const fetchMock = stubApi({
+      ...baseRoutes(),
+      "POST /profiles": () =>
+        keyReady
+          ? json(profileFixture(), 201)
+          : json({ error: "vault_not_configured", detail: "no key" }, 503),
+      "POST /vault/generate": () => {
+        keyReady = true;
+        return json({ configured: true, source: "file" }, 201);
+      },
+      "GET /vault/status": () => json({ configured: keyReady, source: keyReady ? "file" : null }),
+    });
+    await renderApp(<Harness />, "/connections/new");
+    const user = userEvent.setup();
+    await pickKind(user, "API REST");
+    await fillRestBearer(user);
+    await user.click(screen.getByRole("button", { name: "Siguiente" }));
+    await user.click(screen.getByRole("button", { name: "Siguiente" }));
+    await user.click(screen.getByRole("button", { name: "Guardar conexión" }));
+
+    expect(
+      await screen.findByText("El almacén de credenciales no está configurado en el servidor."),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/copia de seguridad/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Generar clave" }));
+
+    await waitFor(() =>
+      expect(
+        screen.queryByText("El almacén de credenciales no está configurado en el servidor."),
+      ).not.toBeInTheDocument(),
+    );
+    expect(fetchMock.mock.calls.some(([url]) => url === "/admin/api/vault/generate")).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Guardar conexión" }));
+    expect(await screen.findByText("lista de conexiones")).toBeInTheDocument();
+  });
+});

@@ -233,6 +233,20 @@ export const en: Translation = {
       notFound: "The connection no longer exists.",
     },
   },
+  vault: {
+    title: "Credential vault",
+    notConfigured: "The credential vault has no encryption key yet.",
+    source: {
+      env: "The key comes from the ENCRYPTION_KEY environment variable.",
+      file: "Key saved in the server key file.",
+    },
+    generate: "Generate key",
+    generating: "Generating…",
+    backupNote:
+      "Back up the server key file (vault.key, next to the admin database). Without it the stored credentials cannot be recovered.",
+    alreadyConfigured: "A key is already configured; a new one cannot be generated.",
+    generateFailed: "The key could not be generated.",
+  },
   resources: {
     new: "New resource",
     importAction: "Import from OpenAPI",

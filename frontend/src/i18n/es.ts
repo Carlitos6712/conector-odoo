@@ -232,6 +232,20 @@ export const es = {
       notFound: "La conexión ya no existe.",
     },
   },
+  vault: {
+    title: "Almacén de credenciales",
+    notConfigured: "El almacén de credenciales todavía no tiene clave de cifrado.",
+    source: {
+      env: "La clave procede de la variable de entorno ENCRYPTION_KEY.",
+      file: "Clave guardada en el archivo de claves del servidor.",
+    },
+    generate: "Generar clave",
+    generating: "Generando…",
+    backupNote:
+      "Haz una copia de seguridad del archivo de claves del servidor (vault.key, junto a la base de datos de administración). Sin él no se podrán recuperar las credenciales guardadas.",
+    alreadyConfigured: "Ya hay una clave configurada; no se puede generar otra.",
+    generateFailed: "No se pudo generar la clave.",
+  },
   resources: {
     new: "Nuevo recurso",
     importAction: "Importar desde OpenAPI",
