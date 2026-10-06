@@ -21,7 +21,11 @@ function fieldsOf(detail: string): string[] {
 }
 
 /** Maps an API failure to translation keys; the raw server text is never shown. */
-export function describeProfileError(error: unknown, action: ProfileAction): DescribedError {
+export function describeProfileError(
+  error: unknown,
+  action: ProfileAction,
+  options: { active?: boolean } = {},
+): DescribedError {
   if (!(error instanceof ApiError)) {
     return { messageKey: "common.unexpectedError", fieldErrors: {} };
   }
@@ -29,7 +33,13 @@ export function describeProfileError(error: unknown, action: ProfileAction): Des
     return { messageKey: "common.networkError", fieldErrors: {} };
   }
   if (error.status === 409) {
-    if (action === "delete") return { messageKey: "connections.errors.inUse", fieldErrors: {} };
+    if (action === "delete") {
+      // The active Odoo profile is refused with the same 409 as one used by a resource.
+      const key = options.active
+        ? "connections.active.errors.activeInUse"
+        : "connections.errors.inUse";
+      return { messageKey: key, fieldErrors: {} };
+    }
     const key = "connections.errors.nameTaken";
     return { messageKey: key, fieldErrors: { name: key } };
   }

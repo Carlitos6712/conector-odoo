@@ -26,7 +26,9 @@ export function DeleteProfileDialog({
 
   useEffect(() => reset(), [profile, reset]);
 
-  const failure = remove.error ? describeProfileError(remove.error, "delete") : null;
+  const failure = remove.error
+    ? describeProfileError(remove.error, "delete", { active: profile?.is_active })
+    : null;
 
   return (
     <Dialog open={profile !== null} onOpenChange={(open) => !open && onClose()}>
