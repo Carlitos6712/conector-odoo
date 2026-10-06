@@ -78,5 +78,13 @@ resource config has no write endpoints.
 - Resource form in the UI drops `delete_endpoint` when saving (add to the form; T5).
 - Create from the connector: mock reads `client_id` for the id (see `docs/suwe/README.md` section 4).
 
+## Done outside the T-list (user requests during the session)
+- Resources preview: link "View all records" to the Records page (commit d3d22b5).
+- Records page: REST resource picker, page size 25/50/100, range line, show-all-columns (commit c6e7217).
+
+## Queued after T6
+- Frontend visual restyle (user: logic and sections are fine, style is monochrome with no colors).
+  Becomes its own feature document `odd/tasks/frontend-restyle.md` once the palette is decided.
+
 ## Next step
 T3: xref cleanup for both sides plus the single-record sync service extracted from `SyncRunner`.
