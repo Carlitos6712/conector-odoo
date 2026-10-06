@@ -410,11 +410,108 @@ nothing.
 
 **Open blocker for production.** The SUWE fake accepts no credentials, and its fake OIDC server has no
 `client_credentials` or `password` grant (it answers `unsupported_grant_type`), so a machine-to-machine
-token flow could not be verified. The real SUWE (Authentik) service-token flow is unconfirmed. Options:
+token flow could not be verified against it. The real SUWE (Authentik) service-token flow is
+unconfirmed. Options:
 
-- (a) a `client_credentials` grant or service account on the real SUWE;
+- (a) a `client_credentials` grant or service account on the real SUWE
+  (see "OAuth2 with a username and app password (Authentik)" below);
 - (b) a static API key or long-lived token issued by SUWE (works today as API key or Bearer);
 - (c) a refresh-token flow after one interactive login (not implemented).
+
+### Step by step: move SUWE data into Odoo
+
+This is the flow that was run end to end: SUWE `clients` -> Odoo `res.partner` (20 records created,
+0 failures). Where each thing lives:
+
+| What | Where |
+|---|---|
+| Connector UI / admin API | `http://localhost:5173` (UI) and `http://localhost:8001/admin/api` (API) after `/launch` |
+| SUWE data source | the real `api_suwe`, or the local mock `suwe/api_mock` (API on `:8000`, fake OIDC on `:9000`) |
+| Odoo | the `odoo-local` connection (`http://localhost:8069`) |
+
+**0. Prerequisites**
+
+1. Start the connector (`/launch`, see "Launcher"). The backend listens on `:8001` because `:8000` is
+   usually taken by the SUWE mock or other local containers.
+2. Make sure the vault key is configured (Connections shows it; otherwise generate it from the UI).
+3. Have an Odoo connection (`odoo-local`) that tests green.
+4. Start a SUWE source. Pick one:
+   - **Local mock (works offline, fake data, same shape as the API).** From the `suwe/api_mock`
+     folder run `docker compose up -d`. `GET http://localhost:8000/api/v1/organization/clients`
+     returns data and needs no credentials.
+   - **Real `api_suwe`.** It validates every request against Authentik (`172.24.26.141:9000`,
+     company VPN only) and needs the sibling `fastapi_auditlog` checkout next to it
+     (`pyproject.toml` points at `../fastapi_auditlog`). Without that folder `uv run` cannot build
+     the environment and the API does not start. Connect the VPN and use the app password flow
+     described below.
+
+**1. Source connection (Connections > New connection)**
+
+| Field | Mock | Real `api_suwe` |
+|---|---|---|
+| Type | REST | REST |
+| Name | `suwe-mock` | `suwe` |
+| Base URL | `http://localhost:8000/api/v1` | `http://<host>:8000/api/v1` |
+| Auth | API key (any value; the mock ignores it) | OAuth2 client credentials with username and app password |
+| Test connection | all four steps green | all four steps green |
+
+The test only proves reachability and that credentials are accepted (the mock answers `307` to the
+probe). It does not prove that data flows; step 2 does.
+
+**2. Resource (Resources)**
+
+Create `clients` on the SUWE connection: list endpoint `GET /organization/clients`, `items_path`
+`items`, `id_field` `uuid`. Click **Preview**: you must see real records (name, `tax_id`, `city`,
+`address`...). If the preview is empty, fix this step before going on.
+
+**3. Mapping (Mappings)**
+
+Source `clients` (SUWE connection) -> target `res.partner` (Odoo connection), name
+`clients_to_res.partner`. "Suggest" only proposes fields with the same name (`name`, `city`), so add
+the rest by hand:
+
+| Target field | Expression |
+|---|---|
+| `name` | direct `name` |
+| `city` | direct `city` |
+| `vat` | direct `tax_id` |
+| `street` | direct `address` |
+| `ref` | direct `uuid` |
+| `is_company` | constant `true` |
+| `autopost_bills` | constant `ask` |
+
+`autopost_bills` is required by Odoo (`always`, `ask` or `never`). Without a rule every record fails
+validation with "required field has no value". Run **Dry run**: it must report 0 errors before you
+continue.
+
+**4. Job (Jobs)**
+
+Name `suwe-clients-to-odoo`, source `clients` (SUWE), target `res.partner` (Odoo), mapping
+`clients_to_res.partner`, direction `a_to_b`, trigger **manual**, upsert key `xref`.
+
+**5. Run (Jobs > Run, then Runs)**
+
+1. Run it as a **simulation** first (`dry_run`). Expect `created = 20`, `failed = 0`, and nothing is
+   written.
+2. Run it for real. Expect `succeeded`, `created = 20`, `failed = 0`, and no entries under the run
+   errors.
+3. Check Odoo: Contacts must list the companies (for example "Supermercados Aurora", VAT
+   `B12345670`).
+
+Running the job again should update instead of duplicating (the upsert key matches existing
+records), but that second real run has not been verified; do a simulation first and check that it
+reports `updated` and not `created`.
+
+**Troubleshooting**
+
+| Symptom | Cause and fix |
+|---|---|
+| Connection test hangs at `http://172.24.26.141:9000` | No route to the company network. Connect the VPN (`ip -br a` shows a VPN interface) or use the mock. |
+| Test fails with a timeout on `:8000` | The SUWE source is not running (`docker ps`). |
+| Dry run: `required field has no value` for `autopost_bills` | Add the constant rule from step 3. |
+| `api_suwe`: `uv run` fails building the environment | The sibling `fastapi_auditlog` checkout is missing (see prerequisites). |
+| `api_suwe`: 401 `Missing uuid claim` | The token has no `uuid` claim. Request the `jwt-uuid` scope. |
+| Real `api_suwe` endpoints for users, transactions or analytics fail | They depend on Authentik and the data lake (Trino); both need the VPN. `balance` is mock data and should not be migrated. |
 
 ### OAuth2 with a username and app password (Authentik)
 
