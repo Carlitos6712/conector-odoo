@@ -102,17 +102,11 @@ resource config has no write endpoints.
 - Reverse pass of a bidirectional run ignores the job `record_filter` (always empty `RecordFilter()`), so
   "Sync now" on job 1 can create in SUWE any Odoo partner that has a `ref` and no xref. Needs a reverse-pass
   filter (source change); mitigated only by the required `ref` rule.
-- Resource form delete_endpoint item above is DONE (T5).
-- Resource form in the UI drops `delete_endpoint` when saving (add to the form; T5).
 - Create from the connector: the id field cannot be supplied, so SUWE `client_id` cannot be chosen (see `docs/suwe/README.md` section 4).
 
 ## Done outside the T-list (user requests during the session)
 - Resources preview: link "View all records" to the Records page (commit d3d22b5).
 - Records page: REST resource picker, page size 25/50/100, range line, show-all-columns (commit c6e7217).
-
-## Queued after T6
-- Frontend visual restyle (user: logic and sections are fine, style is monochrome with no colors).
-  Becomes its own feature document `odd/tasks/frontend-restyle.md` once the palette is decided.
 
 ## Next step
 T6: live check via UI and README section; then T7 restyle (agree palette first). Decide the reverse-pass filter fix.
