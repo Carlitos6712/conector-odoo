@@ -38,7 +38,7 @@ today and never touches remote data.
 ## Tasks
 - [x] T1 Port + Odoo adapter `delete`, per-record error mapping + tests (RED first)
 - [x] T2 Admin API records endpoints (list/get/patch/delete one) + xref cleanup on delete + tests
-- [ ] T3 Frontend "Records" page: list, search, edit dialog, single delete with confirmation + tests
+- [x] T3 Frontend "Records" page: list, search, edit dialog, single delete with confirmation + tests
 - [ ] T4 README (feature + Odoo backup how-to), full suites green, work-unit commits
 - [ ] T5 Live check against odoo-local on one disposable record (create via job, edit, delete) only after the user confirms
 
@@ -58,6 +58,11 @@ today and never touches remote data.
 - Xref: `XRefRepository.forget_target(profile_id, resource, target_id)` deletes xrefs of jobs targeting that
   profile/resource. Runner today: unchanged source + deleted target = skipped forever (stale hash); changed source =
   recreated. Cleanup on delete (also when already gone) makes the next run recreate it. Tested end to end.
+- T3 (route: delegated, frontend writer; commit e6ccb54 (message-recorded hash)): RED 3 new
+  suites failed to load (no implementation), GREEN 659 frontend tests passed (61 files), typecheck and lint clean.
+  New `features/records/` (api, hooks, errors, columns, dialogs, page), nav entry + route `/records`, en/es copy.
+  Admin-only edit/delete buttons, edit sends only changed writable fields, delete confirmation names record and
+  model, states it is permanent, and shows Odoo's refusal. No bulk selection or delete-all anywhere.
 
 ## Next step
-T3 frontend writer, then T4 README/docs.
+T4 README/docs.

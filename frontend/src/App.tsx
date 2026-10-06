@@ -15,6 +15,7 @@ import { RunsPage } from "@/features/runs/RunsPage";
 import { MappingEditorPage } from "@/features/mappings/MappingEditorPage";
 import { MappingVersionsPage } from "@/features/mappings/MappingVersionsPage";
 import { MappingsPage } from "@/features/mappings/MappingsPage";
+import { RecordsPage } from "@/features/records/RecordsPage";
 import { ImportPage } from "@/features/resources/ImportPage";
 import { ResourceEditorPage } from "@/features/resources/ResourceEditorPage";
 import { ResourcesPage } from "@/features/resources/ResourcesPage";
@@ -44,6 +45,7 @@ export function App() {
           <Route path="/resources/import" element={<ImportPage />} />
           <Route path="/resources/new" element={<ResourceEditorPage />} />
           <Route path="/resources/:profileId/:name/edit" element={<ResourceEditorPage />} />
+          <Route path="/records" element={<RecordsPage />} />
           <Route path="/mappings" element={<MappingsPage />} />
           <Route path="/mappings/new" element={<MappingEditorPage />} />
           <Route path="/mappings/:name/edit" element={<MappingEditorPage />} />
