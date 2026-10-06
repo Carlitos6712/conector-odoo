@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Launch the connector for local use: backend (uvicorn, :8000) + frontend dev server (vite, :5173).
+# Launch the connector for local use: backend (uvicorn, :8001) + frontend dev server (vite, :5173).
 # Usage: scripts/launch.sh [start|stop|restart|status|logs] [--docker]
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUN_DIR="$ROOT/.run"
-BACKEND_PORT="${BACKEND_PORT:-8000}"
+BACKEND_PORT="${BACKEND_PORT:-8001}" # 8000 is commonly taken by other local dev containers
+export VITE_BACKEND_URL="${VITE_BACKEND_URL:-http://localhost:$BACKEND_PORT}"
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 
 cmd="${1:-start}"
@@ -32,7 +33,8 @@ wait_for() { # name url
 start_one() { # name workdir command...
   local name="$1" dir="$2"; shift 2
   if is_running "$name"; then echo "  $name already running (pid $(<"$RUN_DIR/$name.pid"))"; return 0; fi
-  (cd "$dir" && setsid nohup "$@" >"$RUN_DIR/$name.log" 2>&1 & echo $! >"$RUN_DIR/$name.pid")
+  # setsid may fork, so $! is not the group leader: the leader records its own pid, then execs the command
+  (cd "$dir" && setsid nohup bash -c 'echo $$ >"$0"; exec "$@"' "$RUN_DIR/$name.pid" "$@" >"$RUN_DIR/$name.log" 2>&1 &)
 }
 
 stop_one() {
