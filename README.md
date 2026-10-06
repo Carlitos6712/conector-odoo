@@ -559,6 +559,125 @@ profile field; the password is stored encrypted in the vault and never returned 
    - Client secret: leave empty
 3. Use **Test connection**; the access token is requested, cached and refreshed automatically.
 
+## Records page (edit or delete one record)
+
+The **Records** page (route `/records`) lets you correct or remove a single record of a connected
+Odoo instance without leaving the connector. Pick an Odoo connection, enter a model (default
+`res.partner`), search by name, page through the results and open one record.
+
+- **Edit.** A dialog shows the writable fields of the model (from `fields_get`). Only the fields you
+  changed are sent.
+- **Delete.** One record at a time, after a confirmation that names the record and the model.
+  **Deleting is permanent** (Odoo `unlink`, not archive). Odoo may refuse to delete a record that other
+  records still reference (invoices, orders, ...); the refusal is shown and nothing is deleted.
+- **Admin only.** Operators can browse but the edit and delete buttons are not offered and the API
+  rejects the writes. Odoo models only; REST connections do not support delete.
+- **No bulk delete, by design.** There is no multi-select, no "delete all" and no filter-based delete,
+  in the UI or in the API (`/admin/api/profiles/{profile_id}/records/{resource}` has list, get, `PATCH`
+  and `DELETE` of one record). For a mass cleanup, take a backup first (next section).
+- **Deleting a connection never deletes data in Odoo.** It only removes the stored connection.
+- When a deleted record was created by a sync job, the connector also forgets the cross-reference to
+  it (`XRefRepository.forget_target`), so the next run recreates it. See "How data updates work".
+
+### Back up Odoo before destructive work
+
+Take a backup before deleting anything you cannot easily recreate. Container names below are the ones
+of the local setup (`docker ps`): Odoo is `odoo-odoo-1` (`odoo:18.0`, port 8069) and PostgreSQL is
+`odoo-db-1` (`postgres:16`). The database holds the records; the Odoo filestore (attachments) lives in
+the volume `odoo_odoo-web-data`. Replace the placeholders; never paste real passwords into scripts or
+chat.
+
+```bash
+# 1. Find the database name (the one set in your Odoo connection profile)
+docker exec odoo-db-1 sh -c 'psql -U "$POSTGRES_USER" -l'
+
+# 2. Dump it (custom format, compressed). The role comes from the container's own environment,
+#    so no credential is typed here.
+docker exec odoo-db-1 sh -c 'pg_dump -U "$POSTGRES_USER" -Fc <odoo-db>' > odoo-<odoo-db>-$(date +%F).dump
+
+# 3. Optional: copy the filestore (only needed if attachments matter)
+docker run --rm -v odoo_odoo-web-data:/data -v "$PWD":/backup alpine \
+  tar czf /backup/odoo-filestore-$(date +%F).tgz -C /data .
+```
+
+Restore note: restore into a NEW database name first and check it, instead of overwriting the live one
+(stop Odoo while restoring over the original):
+
+```bash
+docker exec odoo-db-1 sh -c 'createdb -U "$POSTGRES_USER" <odoo-db>_restored'
+docker exec -i odoo-db-1 sh -c 'pg_restore -U "$POSTGRES_USER" -d <odoo-db>_restored' < odoo-<odoo-db>-<date>.dump
+```
+
+Alternative without the shell: the Odoo database manager at `http://localhost:8069/web/database/manager`
+("Backup" gives a zip with the dump and the filestore, "Restore" loads it). It asks for the Odoo
+**master password** (`admin_passwd` in `odoo.conf`); it is not the user password. The manager can be
+disabled in some installations (`list_db = False`); then use `pg_dump`. Keep the backup file private: it
+contains all the data.
+
+I wrote these commands from the container names and mounts reported by `docker ps` / `docker inspect`;
+the restore commands were not executed.
+
+## How data updates work
+
+This is what the code does (`SyncRunner` in `application/sync_runner.py`, job fields in
+`domain/sync.py`), not a promise about other behaviour.
+
+1. **Cross-reference (xref) table.** For every source record the runner looks up the pair (job,
+   source resource, source id) with `_find_xref`. The xref stores the target id and the hash of what
+   the mapping produced last time (`content_hash`; `reverse_hash` for the other direction).
+2. **Source hash.** `_sync_record` maps the record and computes `content_hash(fields)`: SHA-256 of the
+   canonical JSON of the **mapped fields**. If an xref exists and its hash is equal, the record is
+   **skipped**: nothing is written, nothing is read from the target. Consequently a change made
+   directly in Odoo is neither detected nor reverted while the source stays the same.
+3. **Updated.** xref exists and the hash differs (the source data or the mapping changed): the target
+   record is updated with the new fields (`updated`).
+4. **Created.** No xref. With upsert key `xref` the record is created with the idempotency key
+   `sync:{job_id}:{source_id}:{hash}`. With `field:<name>`, `_adopt` first looks in the target for a
+   record whose `<name>` equals the mapped value and, if found, **adopts** it (it is updated and the
+   xref is written) instead of creating a duplicate. The `field:<name>` value must be among the mapped
+   fields.
+5. **Target record deleted behind the connector.** If the xref exists, the source hash changed and the
+   update raises `ResourceNotFound`, the runner recreates the record (`created`). If the source did
+   not change, the stale xref makes the run **skip** it forever (see
+   `tests/sync/test_xref_forget.py::test_stale_xref_hides_a_deleted_target_but_forgetting_it_recreates_it`).
+   Deleting through the Records page avoids that: it removes the xref, so the next run finds no xref
+   and creates the record again (`created=1`) even though the source did not change.
+6. **Conflict rule.** Only **bidirectional** jobs check conflicts (`_conflict_allows_write`). When the
+   source side changed and the paired record also changed since the last sync, the rule decides:
+   `source_wins` (A), `target_wins` (B), `newest_wins` (compares the time in `source_updated_field`
+   with `target_updated_field`; equal, missing or unparsable times cannot be decided) or
+   `flag_conflict`. When nobody wins, nothing is written and a non-retryable `conflict` error is stored
+   on the run. In a one-way job (`a_to_b`) there is no conflict check: an unchanged source leaves the
+   Odoo edit alone (skipped); a changed source overwrites it.
+   `source_updated_field` / `target_updated_field` are required for `newest_wins` and otherwise only
+   feed the run checkpoint (`max_updated_at`); they do not decide what is synced, the hash does.
+7. **Dry run.** Same decisions, reads only: no target writes, no xref writes. The counters mean
+   would-create / would-update / would-skip and a bounded sample is kept.
+8. **Only some records / retry failed.** `only_records` limits the first pass to those source ids
+   (each is read with `get`, not a full scan). `retry_failed` starts a new linked run with only the
+   failed, non-conflict records of a run; conflicts are not retried, and a source record that no longer
+   exists is reported as a non-retryable "no longer exists at the source" error.
+
+### How to test an update manually
+
+Use a small job (for example the SUWE clients -> `res.partner` job with upsert key `ref`) and run it
+once so every xref exists.
+
+1. **Source change -> updated.** Change one field of one source record that the mapping uses (edit it
+   in the SUWE source). Run the job: expect `updated=1`, the rest `skipped`. I have not verified that
+   the mock API accepts writes; if it does not, change the **mapping** instead (for example a
+   `constant` or `transform` of a mapped field and save a new version): every record whose mapped
+   output changes counts as `updated`. Run the same job again: all `skipped`.
+2. **Edit in Odoo, rerun.** Edit a partner on the Records page and rerun without changing the source:
+   `skipped`, your edit stays. Then change that same source record and rerun: for `a_to_b` the source
+   overwrites the edit (`updated=1`); for a bidirectional job the conflict rule decides (`conflicts`
+   counter, and with `flag_conflict` a conflict error and no write).
+3. **Delete on the Records page, rerun.** Delete one synced partner on the Records page and rerun:
+   expect `created=1` for it and the other records `skipped`. Because the page forgets the xref, this
+   happens even if the source did not change (the "only if the source changed" behaviour applies only to
+   a record deleted directly in Odoo, outside the connector).
+4. Check the result in **Runs** (counters, errors) and, for a rehearsal, run the job with dry run first.
+
 ## Adding a target API
 
 1. **Connection**: choose type REST, enter the base URL and an auth method, run the wizard test.
