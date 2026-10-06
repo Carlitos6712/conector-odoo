@@ -463,9 +463,10 @@ probe). It does not prove that data flows; step 2 does.
 Create `clients` on the SUWE connection: list endpoint `GET /organization/clients`, `items_path`
 `items`, `id_field` `uuid`, and **pagination `page`** (`page_param` `page`, `size_param` `page_size`,
 `total_pages_path` `total_pages`). The SUWE API returns 20 records per page; without pagination only
-the first page (20 of 36 clients) is synced and the run still reports `succeeded`. Optionally set a
-**get endpoint** `GET /organization/clients/{id}`; it is required to run a job on selected records
-(`only_records`). Click **Preview**: you must see real records (name, `tax_id`, `city`,
+the first page (20 of 36 clients) is synced; the preview and the run now show a warning when the
+list reports more records than it returned. Optionally set a **get endpoint**
+`GET /organization/clients/{id}`; without it, running a job on selected records (`only_records`)
+reads the paginated list to find each id, which is slower. Click **Preview**: you must see real records (name, `tax_id`, `city`,
 `address`...). If the preview is empty, fix this step before going on.
 
 **3. Mapping (Mappings)**
@@ -533,8 +534,8 @@ Not migrated: `links` and `bins` (no natural Odoo model was chosen), `balance` (
 | Connection test hangs at `http://172.24.26.141:9000` | No route to the company network. Connect the VPN (`ip -br a` shows a VPN interface) or use the mock. |
 | Test fails with a timeout on `:8000` | The SUWE source is not running (`docker ps`). |
 | Dry run: `required field has no value` for `autopost_bills` | Add the constant rule from step 3. |
-| Run `succeeded` but fewer records than the source total | The resource has no pagination. Set `page` pagination (step 2). |
-| Run `failed` with `internal error: RecordRejected` when running on selected records | The resource has no get endpoint. Add `GET <list path>/{id}` to the resource. |
+| Preview or run shows a warning that the list reports more records than it returned (run detail: `options.warnings`) | The resource has no pagination. Set `page` pagination (step 2). The run still succeeds, with only the first page. |
+| Running on selected records is slow | The resource has no get endpoint, so each id is found by reading the paginated list. Add `GET <list path>/{id}` to speed it up; it is optional. |
 | `api_suwe`: `uv run` fails building the environment | The sibling `fastapi_auditlog` checkout is missing (see prerequisites). |
 | `api_suwe`: 401 `Missing uuid claim` | The token has no `uuid` claim. Request the `jwt-uuid` scope. |
 | Real `api_suwe` endpoints for users, transactions or analytics fail | They depend on Authentik and the data lake (Trino); both need the VPN. `balance` is mock data and should not be migrated. |
