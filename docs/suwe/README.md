@@ -152,3 +152,32 @@ Update this list as development goes on.
 - [ ] Connector UI: resource form must include `delete_endpoint` (T5).
 - [ ] When this is applied on a real SUWE (not the mock), the real API must expose equivalent update and
   delete endpoints; adjust the resource config paths accordingly.
+
+## 5. Cleanup of run 39 (test data)
+
+Run 39 of job 1 (`suwe-clients-to-odoo`, manual, 2026-10-06 12:56 UTC) ran the reverse pass before the
+marker and the reverse filter existed. It pushed Odoo partners written by the other `suwe-*` jobs
+(groups, stores, KYC, users, partners) into SUWE `clients`: the mock went from 38 to 214 clients.
+
+**Identification.** The mock ignores the `uuid` sent on create and generates its own, so `ref` -> `uuid`
+does not match. The evidence used instead: job 1 xref rows (`source_id` = SUWE uuid, `target_id` = Odoo
+partner id) whose partner carries the marker `function = suwe-sync` (174), cross-checked with the mock
+`created_at` (all `2026-10-05T10:00:00Z`, the mock's fixed value, unlike the fixtures which have
+December to June dates). Result: 174 clients, 0 of them original fixtures. Not deleted on purpose: the
+leftovers `Sipay`, `Messi`, `Aena`, `Erik Bocadillo` (no xref, user test data).
+
+**Safety rule.** Never delete these clients through the connector (`DELETE
+/admin/api/profiles/2/records/clients/{id}`): job 1 is bidirectional, so write-through would also
+delete the linked Odoo partners. Delete them only on the mock itself:
+`DELETE http://localhost:8000/api/v1/organization/clients/{uuid}` (no auth, in memory).
+
+**What was done.** 174 sequential `DELETE`s on the mock (all `200`); then the 174 job 1 xref rows
+removed with a transaction on `data/admin.db` (`delete from xref where job_id = 1 and
+resource = 'clients' and source_id = ?`), after a backup. The Odoo partner list (214) was identical
+before and after. A dry-run of job 1 afterwards: created 4 (the leftovers), skipped 72, failed 3
+(partners 1, 3, 7 have no `ref`).
+
+**Redo on another machine.** Either restart the mock container (resets its data to the fixtures, then
+forget the job 1 xrefs with the SQL above for all job 1 rows that are not original clients), or repeat
+the identification (xref rows of job 1 whose target partner has `function = suwe-sync`) and delete those
+uuids on the mock directly. Always keep the reverse filter of section 1.3 set before running job 1.
