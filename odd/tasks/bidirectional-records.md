@@ -81,6 +81,13 @@ resource config has no write endpoints.
     JSON saved in the session scratchpad: `job1.before.json` (mapping `clients_to_res.partner` v3 untouched,
     copy in `mapping.clients_to_res.partner.before.json`). Restore: `PUT /admin/api/jobs/1` with the saved
     JSON (without `id`/`next_fire`); optionally `DELETE /admin/api/mappings/res.partner_to_clients`.
+  - Marker (user chose option b): Odoo `res.partner.function` = `suwe-sync` constant added as a rule to the
+    forward mappings of jobs 2-6 (`groups|stores|kyc|users|partners_to_res.partner`, v1 -> v2; jobs follow
+    latest). Jobs 2-6 re-run for real (runs 40-44, all succeeded, 0 failed; 1 created = SUWE group `sipay`
+    -> new partner 226, no duplicates, only `function` changed on existing partners). 175 partners marked.
+    Job 1 `reverse_record_filter` = raw domain `[["function","!=","suwe-sync"]]`; job 1 never run.
+    Backups: scratchpad `marker.*.json` (jobs, mappings, partner lists before/after); mapping v1 stays in
+    the versions API. Restore: PUT old job JSON; clear `function` on partners if needed.
     RUN RISK: the reverse pass has no filter; native Odoo partners lack `ref`, so the required rule makes
     them fail mapping (not created), but partners with a `ref` (e.g. from other `suwe-*` jobs) would be
     created as SUWE clients. Do not run job 1 casually.
@@ -102,10 +109,11 @@ resource config has no write endpoints.
   unfiltered. 6 RED then green. Parent re-ran: uv run pytest 2063 passed, npm test 684 passed.
 
 ## Pending (found while working)
-- Job 1 `reverse_record_filter` is NOT set: Odoo data has no safe discriminator between SUWE clients and
-  partners written by the other `suwe-*` jobs (groups/stores/partners are all `is_company=true`, no
-  categories). Only `is_company=false` (70 kyc/users partners) is safely excludable. Partners 221 and 222
-  (`ref` R345678, A123456) match no SUWE uuid and would be created as clients. Decision pending (user).
+- Job 1 reverse filter now SET (see test-data log). Open: Odoo partners 221 "Aena" (`ref` R345678), 222
+  "Erik Bocadillo" (`ref` A123456) and 224 "Sipay" (`ref` "ERIK BOCADILLO") have a `ref`, no marker and no
+  SUWE uuid match, so a job 1 run would create them in SUWE as clients. Partner 220 "Supermercados Aurora"
+  also unmarked (client-like). User decision pending. The filter domain `function != suwe-sync` was
+  emulated locally, not run by Odoo: the first job 1 run must be a dry-run.
   Job wizard UI has no field for the filter (API only; the wizard carries it through unchanged).
 - Create from the connector: the id field cannot be supplied, so SUWE `client_id` cannot be chosen (see `docs/suwe/README.md` section 4).
 
@@ -114,4 +122,4 @@ resource config has no write endpoints.
 - Records page: REST resource picker, page size 25/50/100, range line, show-all-columns (commit c6e7217).
 
 ## Next step
-T6: live check via UI and README section; then T7 restyle (agree palette first). Decide the reverse-pass filter fix.
+Ask the user what to do with partners 220/221/222/224 (before any job 1 run, dry-run first); then T6 live check via UI and README section; then T7 restyle (agree palette first).
