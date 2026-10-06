@@ -48,8 +48,10 @@ resource config has no write endpoints.
       (mapping, write, `_save_xref`). RED first. Commit 216eb3c; tests/sync 176 passed.
 - [x] T4 Records use cases: write-through for update/delete, new `CreateRecord` + `POST /{resource}`,
       warnings in the response. RED first. Commit 3eeb955; full suite 2057 passed.
-- [ ] T5 Frontend: create dialog, delete/edit copy about counterpart, show warnings.
+- [x] T5 Frontend: create dialog, delete/edit copy about counterpart, show warnings, `delete_endpoint` in the
+      resource form, "Sync now" on Records (runs enabled jobs of the resource). Commit ca997a7; npm test 684 passed, typecheck + lint clean.
 - [ ] T6 Live check + README section (what propagates, edited-side-wins, warnings, mock changes).
+- [ ] T7 Frontend visual restyle (user request: functionality fine, style too monochrome). Palette to agree first.
 
 ## Progress / evidence
 - Mapping done by an explorer agent (read-only). Facts used: mock store is in memory (restart resets to
@@ -90,8 +92,17 @@ resource config has no write endpoints.
   refused pair stays linked (other jobs' stale xrefs wait for a run). RED: 14 collection errors + 10 API
   failures; GREEN. Parent re-ran `uv run pytest -q`: 2057 passed. Pre-existing, untouched: ruff E501 in
   `infrastructure/openapi/importer.py:7`, mypy error in `infrastructure/rest/auth.py:225`.
+- T5 (writer, delegated): see commit ca997a7. Create button (admin), shared `RecordFormFields`, page-level
+  `WriteReport` banner (empty propagation says no bidirectional job covers the resource), DELETE 200 body
+  handled, `delete_path` in the resource form, `SyncRecordsDialog` (jobs where source or target is the
+  resource; posts `/jobs/{id}/runs`, polls runs, refreshes list). Parent re-ran npm test/typecheck/lint.
+  Gaps: create button not hidden for REST resources without a create endpoint; run poll not cancelled on unmount.
 
 ## Pending (found while working)
+- Reverse pass of a bidirectional run ignores the job `record_filter` (always empty `RecordFilter()`), so
+  "Sync now" on job 1 can create in SUWE any Odoo partner that has a `ref` and no xref. Needs a reverse-pass
+  filter (source change); mitigated only by the required `ref` rule.
+- Resource form delete_endpoint item above is DONE (T5).
 - Resource form in the UI drops `delete_endpoint` when saving (add to the form; T5).
 - Create from the connector: the id field cannot be supplied, so SUWE `client_id` cannot be chosen (see `docs/suwe/README.md` section 4).
 
@@ -104,4 +115,4 @@ resource config has no write endpoints.
   Becomes its own feature document `odd/tasks/frontend-restyle.md` once the palette is decided.
 
 ## Next step
-T5: frontend create dialog, delete/edit copy about the counterpart, show warnings and the new DELETE 200 body, RED first.
+T6: live check via UI and README section; then T7 restyle (agree palette first). Decide the reverse-pass filter fix.
