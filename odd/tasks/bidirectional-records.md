@@ -44,8 +44,8 @@ resource config has no write endpoints.
       `updated_at`, tolerate orphans in stores/contacts/users). Curl-verified. (route: delegated, writer)
 - [x] T2 Connector: `delete_endpoint` in `ResourceConfig` + codec + repository + REST sink `delete`
       (404 -> ResourceNotFound) + SUWE `clients` resource config (get/create/update/delete endpoints). RED first.
-- [ ] T3 XRef `forget_source`/pair cleanup + single-record sync service extracted from `SyncRunner`
-      (mapping, write, `_save_xref`). RED first.
+- [x] T3 XRef `forget_source`/pair cleanup + single-record sync service extracted from `SyncRunner`
+      (mapping, write, `_save_xref`). RED first. Commit 216eb3c; tests/sync 176 passed.
 - [ ] T4 Records use cases: write-through for update/delete, new `CreateRecord` + `POST /{resource}`,
       warnings in the response. RED first.
 - [ ] T5 Frontend: create dialog, delete/edit copy about counterpart, show warnings.
@@ -78,5 +78,13 @@ resource config has no write endpoints.
 - Resource form in the UI drops `delete_endpoint` when saving (add to the form; T5).
 - Create from the connector: mock reads `client_id` for the id (see `docs/suwe/README.md` section 4).
 
+## Done outside the T-list (user requests during the session)
+- Resources preview: link "View all records" to the Records page (commit d3d22b5).
+- Records page: REST resource picker, page size 25/50/100, range line, show-all-columns (commit c6e7217).
+
+## Queued after T6
+- Frontend visual restyle (user: logic and sections are fine, style is monochrome with no colors).
+  Becomes its own feature document `odd/tasks/frontend-restyle.md` once the palette is decided.
+
 ## Next step
-T3: xref cleanup for both sides plus the single-record sync service extracted from `SyncRunner`.
+T4: records use cases (write-through for update/delete, `CreateRecord` + `POST /{resource}`, warnings in the response), RED first.

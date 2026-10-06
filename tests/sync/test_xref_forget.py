@@ -44,3 +44,24 @@ async def test_stale_xref_hides_a_deleted_target_but_forgetting_it_recreates_it(
         "Ana 3",
         "Ana 2",
     ]
+
+
+async def test_forget_source_removes_only_the_xrefs_of_that_source_record() -> None:
+    world, job_id = await _synced()
+    assert await world.xrefs.forget_source(1, "customers", "2") == 1
+    assert [x.source_id for x in await world.xrefs.list(job_id)] == ["1", "3"]
+
+
+async def test_forget_source_is_scoped_by_profile_and_resource() -> None:
+    world, job_id = await _synced()
+    assert await world.xrefs.forget_source(2, "customers", "2") == 0  # other profile
+    assert await world.xrefs.forget_source(1, "clients", "2") == 0  # other resource
+    assert await world.xrefs.forget_source(1, "customers", "999") == 0  # unknown id
+    assert len(await world.xrefs.list(job_id)) == 3
+
+
+async def test_forget_pair_removes_one_job_xref_only() -> None:
+    world, job_id = await _synced()
+    assert await world.xrefs.forget(job_id, "customers", "2") == 1
+    assert await world.xrefs.forget(job_id, "customers", "2") == 0
+    assert [x.source_id for x in await world.xrefs.list(job_id)] == ["1", "3"]
