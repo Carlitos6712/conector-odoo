@@ -347,6 +347,9 @@ export const es = {
       noRecords: "El recurso no ha devuelto registros.",
       noSchema: "No se ha podido inferir ningún campo.",
       refresh: "Actualizar",
+      showing_one: "Mostrando la primera fila.",
+      showing_other: "Mostrando las primeras {{count}} filas.",
+      viewAll: "Ver todos los registros",
       moreColumns_one: "Se oculta {{count}} columna más.",
       moreColumns_other: "Se ocultan {{count}} columnas más.",
       field: "Campo",
@@ -1249,7 +1252,7 @@ export const es = {
   records: {
     title: "Registros",
     intro:
-      "Consulta los registros de una conexión de Odoo y corrígelos o elimínalos de uno en uno. Eliminar es permanente.",
+      "Consulta los registros de una conexión y corrígelos o elimínalos de uno en uno. Eliminar es permanente.",
     connection: "Conexión",
     model: "Modelo",
     search: "Buscar",
@@ -1257,7 +1260,7 @@ export const es = {
     actions: "Acciones",
     empty: "Ningún registro coincide.",
     modelRequired: "Introduce un modelo de Odoo, por ejemplo res.partner.",
-    noProfiles: "Crea primero una conexión de Odoo para consultar sus registros.",
+    noProfiles: "Crea primero una conexión para consultar sus registros.",
     editRow: "Editar {{name}}",
     deleteRow: "Eliminar {{name}}",
     edit: {

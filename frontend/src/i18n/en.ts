@@ -347,6 +347,9 @@ export const en: Translation = {
       noRecords: "The resource returned no records.",
       noSchema: "No field could be inferred.",
       refresh: "Refresh",
+      showing_one: "Showing the first {{count}} row.",
+      showing_other: "Showing the first {{count}} rows.",
+      viewAll: "View all records",
       moreColumns_one: "{{count}} more column is hidden.",
       moreColumns_other: "{{count}} more columns are hidden.",
       field: "Field",
@@ -1236,7 +1239,7 @@ export const en: Translation = {
   records: {
     title: "Records",
     intro:
-      "Browse the records of an Odoo connection and correct or delete them one at a time. Deleting is permanent.",
+      "Browse the records of a connection and correct or delete them one at a time. Deleting is permanent.",
     connection: "Connection",
     model: "Model",
     search: "Search",
@@ -1244,7 +1247,7 @@ export const en: Translation = {
     actions: "Actions",
     empty: "No records match.",
     modelRequired: "Enter an Odoo model, for example res.partner.",
-    noProfiles: "Create an Odoo connection first to browse its records.",
+    noProfiles: "Create a connection first to browse its records.",
     editRow: "Edit {{name}}",
     deleteRow: "Delete {{name}}",
     edit: {

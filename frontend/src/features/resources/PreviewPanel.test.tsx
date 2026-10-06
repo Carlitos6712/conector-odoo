@@ -55,6 +55,16 @@ describe("PreviewPanel", () => {
     expect(within(schema).getAllByText("string").length).toBeGreaterThan(0);
   });
 
+  it("links to every record of the resource and says how many rows are shown", async () => {
+    stubApi({ [PATH]: () => json(previewFixture) });
+    await renderApp(<PreviewPanel profileId={1} name="clients" />);
+    const link = await screen.findByRole("link", { name: "Ver todos los registros" });
+    expect(link).toHaveAttribute("href", "/records?profile=1&resource=clients");
+    expect(
+      screen.getByText(`Mostrando las primeras ${previewFixture.records.length} filas.`),
+    ).toBeInTheDocument();
+  });
+
   it("never renders HTML from the remote system", async () => {
     const hostile: PreviewResult = {
       ...previewFixture,

@@ -1,6 +1,7 @@
 import { Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useSearchParams } from "react-router-dom";
 import { AdminOnly } from "@/auth/AdminOnly";
 import { EmptyState } from "@/components/EmptyState";
 import { Loading } from "@/components/Loading";
@@ -36,11 +37,18 @@ const showValue = (value: unknown): string => (value === false ? "—" : formatC
 export function RecordsPage() {
   const { t } = useTranslation();
   const profiles = useProfiles();
-  const odoo = (profiles.data ?? []).filter((p) => p.type === "odoo");
+  const connections = profiles.data ?? [];
+  const [params] = useSearchParams();
 
-  const [chosenId, setChosenId] = useState<number | null>(null);
-  const profileId = chosenId ?? odoo[0]?.id ?? null;
-  const [modelDraft, setModelDraft] = useState(DEFAULT_MODEL);
+  // The query string only seeds the first render, e.g. a link from a resource preview.
+  const requestedId = Number(params.get("profile"));
+  const [chosenId, setChosenId] = useState<number | null>(
+    Number.isInteger(requestedId) && requestedId > 0 ? requestedId : null,
+  );
+  const chosen = connections.find((p) => p.id === chosenId);
+  const fallback = connections.find((p) => p.type === "odoo") ?? connections[0];
+  const profileId = chosen?.id ?? fallback?.id ?? null;
+  const [modelDraft, setModelDraft] = useState(params.get("resource") ?? DEFAULT_MODEL);
   const [searchDraft, setSearchDraft] = useState("");
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<RemoteRecord | null>(null);
@@ -68,7 +76,7 @@ export function RecordsPage() {
         <p className="text-sm text-muted-foreground">{t("records.intro")}</p>
       </header>
 
-      {odoo.length === 0 ? (
+      {connections.length === 0 ? (
         <EmptyState message={t("records.noProfiles")} />
       ) : (
         <>
@@ -83,7 +91,7 @@ export function RecordsPage() {
                   setPage(1);
                 }}
               >
-                {odoo.map((p) => (
+                {connections.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
                   </option>

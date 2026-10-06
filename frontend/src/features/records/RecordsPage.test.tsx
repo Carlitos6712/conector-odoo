@@ -22,7 +22,7 @@ const callsTo = (mock: ReturnType<typeof stubApi>, method: string) =>
   mock.mock.calls.filter(([, init]) => (init?.method ?? "GET") === method);
 
 describe("RecordsPage list", () => {
-  it("lists the records of the first Odoo connection, REST ones excluded", async () => {
+  it("lists the records of the first connection and offers every connection", async () => {
     stubApi(routes("admin"));
     await renderApp(<RecordsPage />);
     const row = (await screen.findByText("Ada Lovelace")).closest("tr")!;
@@ -30,18 +30,39 @@ describe("RecordsPage list", () => {
     expect(within(row).getByText("ada@example.com")).toBeInTheDocument();
     expect(within(row).getByText("Londres")).toBeInTheDocument();
     const select = screen.getByLabelText("Conexión");
-    expect(within(select).queryByText("SUWE")).not.toBeInTheDocument();
+    expect(within(select).getByText("SUWE")).toBeInTheDocument();
     expect(within(select).getByText("Odoo producción")).toBeInTheDocument();
     expect(screen.getByLabelText("Modelo")).toHaveValue("res.partner");
   });
 
-  it("explains when there is no Odoo connection", async () => {
+  it("explains when there is no connection", async () => {
     stubApi({
       "GET /auth/me": () => json(sessionBody()),
-      "GET /profiles": () => json({ items: [profileFixture()] }),
+      "GET /profiles": () => json({ items: [] }),
     });
     await renderApp(<RecordsPage />);
-    expect(await screen.findByText(/Crea primero una conexión de Odoo/)).toBeInTheDocument();
+    expect(await screen.findByText(/Crea primero una conexión/)).toBeInTheDocument();
+  });
+
+  it("preselects the connection and resource given in the query string", async () => {
+    const fetchMock = stubApi(
+      routes("admin", {
+        "GET /profiles/1/records/clients?limit=25&offset=0": () =>
+          json(pageFixture({ items: [{ id: 5, fields: { name: "Acme" } }] })),
+      }),
+    );
+    await renderApp(<RecordsPage />, "/records?profile=1&resource=clients");
+    expect(await screen.findByText("Acme")).toBeInTheDocument();
+    expect(screen.getByLabelText("Conexión")).toHaveValue("1");
+    expect(screen.getByLabelText("Modelo")).toHaveValue("clients");
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/profiles/2/"))).toBe(false);
+  });
+
+  it("ignores a query-string profile that does not exist", async () => {
+    stubApi(routes("admin"));
+    await renderApp(<RecordsPage />, "/records?profile=99");
+    expect(await screen.findByText("Ada Lovelace")).toBeInTheDocument();
+    expect(screen.getByLabelText("Conexión")).toHaveValue("2");
   });
 
   it("searches with a debounce and resets to the first page", async () => {
