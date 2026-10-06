@@ -1,4 +1,5 @@
 import {
+  allColumns,
   buildPatch,
   editableFields,
   initialForm,
@@ -97,5 +98,24 @@ describe("parseFieldErrors", () => {
   it("keeps unmatched text as a general message", () => {
     const out = parseFieldErrors("Odoo said no", ["email"]);
     expect(out).toEqual({ fieldErrors: {}, general: "Odoo said no" });
+  });
+});
+
+describe("allColumns", () => {
+  it("lists every schema field but the id, then keys only present in the records", () => {
+    const names = allColumns(partnerSchema, [
+      { id: 1, fields: { name: "x", extra: 1 } },
+      { id: 2, fields: { other: { a: 1 }, extra: 2 } },
+    ]).map((f) => f.name);
+    expect(names).toEqual([
+      "name",
+      "email",
+      "city",
+      "active",
+      "write_date",
+      "country_id",
+      "extra",
+      "other",
+    ]);
   });
 });

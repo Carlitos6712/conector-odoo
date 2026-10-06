@@ -1,13 +1,14 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { odooProfileFixture, profileFixture } from "@/features/connections/fixtures";
-import { pageFixture } from "@/features/records/fixtures";
+import { pageFixture, partnerSchema } from "@/features/records/fixtures";
 import { RecordsPage } from "@/features/records/RecordsPage";
+import { storedFixture } from "@/features/resources/fixtures";
 import { json, renderApp, sessionBody, stubApi, type Role } from "@/test/utils";
 
 afterEach(() => vi.unstubAllGlobals());
 
-const LIST = "GET /profiles/2/records/res.partner?limit=25&offset=0";
+const LIST = "GET /profiles/2/records/res.partner?limit=50&offset=0";
 
 function routes(role: Role, extra: Record<string, () => Response | Promise<Response>> = {}) {
   return {
@@ -22,7 +23,7 @@ const callsTo = (mock: ReturnType<typeof stubApi>, method: string) =>
   mock.mock.calls.filter(([, init]) => (init?.method ?? "GET") === method);
 
 describe("RecordsPage list", () => {
-  it("lists the records of the first Odoo connection, REST ones excluded", async () => {
+  it("lists the records of the first connection and offers every connection", async () => {
     stubApi(routes("admin"));
     await renderApp(<RecordsPage />);
     const row = (await screen.findByText("Ada Lovelace")).closest("tr")!;
@@ -30,24 +31,46 @@ describe("RecordsPage list", () => {
     expect(within(row).getByText("ada@example.com")).toBeInTheDocument();
     expect(within(row).getByText("Londres")).toBeInTheDocument();
     const select = screen.getByLabelText("Conexión");
-    expect(within(select).queryByText("SUWE")).not.toBeInTheDocument();
+    expect(within(select).getByText("SUWE")).toBeInTheDocument();
     expect(within(select).getByText("Odoo producción")).toBeInTheDocument();
     expect(screen.getByLabelText("Modelo")).toHaveValue("res.partner");
   });
 
-  it("explains when there is no Odoo connection", async () => {
+  it("explains when there is no connection", async () => {
     stubApi({
       "GET /auth/me": () => json(sessionBody()),
-      "GET /profiles": () => json({ items: [profileFixture()] }),
+      "GET /profiles": () => json({ items: [] }),
     });
     await renderApp(<RecordsPage />);
-    expect(await screen.findByText(/Crea primero una conexión de Odoo/)).toBeInTheDocument();
+    expect(await screen.findByText(/Crea primero una conexión/)).toBeInTheDocument();
+  });
+
+  it("preselects the connection and resource given in the query string", async () => {
+    const fetchMock = stubApi(
+      routes("admin", {
+        ...RESOURCES,
+        "GET /profiles/1/records/clients?limit=50&offset=0": () =>
+          json(pageFixture({ items: [{ id: 5, fields: { name: "Acme" } }] })),
+      }),
+    );
+    await renderApp(<RecordsPage />, "/records?profile=1&resource=clients");
+    expect(await screen.findByText("Acme")).toBeInTheDocument();
+    expect(screen.getByLabelText("Conexión")).toHaveValue("1");
+    expect(screen.getByLabelText("Recurso")).toHaveValue("clients");
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/profiles/2/"))).toBe(false);
+  });
+
+  it("ignores a query-string profile that does not exist", async () => {
+    stubApi(routes("admin"));
+    await renderApp(<RecordsPage />, "/records?profile=99");
+    expect(await screen.findByText("Ada Lovelace")).toBeInTheDocument();
+    expect(screen.getByLabelText("Conexión")).toHaveValue("2");
   });
 
   it("searches with a debounce and resets to the first page", async () => {
     const fetchMock = stubApi(
       routes("admin", {
-        "GET /profiles/2/records/res.partner?limit=25&offset=0&search=ada": () =>
+        "GET /profiles/2/records/res.partner?limit=50&offset=0&search=ada": () =>
           json(pageFixture({ items: [pageFixture().items[0]!] })),
       }),
     );
@@ -65,8 +88,8 @@ describe("RecordsPage list", () => {
     stubApi(
       routes("admin", {
         [LIST]: () => json(pageFixture({ has_more: true })),
-        "GET /profiles/2/records/res.partner?limit=25&offset=25": () =>
-          json(pageFixture({ offset: 25, items: [{ id: 99, fields: { name: "Grace" } }] })),
+        "GET /profiles/2/records/res.partner?limit=50&offset=50": () =>
+          json(pageFixture({ offset: 50, items: [{ id: 99, fields: { name: "Grace" } }] })),
       }),
     );
     await renderApp(<RecordsPage />);
@@ -103,6 +126,165 @@ describe("RecordsPage list", () => {
     await screen.findByText("Ada Lovelace");
     expect(screen.queryByRole("button", { name: /^Editar/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Eliminar/ })).not.toBeInTheDocument();
+  });
+});
+
+const RESOURCES = {
+  "GET /profiles/1/resources": () =>
+    json({
+      items: [
+        storedFixture({ config: { name: "clients", label: "Clientes" } }),
+        storedFixture({ config: { name: "orders", label: "Pedidos" } }),
+      ],
+      invalid: [],
+    }),
+};
+
+const restPage = (overrides = {}) =>
+  pageFixture({
+    schema: {
+      ...partnerSchema,
+      name: "clients",
+      id_field: "id",
+      fields: [
+        ...partnerSchema.fields,
+        { ...partnerSchema.fields[1]!, name: "phone", label: "Teléfono" },
+      ],
+    },
+    items: [
+      {
+        id: "c-1",
+        fields: {
+          name: "Acme",
+          phone: "555",
+          tags: ["a", "b"],
+          address: { city: "Madrid" },
+        },
+      },
+    ],
+    ...overrides,
+  });
+
+describe("RecordsPage resource picker", () => {
+  it("lists the resources of a REST connection and queries the first one", async () => {
+    const fetchMock = stubApi(
+      routes("admin", {
+        ...RESOURCES,
+        "GET /profiles/1/records/clients?limit=50&offset=0": () => json(restPage()),
+      }),
+    );
+    await renderApp(<RecordsPage />);
+    await screen.findByText("Ada Lovelace");
+    await userEvent.selectOptions(screen.getByLabelText("Conexión"), "1");
+    const picker = await screen.findByLabelText("Recurso");
+    expect(picker.tagName).toBe("SELECT");
+    expect(within(picker).getByText("orders")).toBeInTheDocument();
+    expect(await screen.findByText("Acme")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Modelo")).not.toBeInTheDocument();
+    // No flash of the Odoo model against the REST connection.
+    expect(
+      fetchMock.mock.calls.some(([url]) => String(url).includes("/profiles/1/records/res.partner")),
+    ).toBe(false);
+  });
+
+  it("resets to the new connection's resource when the connection changes", async () => {
+    const fetchMock = stubApi(
+      routes("admin", {
+        ...RESOURCES,
+        "GET /profiles/1/records/clients?limit=50&offset=0": () => json(restPage()),
+        "GET /profiles/1/records/orders?limit=50&offset=0": () => json(restPage()),
+      }),
+    );
+    await renderApp(<RecordsPage />, "/records?profile=1&resource=orders");
+    const picker = await screen.findByLabelText("Recurso");
+    await waitFor(() => expect(picker).toHaveValue("orders"));
+    await userEvent.selectOptions(screen.getByLabelText("Conexión"), "2");
+    expect(await screen.findByLabelText("Modelo")).toHaveValue("res.partner");
+    await screen.findByText("Ada Lovelace");
+    await userEvent.selectOptions(screen.getByLabelText("Conexión"), "1");
+    await waitFor(() => expect(screen.getByLabelText("Recurso")).toHaveValue("clients"));
+    expect(
+      fetchMock.mock.calls.some(([url]) => String(url).includes("/profiles/2/records/orders")),
+    ).toBe(false);
+  });
+
+  it("edits a REST record by its id", async () => {
+    const fetchMock = stubApi(
+      routes("admin", {
+        ...RESOURCES,
+        "GET /profiles/1/records/clients?limit=50&offset=0": () => json(restPage()),
+        "PATCH /profiles/1/records/clients/c-1": () => json({ id: "c-1", fields: {} }),
+      }),
+    );
+    await renderApp(<RecordsPage />, "/records?profile=1");
+    await userEvent.click(await screen.findByRole("button", { name: "Editar Acme" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.type(within(dialog).getByLabelText("Nombre"), "!");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Guardar" }));
+    await waitFor(() => expect(callsTo(fetchMock, "PATCH")).toHaveLength(1));
+  });
+});
+
+describe("RecordsPage volume controls", () => {
+  it("changes the page size and goes back to the first page", async () => {
+    const fetchMock = stubApi(
+      routes("admin", {
+        [LIST]: () => json(pageFixture({ has_more: true })),
+        "GET /profiles/2/records/res.partner?limit=50&offset=50": () =>
+          json(pageFixture({ offset: 50, has_more: true })),
+        "GET /profiles/2/records/res.partner?limit=100&offset=0": () => json(pageFixture()),
+      }),
+    );
+    await renderApp(<RecordsPage />);
+    await screen.findByText("Ada Lovelace");
+    const size = screen.getByLabelText("Filas por página");
+    expect(size).toHaveValue("50");
+    expect(
+      within(size)
+        .getAllByRole("option")
+        .map((o) => o.textContent),
+    ).toEqual(["25", "50", "100"]);
+    await userEvent.click(screen.getByRole("button", { name: "Siguiente" }));
+    await waitFor(() => expect(screen.getByText("Página 2")).toBeInTheDocument());
+    await userEvent.selectOptions(size, "100");
+    await waitFor(() => expect(screen.getByText("Página 1")).toBeInTheDocument());
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("limit=100&offset=0"))).toBe(
+      true,
+    );
+  });
+
+  it("shows which rows are on screen", async () => {
+    stubApi(
+      routes("admin", {
+        [LIST]: () => json(pageFixture({ has_more: true })),
+        "GET /profiles/2/records/res.partner?limit=50&offset=50": () =>
+          json(pageFixture({ offset: 50 })),
+      }),
+    );
+    await renderApp(<RecordsPage />);
+    expect(await screen.findByText("Mostrando 1 a 2")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Siguiente" }));
+    expect(await screen.findByText("Mostrando 51 a 52")).toBeInTheDocument();
+  });
+
+  it("shows every column on demand without breaking on objects or arrays", async () => {
+    stubApi(
+      routes("admin", {
+        ...RESOURCES,
+        "GET /profiles/1/records/clients?limit=50&offset=0": () => json(restPage()),
+      }),
+    );
+    await renderApp(<RecordsPage />, "/records?profile=1");
+    await screen.findByText("Acme");
+    expect(screen.queryByRole("columnheader", { name: "tags" })).not.toBeInTheDocument();
+    const toggle = screen.getByRole("button", { name: "Mostrar todas las columnas" });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("columnheader", { name: "tags" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Teléfono" })).toBeInTheDocument();
+    expect(screen.getByText('["a","b"]')).toBeInTheDocument();
+    expect(screen.getByText('{"city":"Madrid"}')).toBeInTheDocument();
   });
 });
 

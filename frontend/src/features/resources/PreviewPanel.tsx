@@ -1,5 +1,6 @@
 import { RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import { Loading } from "@/components/Loading";
 import { Button } from "@/components/ui/button";
 import {
@@ -115,6 +116,15 @@ export function PreviewPanel({ profileId, name }: { profileId: number; name: str
                 ))}
               </TableBody>
             </Table>
+            <p className="flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
+              <span>{t("resources.preview.showing", { count: records.length })}</span>
+              <Link
+                className="font-medium text-primary underline"
+                to={`/records?profile=${profileId}&resource=${encodeURIComponent(name)}`}
+              >
+                {t("resources.preview.viewAll")}
+              </Link>
+            </p>
             {columns.length > shown.length && (
               <p className="text-xs text-muted-foreground">
                 {t("resources.preview.moreColumns", { count: columns.length - shown.length })}

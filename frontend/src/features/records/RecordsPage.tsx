@@ -1,6 +1,7 @@
 import { Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useSearchParams } from "react-router-dom";
 import { AdminOnly } from "@/auth/AdminOnly";
 import { EmptyState } from "@/components/EmptyState";
 import { Loading } from "@/components/Loading";
@@ -18,7 +19,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useProfiles } from "@/features/connections/hooks";
-import { pickColumns, recordLabel } from "@/features/records/columns";
+import { allColumns, pickColumns, recordLabel } from "@/features/records/columns";
 import { DeleteRecordDialog } from "@/features/records/DeleteRecordDialog";
 import { EditRecordDialog } from "@/features/records/EditRecordDialog";
 import { describeRecordError } from "@/features/records/errors";
@@ -26,8 +27,10 @@ import { useRecords } from "@/features/records/hooks";
 import type { RemoteRecord } from "@/features/records/types";
 import { useDebounced } from "@/features/records/useDebounced";
 import { formatCell } from "@/features/resources/format";
+import { useResources } from "@/features/resources/hooks";
 
-const PAGE_SIZE = 25;
+const PAGE_SIZES = [25, 50, 100] as const;
+const DEFAULT_PAGE_SIZE = 50;
 const DEFAULT_MODEL = "res.partner";
 
 const showValue = (value: unknown): string => (value === false ? "—" : formatCell(value).text);
@@ -36,29 +39,52 @@ const showValue = (value: unknown): string => (value === false ? "—" : formatC
 export function RecordsPage() {
   const { t } = useTranslation();
   const profiles = useProfiles();
-  const odoo = (profiles.data ?? []).filter((p) => p.type === "odoo");
+  const connections = profiles.data ?? [];
+  const [params] = useSearchParams();
 
-  const [chosenId, setChosenId] = useState<number | null>(null);
-  const profileId = chosenId ?? odoo[0]?.id ?? null;
-  const [modelDraft, setModelDraft] = useState(DEFAULT_MODEL);
+  // The query string only seeds the first render, e.g. a link from a resource preview.
+  const requestedId = Number(params.get("profile"));
+  const [chosenId, setChosenId] = useState<number | null>(
+    Number.isInteger(requestedId) && requestedId > 0 ? requestedId : null,
+  );
+  const chosen = connections.find((p) => p.id === chosenId);
+  const fallback = connections.find((p) => p.type === "odoo") ?? connections[0];
+  const profileId = chosen?.id ?? fallback?.id ?? null;
+  // The query string seeds only the first connection; any connection change drops it.
+  const [seed, setSeed] = useState(params.get("resource"));
+  const [modelDraft, setModelDraft] = useState<string | null>(null);
+  const [resourceChoice, setResourceChoice] = useState<string | null>(null);
   const [searchDraft, setSearchDraft] = useState("");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
+  const [showAll, setShowAll] = useState(false);
   const [editing, setEditing] = useState<RemoteRecord | null>(null);
   const [deleting, setDeleting] = useState<RemoteRecord | null>(null);
 
-  const resource = useDebounced(modelDraft.trim());
+  const isRest = (chosen ?? fallback)?.type === "rest";
+  const resources = useResources(isRest ? profileId : null);
+  const resourceNames = (resources.data?.items ?? []).map((r) => r.config.name);
+  const restResource =
+    [resourceChoice, seed].find((n) => n && resourceNames.includes(n)) ?? resourceNames[0] ?? "";
+  const debouncedModel = useDebounced((modelDraft ?? seed ?? DEFAULT_MODEL).trim());
+  const odooResource = modelDraft === null && seed === null ? DEFAULT_MODEL : debouncedModel;
+  const resource = isRest ? restResource : odooResource;
   const search = useDebounced(searchDraft.trim());
   const target = { profileId: profileId ?? -1, resource };
   const records = useRecords(
     profileId !== null && resource
-      ? { ...target, search, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }
+      ? { ...target, search, limit: pageSize, offset: (page - 1) * pageSize }
       : null,
   );
 
   if (profiles.isPending) return <Loading />;
 
   const data = records.data;
-  const columns = data ? pickColumns(data.schema) : [];
+  const columns = data
+    ? showAll
+      ? allColumns(data.schema, data.items)
+      : pickColumns(data.schema)
+    : [];
   const failure = records.isError ? describeRecordError(records.error, "load") : null;
 
   return (
@@ -68,11 +94,11 @@ export function RecordsPage() {
         <p className="text-sm text-muted-foreground">{t("records.intro")}</p>
       </header>
 
-      {odoo.length === 0 ? (
+      {connections.length === 0 ? (
         <EmptyState message={t("records.noProfiles")} />
       ) : (
         <>
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-4">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="records-profile">{t("records.connection")}</Label>
               <Select
@@ -80,10 +106,13 @@ export function RecordsPage() {
                 value={profileId ?? ""}
                 onChange={(e) => {
                   setChosenId(Number(e.target.value));
+                  setSeed(null);
+                  setModelDraft(null);
+                  setResourceChoice(null);
                   setPage(1);
                 }}
               >
-                {odoo.map((p) => (
+                {connections.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
                   </option>
@@ -91,16 +120,35 @@ export function RecordsPage() {
               </Select>
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="records-model">{t("records.model")}</Label>
-              <Input
-                id="records-model"
-                value={modelDraft}
-                spellCheck={false}
-                onChange={(e) => {
-                  setModelDraft(e.target.value);
-                  setPage(1);
-                }}
-              />
+              <Label htmlFor="records-model">
+                {t(isRest ? "records.resource" : "records.model")}
+              </Label>
+              {isRest ? (
+                <Select
+                  id="records-model"
+                  value={restResource}
+                  onChange={(e) => {
+                    setResourceChoice(e.target.value);
+                    setPage(1);
+                  }}
+                >
+                  {resourceNames.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </Select>
+              ) : (
+                <Input
+                  id="records-model"
+                  value={modelDraft ?? seed ?? DEFAULT_MODEL}
+                  spellCheck={false}
+                  onChange={(e) => {
+                    setModelDraft(e.target.value);
+                    setPage(1);
+                  }}
+                />
+              )}
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="records-search">{t("records.search")}</Label>
@@ -114,6 +162,23 @@ export function RecordsPage() {
                   setPage(1);
                 }}
               />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="records-page-size">{t("records.pageSize")}</Label>
+              <Select
+                id="records-page-size"
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setPage(1);
+                }}
+              >
+                {PAGE_SIZES.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </Select>
             </div>
           </div>
 
@@ -137,6 +202,22 @@ export function RecordsPage() {
             <EmptyState message={t("records.empty")} />
           ) : (
             <>
+              <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
+                <span>
+                  {t("records.range", {
+                    from: (page - 1) * pageSize + 1,
+                    to: (page - 1) * pageSize + data.items.length,
+                  })}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-pressed={showAll}
+                  onClick={() => setShowAll((v) => !v)}
+                >
+                  {t("records.showAllColumns")}
+                </Button>
+              </div>
               <Table aria-label={t("records.title")}>
                 <TableHeader>
                   <TableRow>
