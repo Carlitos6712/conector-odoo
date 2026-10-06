@@ -8,7 +8,7 @@ import { Select } from "@/components/ui/select";
 import { TextField } from "@/features/mappings/Fields";
 import type { Profile } from "@/features/connections/types";
 import { describeResourceError } from "@/features/resources/errors";
-import { useDiscoverModels, useResources } from "@/features/resources/hooks";
+import { useDiscoverModels, usePreview, useResources } from "@/features/resources/hooks";
 import { SchemaTable } from "@/features/resources/PreviewPanel";
 import type { FieldSpec } from "@/features/resources/types";
 
@@ -17,6 +17,19 @@ export interface SchemaState {
   isLoading: boolean;
   error: unknown;
   retry: () => void;
+}
+
+/** Schema of one side, read with a one-record preview (admins only: it contacts the remote). */
+export function useSideSchema(profileId: string, resource: string): SchemaState {
+  const { canMutate } = useSession();
+  const enabled = canMutate && profileId !== "" && resource !== "";
+  const preview = usePreview(Number(profileId) || -1, resource, 1, enabled);
+  return {
+    fields: enabled ? preview.data?.schema.fields : undefined,
+    isLoading: enabled && preview.isFetching && !preview.data,
+    error: enabled ? preview.error : null,
+    retry: () => void preview.refetch(),
+  };
 }
 
 /** Odoo model name: applied when the input loses focus, so typing never fires a request. */

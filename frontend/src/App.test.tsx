@@ -12,8 +12,8 @@ afterEach(() => vi.unstubAllGlobals());
 describe("App", () => {
   it("renders placeholder sections inside the shell", async () => {
     stubApi({ "GET /auth/me": () => json(sessionBody()) });
-    await renderApp(<App />, "/jobs");
-    expect(await screen.findByRole("heading", { name: "Tareas" })).toBeInTheDocument();
+    await renderApp(<App />, "/runs");
+    expect(await screen.findByRole("heading", { name: "Ejecuciones" })).toBeInTheDocument();
     expect(screen.getByText(/disponible próximamente/)).toBeInTheDocument();
   });
 

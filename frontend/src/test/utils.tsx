@@ -4,6 +4,7 @@ import type { ReactElement } from "react";
 import { I18nextProvider } from "react-i18next";
 import { MemoryRouter } from "react-router-dom";
 import { csrfStore, setUnauthorizedHandler } from "@/api/client";
+import { ToastProvider } from "@/components/ui/toast";
 import { createI18n } from "@/i18n";
 
 export type Role = "admin" | "operator";
@@ -45,7 +46,9 @@ export async function renderApp(ui: ReactElement, route = "/") {
     ...render(
       <I18nextProvider i18n={i18n}>
         <QueryClientProvider client={queryClient}>
-          <MemoryRouter initialEntries={[route]}>{ui}</MemoryRouter>
+          <MemoryRouter initialEntries={[route]}>
+            <ToastProvider>{ui}</ToastProvider>
+          </MemoryRouter>
         </QueryClientProvider>
       </I18nextProvider>,
     ),

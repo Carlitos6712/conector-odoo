@@ -7,6 +7,8 @@ import { RequireAuth } from "@/auth/RequireAuth";
 import { AppLayout } from "@/components/AppLayout";
 import { ConnectionWizardPage } from "@/features/connections/ConnectionWizardPage";
 import { ConnectionsPage } from "@/features/connections/ConnectionsPage";
+import { JobWizardPage } from "@/features/jobs/JobWizardPage";
+import { JobsPage } from "@/features/jobs/JobsPage";
 import { MappingEditorPage } from "@/features/mappings/MappingEditorPage";
 import { MappingVersionsPage } from "@/features/mappings/MappingVersionsPage";
 import { MappingsPage } from "@/features/mappings/MappingsPage";
@@ -43,8 +45,13 @@ export function App() {
           <Route path="/mappings/new" element={<MappingEditorPage />} />
           <Route path="/mappings/:name/edit" element={<MappingEditorPage />} />
           <Route path="/mappings/:name/versions" element={<MappingVersionsPage />} />
+          <Route path="/jobs" element={<JobsPage />} />
+          <Route path="/jobs/new" element={<JobWizardPage />} />
+          <Route path="/jobs/:id/edit" element={<JobWizardPage />} />
+          {/* F6 replaces this placeholder with the run detail page. */}
+          <Route path="/runs/:id" element={<PlaceholderPage section="runs" />} />
           {NAV_ITEMS.filter(
-            (item) => !["connections", "resources", "mappings"].includes(item.key),
+            (item) => !["connections", "resources", "mappings", "jobs"].includes(item.key),
           ).map((item) => (
             <Route
               key={item.key}
