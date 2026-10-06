@@ -25,12 +25,14 @@ is local and used by company members only, so the user chose to skip authenticat
 - [x] T1 Backend: setting + synthetic session in `deps.py` + config validation + tests (RED first)
 - [x] T2 Frontend: skip login when session already present + test
 - [x] T3 Launcher: export flag, bind 127.0.0.1; README + `.env.example` note
-- [ ] T4 Verify full suites, commit per work unit, PR
+- [x] T4 Verify full suites, commit per work unit (PR left to user)
 
 ## Progress / evidence
 - T1: RED observed (7 failed, 1 passed in tests/admin_api/test_auth_disabled.py), then GREEN. Full backend `uv run pytest -q`: 1905 passed. ruff check/format clean. mypy: 97 pre-existing errors elsewhere, none new in touched files. CSRF is skipped when the flag is on. Commit: see git log (T1).
 - T2: /login already redirected when a session existed (Navigate in LoginPage). Added a regression test for that plus a RED-first test for the form flashing while /me is pending (1 failed), then LoginPage shows Loading while pending: GREEN. `npm test`: 627 passed; tsc and `npm run lint` clean. Logout button left as is (hiding it needs a server flag, not trivial).
 - T3: launch.sh exports ADMIN_AUTH_DISABLED (default true) and binds uvicorn to ${BACKEND_HOST:-127.0.0.1}; README config table and Launcher section updated (.env.example untouched). `bash -n scripts/launch.sh` OK. Not started (no services launched).
 
+- T4: backend 1905 passed; frontend 627 passed (57 files); `bash -n scripts/launch.sh` OK. Extra commits: /stop command, launcher spawn-subshell detach.
+
 ## Next step
-T4 (final verification; push/PR left to the user).
+Push and open PR (user decision).
