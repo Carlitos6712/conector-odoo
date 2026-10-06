@@ -10,3 +10,6 @@ dist/
 build/
 *.egg-info/
 node_modules/
+
+# Local launcher state
+.run/
