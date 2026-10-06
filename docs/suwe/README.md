@@ -94,7 +94,9 @@ job with direction `bidirectional` and a `reverse_mapping`. Repeat on every mach
    them (observed: 8 + 90 + 30 + 40 + 6 updates, 0 failed, 1 new partner for a SUWE group that had never
    been synced).
 4. Set the reverse filter on job 1 (`PUT /admin/api/jobs/<job-id>`, whole job body unchanged except):
-   `"reverse_record_filter": {"equals": {}, "since": null, "raw": {"domain": [["function", "!=", "suwe-sync"]]}}`.
+   `"reverse_record_filter": {"equals": {}, "since": null, "raw": {"domain": [["function", "!=", "suwe-sync"], ["ref", "!=", false]]}}`.
+   The second term skips Odoo partners without a `ref` (native partners 1, 3 and 7), which would otherwise fail the
+   required `ref` -> `uuid` rule on every run and leave each run as `partial`.
    Odoo `!=` also matches empty values, so unmarked partners pass.
 
 A job has a `reverse_record_filter` (same shape as `record_filter`: `equals`, `since`, `raw`; empty by

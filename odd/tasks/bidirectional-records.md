@@ -50,7 +50,8 @@ resource config has no write endpoints.
       warnings in the response. RED first. Commit 3eeb955; full suite 2057 passed.
 - [x] T5 Frontend: create dialog, delete/edit copy about counterpart, show warnings, `delete_endpoint` in the
       resource form, "Sync now" on Records (runs enabled jobs of the resource). Commit ca997a7; npm test 684 passed, typecheck + lint clean.
-- [ ] T6 Live check + README section (what propagates, edited-side-wins, warnings, mock changes).
+- [x] T6 Live check + README section (what propagates, edited-side-wins, warnings, mock changes). Commits 9b4c7fe, 4526f01;
+      pytest 2072, npm 687. Delete of an already-gone record = 200 with `already_deleted`.
 - [x] T7 Frontend visual restyle: indigo/blue palette chosen by the user, tokens in `index.css` (light + dark),
       indigo sidebar, soft-tint badges, tables, dialogs, toasts. Commit 27189e7; npm test 685 passed, typecheck + lint clean.
 
@@ -120,6 +121,26 @@ resource config has no write endpoints.
   uv run pytest 2068 passed. Equal or unparsable times still flag a conflict and write nothing.
 - Partners 221/222/224 deleted via the connector API at user request (221/222 had job 1 xrefs; SUWE
   counterparts R345678/A123456 report 404 afterwards; whether they existed before is unknown).
+- T6 live check (throwaway client, cleaned): create/edit/delete propagate both ways; double delete ->
+  `already_deleted:true`; dry-runs 46/47 of job 1 write nothing; the 4 'created' are SUWE-only leftovers
+  (Sipay, Messi, Aena, Erik Bocadillo) whose partners 221/222/224 were deleted. Newest-wins conflict is
+  covered by unit tests only (a real two-sided conflict cannot be built through the connector).
+- INCIDENT: run 39 of job 1 (manual, REAL, 2026-10-06 12:56 UTC, before the marker/filter existed) created
+  177 / updated 36 / failed 4. The reverse pass pushed ~176 Odoo partners (groups/stores/users) into SUWE
+  `clients`: the mock went from ~38 to 214 clients. Launcher unknown (probably Run now / Sync now from the
+  UI). CLEANED (user chose b): 174 SUWE clients (job 1 xrefs whose Odoo partner has the `suwe-sync` marker)
+  deleted directly on the mock API, NEVER through the connector (write-through would delete the Odoo
+  partners); 174 job 1 xref rows removed from `data/admin.db` (backup scratchpad `cleanup.connector.db.bak`);
+  mock now 40 clients (36 fixtures + 4 leftovers); Odoo partners 214 before/after, identical; dry-run 48:
+  created 4 (leftovers), failed 3 (partners 1/3/7). Procedure in `docs/suwe/README.md` section 5.
+- Leftovers removed (user request): SUWE clients Messi, Aena, Erik Bocadillo deleted on the mock API; Sipay
+  (uuid `ERIK BOCADILLO`) was in the mock list but not in `CLIENT_BY_ID` (DELETE 404), so the mock container
+  `api_mock-api-mock-1` was restarted (data reset to fixtures: 36 clients, nothing else lost). Dry-run 49 of
+  job 1: created 0, updated 0, skipped 72, failed 3 (Odoo partners 1/3/7 without `ref`), conflicts 0.
+  The job 1 dry-run is now clean; a first real run is still the user's call (dry-run first, as always).
+- Job 1 reverse filter extended (user request): domain `[["function","!=","suwe-sync"],["ref","!=",false]]` so
+  Odoo partners 1/3/7 (no `ref`) no longer fail every run. Backup scratchpad `job1.before-ref.json`.
+  Dry-run 50: succeeded, created 0, updated 0, skipped 72, failed 0, conflicts 0.
 
 ## Pending (found while working)
 - Job 1 reverse filter now SET (see test-data log). Open: Odoo partners 221 "Aena" (`ref` R345678), 222
@@ -135,4 +156,4 @@ resource config has no write endpoints.
 - Records page: REST resource picker, page size 25/50/100, range line, show-all-columns (commit c6e7217).
 
 ## Next step
-Wait for the user to delete partners 221/222/224 by hand (first job 1 run must be a dry-run); T6 live check via UI (include a visual review of dark theme, Records, Jobs, dialogs) and README section.
+Feature tasks T1-T7 done. Open: the first real run of job 1 is the user's call (dry-run 49 clean); T6 live check via UI (include a visual review of dark theme, Records, Jobs, dialogs) and README section.
