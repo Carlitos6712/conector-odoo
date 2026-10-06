@@ -406,7 +406,10 @@ class SyncRunRepository(Protocol):
         *,
         error: str | None = None,
         sample: Sequence[dict[str, Any]] = (),
-    ) -> None: ...
+        warnings: Sequence[str] = (),
+    ) -> None:
+        """Close the run; non-empty ``warnings`` are kept in its ``options["warnings"]``."""
+        ...
 
     async def request_cancel(self, run_id: int) -> bool:
         """Flag an active run for cancellation; ``False`` when it is not active."""

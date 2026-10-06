@@ -81,6 +81,23 @@ def test_preview_returns_records_and_schema_without_secrets(admin: AdminEnv) -> 
 
 
 @respx.mock
+def test_preview_warns_when_an_unpaginated_list_hides_more_records(admin: AdminEnv) -> None:
+    pid = make_profile(admin)
+    admin.put(f"{PROFILES}/{pid}/resources/items", json=ITEMS)
+    respx.get("https://api.test/items").respond(200, json={"items": [{"id": 1}], "total": 36})
+    body = admin.post(f"{PROFILES}/{pid}/resources/items/preview").json()
+    assert len(body["warnings"]) == 1 and "36" in body["warnings"][0]
+
+
+@respx.mock
+def test_preview_without_hidden_records_has_no_warnings(admin: AdminEnv) -> None:
+    pid = make_profile(admin)
+    admin.put(f"{PROFILES}/{pid}/resources/items", json=ITEMS)
+    respx.get("https://api.test/items").respond(200, json={"items": [{"id": 1}]})
+    assert admin.post(f"{PROFILES}/{pid}/resources/items/preview").json()["warnings"] == []
+
+
+@respx.mock
 def test_preview_remote_failure_is_a_clean_502(admin: AdminEnv) -> None:
     pid = make_profile(admin)
     admin.put(f"{PROFILES}/{pid}/resources/items", json=ITEMS)

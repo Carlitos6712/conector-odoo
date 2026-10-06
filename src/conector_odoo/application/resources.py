@@ -47,6 +47,7 @@ OdooEndpointFactory = Callable[[ConnectionProfile, Secrets], ClosableSource]
 class PreviewResult:
     records: tuple[Record, ...]
     schema: ResourceSchema
+    warnings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,9 +183,10 @@ class PreviewResource:
         try:
             records = await endpoint.sample(resource, limit)
             schema = await endpoint.describe(resource)
+            warnings = tuple(getattr(endpoint, "warnings", ()))
         finally:
             await endpoint.aclose()
-        return PreviewResult(tuple(records[:limit]), schema)
+        return PreviewResult(tuple(records[:limit]), schema, warnings)
 
 
 class DiscoverResources:

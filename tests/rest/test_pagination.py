@@ -205,3 +205,53 @@ async def test_loop_guard_also_works_for_records_without_ids() -> None:
     pagination = PaginationConfig(strategy=PaginationStrategy.OFFSET, total_path="total")
     with pytest.raises(RemoteUnavailable, match="repeat"):
         await collect(endpoint(config(pagination=pagination)), size=2)
+
+
+@respx.mock
+async def test_none_strategy_warns_when_total_proves_more_records_exist() -> None:
+    respx.get(LIST).respond(200, json={"items": rows(2), "total": 36})
+    ep = endpoint(config())
+    assert len(await collect(ep)) == 2
+    [warning] = ep.warnings
+    assert "36" in warning and "2" in warning and "pagination" in warning
+
+
+@respx.mock
+async def test_none_strategy_warns_when_total_pages_is_above_one() -> None:
+    respx.get(LIST).respond(200, json={"items": rows(2), "meta": {"total_pages": 3}})
+    ep = endpoint(config())
+    await collect(ep)
+    assert len(ep.warnings) == 1
+
+
+@respx.mock
+async def test_none_strategy_does_not_warn_without_proof_of_more_records() -> None:
+    respx.get(LIST).respond(200, json={"items": rows(2), "total": 2, "total_pages": 1})
+    ep = endpoint(config())
+    await collect(ep)
+    assert ep.warnings == []
+
+
+@respx.mock
+async def test_none_strategy_does_not_warn_for_a_plain_list() -> None:
+    respx.get(LIST).respond(200, json={"items": rows(2)})
+    ep = endpoint(config())
+    await collect(ep)
+    assert ep.warnings == []
+
+
+@respx.mock
+async def test_paginated_strategy_never_warns() -> None:
+    respx.get(LIST).mock(side_effect=paged(rows(3), 2))
+    ep = endpoint(config(items_path="data.items", pagination=PAGE))
+    await collect(ep)
+    assert ep.warnings == []
+
+
+@respx.mock
+async def test_repeated_scans_do_not_duplicate_the_warning() -> None:
+    respx.get(LIST).respond(200, json={"items": rows(2), "total": 9})
+    ep = endpoint(config())
+    await collect(ep)
+    await collect(ep)
+    assert len(ep.warnings) == 1
