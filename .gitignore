@@ -16,3 +16,6 @@ node_modules/
 
 # Local runtime data (SQLite databases)
 data/
+
+# Claude Code local settings
+.claude/settings.local.json
