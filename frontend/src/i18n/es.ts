@@ -59,6 +59,7 @@ export const es = {
       kind: "Tipo",
       baseUrl: "URL base",
       status: "Estado",
+      lastConnected: "Última conexión",
       actions: "Acciones",
     },
     kinds: { odoo: "Odoo", rest: "API REST" },
@@ -83,6 +84,63 @@ export const es = {
       title: "Eliminar conexión",
       body: "Se eliminará la conexión «{{name}}». Esta acción no se puede deshacer.",
     },
+    list: { title: "Perfiles de conexión" },
+    active: {
+      title: "Conexión Odoo activa",
+      badge: "Activa",
+      never: "Nunca",
+      change: "Cambiar",
+      disconnect: "Desconectar",
+      chooseExisting: "Elegir una conexión",
+      createOdoo: "Crear una conexión Odoo",
+      none: "No hay ninguna conexión Odoo activa: la API de datos responde 503.",
+      noneHint:
+        "Crea una conexión Odoo o activa una existente para que la API de datos vuelva a funcionar.",
+      env: "Esta conexión procede de variables de entorno (heredada, solo lectura). Activar un perfil la sustituye.",
+      fallback:
+        "El perfil activo guardado no se pudo cargar al arrancar, así que se está usando otra fuente. Revisa el perfil o activa otro.",
+      fields: {
+        name: "Nombre",
+        baseUrl: "URL",
+        db: "Base de datos",
+        login: "Usuario",
+        source: "Origen",
+        status: "Estado",
+        lastConnected: "Última conexión",
+      },
+      source: {
+        profile: "Perfil",
+        env: "Entorno (heredada, solo lectura)",
+        none: "Ninguna",
+      },
+      status: {
+        active: "Activa",
+        not_configured: "Sin configurar",
+        fallback: "Usando otra fuente",
+      },
+      activate: {
+        action: "Usar como conexión activa: {{name}}",
+        title: "Usar como conexión activa",
+        body: "Se comprobará la conexión con «{{name}}» y, si funciona, pasará a ser la conexión activa de inmediato, sin reiniciar. La API de datos (clientes, productos y pedidos) y el estado de salud usarán este Odoo. Si la prueba falla, la conexión actual no cambia.",
+        confirm: "Usar como conexión activa",
+        probing: "Probando la conexión…",
+        done: "{{name}} es ahora la conexión activa.",
+      },
+      disconnectDialog: {
+        title: "Desconectar Odoo",
+        body: "El conector dejará de usar «{{name}}». Si hay una conexión por variables de entorno se usará esa; si no, la API de datos responderá 503.",
+        confirm: "Desconectar",
+        done: "Conexión Odoo desconectada.",
+      },
+      errors: {
+        activationFailed:
+          "No se pudo activar la conexión: la prueba ha fallado. La conexión anterior sigue activa.",
+        conflict: "No se puede cambiar la conexión activa en este momento.",
+        notOdoo: "Solo una conexión de tipo Odoo puede ser la conexión activa.",
+        activeInUse:
+          "No se puede eliminar la conexión Odoo activa. Desconéctala o activa otra antes de eliminarla.",
+      },
+    },
     wizard: {
       titleCreate: "Nueva conexión",
       titleEdit: "Editar conexión",
@@ -101,6 +159,14 @@ export const es = {
       next: "Siguiente",
       back: "Atrás",
       save: "Guardar conexión",
+      saveAndActivate: "Guardar y activar",
+      activation: {
+        running: "Probando y activando…",
+        savedNotActive:
+          "La conexión se ha guardado, pero no se pudo activar. Corrige el problema y reintenta, o actívala más tarde desde la lista.",
+        retry: "Reintentar la activación",
+        goToList: "Ir a las conexiones",
+      },
       saving: "Guardando…",
       secretStored: "Guardado. Déjalo en blanco para conservar el valor actual.",
       tokenUrlOidcHint: "Opcional: si se omite, se descubre a partir de la URL base.",
@@ -1006,6 +1072,15 @@ export const es = {
       failedRun: "Ejecución #{{id}} de «{{job}}»: {{status}}",
       staleRun: "Ejecución #{{id}} de «{{job}}»: sin señal desde hace más de 15 minutos",
       repeated: "«{{job}}» ha fallado {{count}} veces seguidas",
+      odooNone:
+        "No hay ninguna conexión Odoo activa: la API de datos responde 503. Configúrala en Conexiones.",
+      odooFallback:
+        "El perfil Odoo activo no se pudo cargar al arrancar y se está usando otra fuente. Revísalo en Conexiones.",
+    },
+    odoo: {
+      title: "Odoo activo",
+      none: "Sin conexión Odoo activa",
+      view: "Ver conexiones",
     },
     recent: {
       title: "Ejecuciones recientes",

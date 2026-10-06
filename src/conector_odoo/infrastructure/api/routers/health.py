@@ -23,9 +23,14 @@ async def livez() -> dict[str, str]:
 
 @router.get("/health", response_model=HealthOut, responses={503: {"model": DegradedHealthOut}})
 async def health(
-    client: Annotated[OdooClient, Depends(get_odoo_client)],
+    client: Annotated[OdooClient | None, Depends(get_odoo_client)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> HealthOut | JSONResponse:
+    if client is None:
+        # Nothing to check yet: configuring Odoo is a normal first-run state, not an outage.
+        return HealthOut(
+            status="ok", odoo="not_configured", uid=None, protocol=settings.odoo_protocol
+        )
     try:
         result = await client.check()
     except ConnectorError as exc:

@@ -8,7 +8,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 
-from conector_odoo.domain.errors import ProfileNotFound
+from conector_odoo.application.active_odoo import OdooActivationLog
+from conector_odoo.domain.errors import ProfileInUse, ProfileNotFound
 from conector_odoo.domain.ports import (
     ConnectionProbe,
     ConnectionProfileRepository,
@@ -46,6 +47,9 @@ class ProfileView:
     has_secret: dict[str, bool] = field(default_factory=dict)
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    # Odoo profiles only: is this the live Odoo connection, and when did it last connect.
+    is_active: bool = False
+    last_connected_at: datetime | None = None
 
 
 def to_view(profile: ConnectionProfile) -> ProfileView:
@@ -70,6 +74,20 @@ def to_view(profile: ConnectionProfile) -> ProfileView:
     )
 
 
+async def _with_activity(views: list[ProfileView], log: OdooActivationLog | None) -> None:
+    """Fill ``is_active`` / ``last_connected_at`` in place (no-op without an activation log)."""
+    if log is None:
+        return
+    record = await log.load()
+    for index, view in enumerate(views):
+        if view.type is ProfileType.ODOO:
+            views[index] = replace(
+                view,
+                is_active=record.active_profile_id == view.id,
+                last_connected_at=record.per_profile.get(view.id),
+            )
+
+
 def _seal(vault: SecretVault, secrets: Secrets) -> tuple[bytes | None, frozenset[str]]:
     """Encrypt ``secrets`` (no key needed when there is nothing to store)."""
     present = secrets.present_fields()
@@ -91,9 +109,15 @@ class CreateProfile:
 
 
 class UpdateProfile:
-    def __init__(self, repo: ConnectionProfileRepository, vault: SecretVault) -> None:
+    def __init__(
+        self,
+        repo: ConnectionProfileRepository,
+        vault: SecretVault,
+        log: OdooActivationLog | None = None,
+    ) -> None:
         self._repo = repo
         self._vault = vault
+        self._log = log
 
     async def execute(
         self, profile_id: int, draft: ConnectionProfile, secrets: Secrets | None = None
@@ -121,35 +145,57 @@ class UpdateProfile:
             ),
             blob,
         )
-        return to_view(saved)
+        views = [to_view(saved)]
+        await _with_activity(views, self._log)
+        return views[0]
 
 
 class GetProfile:
-    def __init__(self, repo: ConnectionProfileRepository) -> None:
+    def __init__(
+        self, repo: ConnectionProfileRepository, log: OdooActivationLog | None = None
+    ) -> None:
         self._repo = repo
+        self._log = log
 
     async def execute(self, profile_id: int) -> ProfileView:
         stored = await self._repo.get(profile_id)
         if stored is None:
             raise ProfileNotFound(f"connection profile {profile_id} not found")
-        return to_view(stored.profile)
+        views = [to_view(stored.profile)]
+        await _with_activity(views, self._log)
+        return views[0]
 
 
 class ListProfiles:
-    def __init__(self, repo: ConnectionProfileRepository) -> None:
+    def __init__(
+        self, repo: ConnectionProfileRepository, log: OdooActivationLog | None = None
+    ) -> None:
         self._repo = repo
+        self._log = log
 
     async def execute(self) -> list[ProfileView]:
-        return [to_view(stored.profile) for stored in await self._repo.list()]
+        views = [to_view(stored.profile) for stored in await self._repo.list()]
+        await _with_activity(views, self._log)
+        return views
 
 
 class DeleteProfile:
-    def __init__(self, repo: ConnectionProfileRepository) -> None:
+    def __init__(
+        self, repo: ConnectionProfileRepository, log: OdooActivationLog | None = None
+    ) -> None:
         self._repo = repo
+        self._log = log
 
     async def execute(self, profile_id: int) -> None:
-        """Raises ``ProfileNotFound`` / ``ProfileInUse``."""
+        """Raises ``ProfileNotFound`` / ``ProfileInUse`` (also while it is the active Odoo one)."""
+        if self._log is not None and (await self._log.load()).active_profile_id == profile_id:
+            raise ProfileInUse(
+                f"connection profile {profile_id} is the active Odoo connection; "
+                "activate another profile or disconnect it first"
+            )
         await self._repo.delete(profile_id)
+        if self._log is not None:
+            await self._log.forget_profile(profile_id)
 
 
 class TestConnection:

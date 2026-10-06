@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Steps } from "@/components/ui/steps";
-import { describeProfileError } from "@/features/connections/errors";
+import { useToast } from "@/components/ui/toast";
+import { describeActiveOdooError, describeProfileError } from "@/features/connections/errors";
 import {
   AUTH_METHODS,
   emptyState,
@@ -20,6 +21,7 @@ import {
 } from "@/features/connections/form";
 import { FormField } from "@/features/connections/FormField";
 import {
+  useActivateOdoo,
   useCreateProfile,
   useTestDraft,
   useTestSaved,
@@ -52,9 +54,13 @@ export function ConnectionWizard({ profile }: { profile?: Profile }) {
   const [step, setStep] = useState(editing ? 1 : 0);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Set once the profile exists server-side, so a failed activation never re-creates it.
+  const [savedId, setSavedId] = useState<number | null>(null);
+  const { toast } = useToast();
 
   const create = useCreateProfile();
   const update = useUpdateProfile();
+  const activate = useActivateOdoo();
   const testDraft = useTestDraft();
   const testSaved = useTestSaved();
   const testing = testDraft.isPending || testSaved.isPending;
@@ -62,7 +68,7 @@ export function ConnectionWizard({ profile }: { profile?: Profile }) {
   const testError = testDraft.error ?? testSaved.error ?? null;
 
   // Drop every mutation's variables (they carry credentials) when the wizard goes away.
-  const resets = [create.reset, update.reset, testDraft.reset, testSaved.reset];
+  const resets = [create.reset, update.reset, activate.reset, testDraft.reset, testSaved.reset];
   useEffect(
     () => () => resets.forEach((reset) => reset()),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `reset` functions are stable
@@ -94,7 +100,18 @@ export function ConnectionWizard({ profile }: { profile?: Profile }) {
     goTo(step + 1);
   }
 
-  function save() {
+  function finish(name: string, activated: boolean) {
+    if (activated) {
+      toast({ tone: "success", message: t("connections.active.activate.done", { name }) });
+    }
+    void navigate("/connections");
+  }
+
+  function runActivation(id: number, name: string) {
+    activate.mutate(id, { onSuccess: () => finish(name, true) });
+  }
+
+  function save(activateAfter: boolean) {
     const input = toInput(state);
     const onError = (error: unknown) => {
       const described = describeProfileError(error, "save");
@@ -104,12 +121,18 @@ export function ConnectionWizard({ profile }: { profile?: Profile }) {
         goTo(1);
       }
     };
-    const onSuccess = () => void navigate("/connections");
-    if (profile) update.mutate({ id: profile.id, input }, { onSuccess, onError });
+    const onSuccess = (saved: Profile) => {
+      setSavedId(saved.id);
+      if (activateAfter) runActivation(saved.id, saved.name);
+      else finish(saved.name, false);
+    };
+    const existing = profile?.id ?? savedId;
+    if (existing !== null) update.mutate({ id: existing, input }, { onSuccess, onError });
     else create.mutate(input, { onSuccess, onError });
   }
 
-  const saving = create.isPending || update.isPending;
+  const saving = create.isPending || update.isPending || activate.isPending;
+  const activationFailure = activate.error ? describeActiveOdooError(activate.error) : null;
   const canDraftTest = hasAllSecretsTyped(state);
   const kindLabel = (kind: ProfileKind) => t(`connections.kinds.${kind}`);
   const stepId = STEP_IDS[step] ?? "kind";
@@ -438,6 +461,18 @@ export function ConnectionWizard({ profile }: { profile?: Profile }) {
         </dl>
       )}
 
+      {stepId === "review" && activationFailure && (
+        <div className="flex flex-col gap-3">
+          <p role="alert" className="text-sm text-destructive">
+            {t("connections.wizard.activation.savedNotActive")}
+          </p>
+          <p className="text-sm text-destructive">
+            {t(activationFailure.messageKey, activationFailure.params)}
+          </p>
+          {activationFailure.result && <TestResultView result={activationFailure.result} />}
+        </div>
+      )}
+
       <div className="flex justify-between gap-2">
         <Button
           variant="outline"
@@ -446,9 +481,31 @@ export function ConnectionWizard({ profile }: { profile?: Profile }) {
           {step === 0 ? t("common.cancel") : t("connections.wizard.back")}
         </Button>
         {stepId === "review" ? (
-          <Button disabled={saving} onClick={save}>
-            {saving ? t("connections.wizard.saving") : t("connections.wizard.save")}
-          </Button>
+          savedId !== null && activationFailure ? (
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => finish("", false)}>
+                {t("connections.wizard.activation.goToList")}
+              </Button>
+              <Button disabled={saving} onClick={() => runActivation(savedId, state.name)}>
+                {t("connections.wizard.activation.retry")}
+              </Button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <Button variant="outline" disabled={saving} onClick={() => save(false)}>
+                {saving && !activate.isPending
+                  ? t("connections.wizard.saving")
+                  : t("connections.wizard.save")}
+              </Button>
+              {state.type === "odoo" && (
+                <Button disabled={saving} onClick={() => save(true)}>
+                  {activate.isPending
+                    ? t("connections.wizard.activation.running")
+                    : t("connections.wizard.saveAndActivate")}
+                </Button>
+              )}
+            </div>
+          )
         ) : (
           <Button onClick={next}>{t("connections.wizard.next")}</Button>
         )}

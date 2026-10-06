@@ -1,4 +1,4 @@
-import type { ConnectionTestResult, Profile } from "@/features/connections/types";
+import type { ActiveOdoo, ConnectionTestResult, Profile } from "@/features/connections/types";
 
 /** Test fixtures shared by the connections suites (never imported by app code). */
 export function profileFixture(overrides: Partial<Profile> = {}): Profile {
@@ -19,6 +19,8 @@ export function profileFixture(overrides: Partial<Profile> = {}): Profile {
     has_secret: { token: true },
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
+    is_active: false,
+    last_connected_at: null,
     ...overrides,
   };
 }
@@ -59,4 +61,39 @@ export const failingTest: ConnectionTestResult = {
       hint: "Check the key/token/client credentials.",
     },
   ],
+};
+
+/** An active Odoo connection backed by `odooProfileFixture`. */
+export function activeOdooFixture(overrides: Partial<ActiveOdoo> = {}): ActiveOdoo {
+  return {
+    source: "profile",
+    profile_id: 2,
+    profile_name: "Odoo producción",
+    base_url: "https://odoo.example.com",
+    db: "prod",
+    login: "admin",
+    last_connected_at: "2026-03-01T10:00:00Z",
+    status: "active",
+    warning: null,
+    ...overrides,
+  };
+}
+
+export const noOdooFixture = activeOdooFixture({
+  source: "none",
+  profile_id: null,
+  profile_name: null,
+  base_url: null,
+  db: null,
+  login: null,
+  last_connected_at: null,
+  status: "not_configured",
+});
+
+/** What the API answers (422) when the probe of the profile to activate fails. */
+export const activationFailure = {
+  error: "odoo_activation_failed",
+  detail: "the Odoo connection could not be activated",
+  failed_step: "auth",
+  steps: failingTest.steps,
 };

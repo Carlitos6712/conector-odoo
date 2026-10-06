@@ -83,6 +83,21 @@ test("connect SUWE, map clients to res.partner, simulate, run, see it in history
     await expect(page.getByRole("row", { name: new RegExp(ODOO_CONNECTION) })).toBeVisible();
   });
 
+  await test.step("activate the Odoo connection (it overrides the legacy env one)", async () => {
+    await page.goto("/connections");
+    const panel = page.getByRole("region", { name: "Conexión Odoo activa" });
+    // This backend still boots with ODOO_* set, so the legacy connection is the live one.
+    await expect(panel).toContainText("variables de entorno");
+    await page.getByRole("button", { name: `Usar como conexión activa: ${ODOO_CONNECTION}` }).click();
+    const dialog = page.getByRole("alertdialog");
+    await dialog.getByRole("button", { name: "Usar como conexión activa" }).click();
+    await expect(dialog).toBeHidden();
+    const row = page.getByRole("row", { name: new RegExp(ODOO_CONNECTION) });
+    await expect(row.getByText("Activa")).toBeVisible();
+    await expect(panel).toContainText(ODOO_CONNECTION);
+    await expect(panel).not.toContainText("variables de entorno");
+  });
+
   await test.step("define the clients resource (pagination set by hand) and preview records", async () => {
     await page.goto("/resources/new");
     await page.getByLabel("Conexión").selectOption({ label: SUWE_CONNECTION });

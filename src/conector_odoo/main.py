@@ -67,7 +67,7 @@ async def _cancel_task(task: "asyncio.Task[None]") -> None:
 async def _close_container(container: Container) -> None:
     """Release every container resource; one failure never prevents closing the rest."""
     try:
-        await container.odoo_client.aclose()
+        await container.odoo.aclose()
     finally:
         try:
             await container.webhook_events.close()
@@ -94,8 +94,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             stack.callback(close_admin_database, admin_db)
             app.state.admin_db = admin_db
             check_vault_at_startup(admin_db, build_vault(resolved))
-            admin = build_admin_services(resolved, admin_db)
+            admin = build_admin_services(resolved, admin_db, container.odoo)
             app.state.admin = admin
+            # Active profile > env > none; never raises (a broken profile is a warning).
+            await admin.active_odoo.restore()
             # Closed before the admin database (background runs write to it) and after the
             # scheduler has stopped starting new ones.
             stack.push_async_callback(admin.aclose)

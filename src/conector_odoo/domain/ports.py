@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
+from conector_odoo.domain.active_odoo import OdooSource
 from conector_odoo.domain.auth import AdminSession, AdminUser, Role
 from conector_odoo.domain.entities import (
     Customer,
@@ -142,6 +143,68 @@ class ConnectionProfileRepository(Protocol):
     async def delete(self, profile_id: int) -> None:
         """Raises ``ProfileNotFound`` or ``ProfileInUse`` (referenced by resources/jobs)."""
         ...
+
+
+class AppSettingsRepository(Protocol):
+    """Small persistent string key/value store for application state (not user data)."""
+
+    async def get_all(self, prefix: str) -> dict[str, str]:
+        """Every entry whose key starts with ``prefix`` (a literal prefix, not a pattern)."""
+        ...
+
+    async def set_many(self, values: dict[str, str]) -> None:
+        """Upsert all entries in one transaction."""
+        ...
+
+    async def delete(self, key: str) -> None: ...
+
+
+class OdooConnectionInfo(Protocol):
+    """Non-secret description of an Odoo connection (live, or built but not installed yet)."""
+
+    @property
+    def source(self) -> OdooSource: ...
+
+    @property
+    def profile_id(self) -> int | None: ...
+
+    @property
+    def profile_name(self) -> str | None: ...
+
+    @property
+    def base_url(self) -> str | None: ...
+
+    @property
+    def db(self) -> str | None: ...
+
+    @property
+    def login(self) -> str | None: ...
+
+
+PreparedOdooConnection = OdooConnectionInfo  # a prepared connection is discarded via the runtime
+
+
+class OdooRuntime(Protocol):
+    """The live Odoo connection of the process, swappable without a restart.
+
+    Preparing builds a client without any I/O; ``commit`` swaps it in atomically and retires the
+    previous one after its in-flight requests finish; ``commit(None)`` disconnects.
+    """
+
+    @property
+    def current(self) -> OdooConnectionInfo | None: ...
+
+    def prepare_profile(
+        self, profile: ConnectionProfile, secrets: Secrets
+    ) -> PreparedOdooConnection: ...
+
+    def prepare_env(self) -> PreparedOdooConnection | None:
+        """The connection described by the legacy ODOO_* env vars, or ``None`` when incomplete."""
+        ...
+
+    async def commit(self, prepared: PreparedOdooConnection | None) -> None: ...
+
+    async def discard(self, prepared: PreparedOdooConnection) -> None: ...
 
 
 class SecretVault(Protocol):

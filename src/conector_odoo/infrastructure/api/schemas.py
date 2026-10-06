@@ -253,7 +253,7 @@ class SaleOrderOut(BaseModel):
 
 class HealthOut(BaseModel):
     status: Literal["ok"]
-    odoo: Literal["reachable"]
+    odoo: Literal["reachable", "not_configured"]
     uid: int | None
     protocol: str
 

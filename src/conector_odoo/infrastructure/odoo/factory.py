@@ -16,6 +16,15 @@ from conector_odoo.infrastructure.odoo.xmlrpc import XmlRpcTransport
 
 
 def build_transport(settings: Settings) -> OdooTransport:
+    if (
+        settings.odoo_url is None
+        or settings.odoo_db is None
+        or settings.odoo_user is None
+        or settings.odoo_api_key is None
+    ):
+        raise ProfileValidationError(
+            "ODOO_URL, ODOO_DB, ODOO_USER and ODOO_API_KEY must all be set for the env connection"
+        )
     url = settings.odoo_url
     db = settings.odoo_db
     user = settings.odoo_user
@@ -42,7 +51,7 @@ def build_odoo_client(settings: Settings) -> OdooClient:
     )
 
 
-def build_odoo_endpoint(
+def build_odoo_profile_client(
     profile: ConnectionProfile,
     secrets: Secrets,
     *,
@@ -50,10 +59,9 @@ def build_odoo_endpoint(
     max_retries: int = 2,
     max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
     company_id: int | None = None,
-    allow_system_model_writes: bool = False,
     policy: OutboundPolicy = DEFAULT_POLICY,
-) -> OdooRecordEndpoint:
-    """Generic record endpoint for an Odoo connection profile (``odoo_db``/``odoo_login``).
+) -> OdooClient:
+    """``OdooClient`` for an Odoo connection profile (``odoo_db``/``odoo_login``); no I/O.
 
     The credential is the API key, falling back to the password. Secrets only travel into the
     transport; nothing here logs or ``repr``s them.
@@ -94,5 +102,28 @@ def build_odoo_endpoint(
             max_connections=max_concurrency,
             policy=policy,
         )
-    client = OdooClient(transport, company_id=company_id, max_concurrency=max_concurrency)
+    return OdooClient(transport, company_id=company_id, max_concurrency=max_concurrency)
+
+
+def build_odoo_endpoint(
+    profile: ConnectionProfile,
+    secrets: Secrets,
+    *,
+    protocol: Literal["jsonrpc", "xmlrpc", "json2"] = "jsonrpc",
+    max_retries: int = 2,
+    max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
+    company_id: int | None = None,
+    allow_system_model_writes: bool = False,
+    policy: OutboundPolicy = DEFAULT_POLICY,
+) -> OdooRecordEndpoint:
+    """Generic record endpoint for an Odoo connection profile."""
+    client = build_odoo_profile_client(
+        profile,
+        secrets,
+        protocol=protocol,
+        max_retries=max_retries,
+        max_concurrency=max_concurrency,
+        company_id=company_id,
+        policy=policy,
+    )
     return OdooRecordEndpoint(client, allow_system_model_writes=allow_system_model_writes)

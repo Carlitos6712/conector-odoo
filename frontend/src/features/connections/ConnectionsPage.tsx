@@ -1,5 +1,5 @@
-import { Pencil, Plus, Trash2, Zap } from "lucide-react";
-import { useState } from "react";
+import { Pencil, Plug, Plus, Trash2, Zap } from "lucide-react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { AdminOnly } from "@/auth/AdminOnly";
@@ -17,8 +17,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ActivateOdooDialog } from "@/features/connections/ActivateOdooDialog";
+import { ActiveOdooPanel } from "@/features/connections/ActiveOdooPanel";
 import { DeleteProfileDialog } from "@/features/connections/DeleteProfileDialog";
 import { useProfiles, useTestSaved } from "@/features/connections/hooks";
+import { LastConnected } from "@/features/connections/LastConnected";
 import type { ConnectionTestResult, Profile } from "@/features/connections/types";
 
 type Outcome = ConnectionTestResult | "error";
@@ -47,6 +50,14 @@ export function ConnectionsPage() {
   const [outcomes, setOutcomes] = useState<Record<number, Outcome>>({});
   const [testingId, setTestingId] = useState<number | null>(null);
   const [toDelete, setToDelete] = useState<Profile | null>(null);
+  const [toActivate, setToActivate] = useState<Profile | null>(null);
+  const [announcement, setAnnouncement] = useState("");
+  const listHeading = useRef<HTMLHeadingElement>(null);
+
+  function focusList() {
+    listHeading.current?.focus();
+    listHeading.current?.scrollIntoView?.({ block: "start" });
+  }
 
   function runTest(id: number) {
     setTestingId(id);
@@ -86,6 +97,7 @@ export function ConnectionsPage() {
             <TableHead>{t("connections.columns.kind")}</TableHead>
             <TableHead>{t("connections.columns.baseUrl")}</TableHead>
             <TableHead>{t("connections.columns.status")}</TableHead>
+            <TableHead>{t("connections.columns.lastConnected")}</TableHead>
             <AdminOnly>
               <TableHead>
                 <span className="sr-only">{t("connections.columns.actions")}</span>
@@ -96,15 +108,41 @@ export function ConnectionsPage() {
         <TableBody>
           {profiles.data.map((profile) => (
             <TableRow key={profile.id}>
-              <TableCell className="font-medium">{profile.name}</TableCell>
+              <TableCell className="font-medium">
+                {profile.name}
+                {profile.is_active && (
+                  <Badge variant="success" className="ml-2">
+                    {t("connections.active.badge")}
+                  </Badge>
+                )}
+              </TableCell>
               <TableCell>{t(`connections.kinds.${profile.type}`)}</TableCell>
               <TableCell className="break-all">{profile.base_url}</TableCell>
               <TableCell>
                 <TestBadge outcome={outcomes[profile.id]} />
               </TableCell>
+              <TableCell>
+                {profile.type === "odoo" ? (
+                  <LastConnected iso={profile.last_connected_at} now={profiles.dataUpdatedAt} />
+                ) : (
+                  <span aria-hidden className="text-muted-foreground">
+                    —
+                  </span>
+                )}
+              </TableCell>
               <AdminOnly>
                 <TableCell>
                   <div className="flex justify-end gap-1">
+                    {profile.type === "odoo" && !profile.is_active && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={t("connections.active.activate.action", { name: profile.name })}
+                        onClick={() => setToActivate(profile)}
+                      >
+                        <Plug aria-hidden className="size-4" />
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="icon"
@@ -145,8 +183,24 @@ export function ConnectionsPage() {
         <h1 className="text-2xl font-semibold">{t("nav.connections")}</h1>
         {profiles.data && profiles.data.length > 0 && <AdminOnly>{newLink}</AdminOnly>}
       </div>
+      <p role="status" className="sr-only">
+        {announcement}
+      </p>
+      <ActiveOdooPanel
+        hasOdooProfiles={(profiles.data ?? []).some((p) => p.type === "odoo")}
+        onChange={focusList}
+        onDisconnected={() => setAnnouncement(t("connections.active.disconnectDialog.done"))}
+      />
+      <h2 ref={listHeading} tabIndex={-1} className="text-lg font-semibold outline-none">
+        {t("connections.list.title")}
+      </h2>
       {body}
       <DeleteProfileDialog profile={toDelete} onClose={() => setToDelete(null)} />
+      <ActivateOdooDialog
+        profile={toActivate}
+        onClose={() => setToActivate(null)}
+        onActivated={(name) => setAnnouncement(t("connections.active.activate.done", { name }))}
+      />
     </section>
   );
 }

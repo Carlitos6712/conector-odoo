@@ -6,6 +6,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from conector_odoo.application.active_odoo import ActiveOdooConnection, OdooActivationLog
 from conector_odoo.application.auth import AuthConfig, AuthService, UserAdmin
 from conector_odoo.application.dashboard import GetDashboard
 from conector_odoo.application.jobs import (
@@ -46,8 +47,9 @@ from conector_odoo.application.sync_runner import SyncRunner
 from conector_odoo.application.sync_trigger import TriggerSyncJob
 from conector_odoo.application.webhook_triggers import HandleWebhookTrigger
 from conector_odoo.config import Settings
-from conector_odoo.domain.ports import ConnectionProbe, MappingRepository
+from conector_odoo.domain.ports import ConnectionProbe, MappingRepository, OdooRuntime
 from conector_odoo.domain.profiles import ProfileType
+from conector_odoo.infrastructure.app_settings import SqliteAppSettings
 from conector_odoo.infrastructure.auth.hasher import Argon2PasswordHasher
 from conector_odoo.infrastructure.auth.repository import (
     SqliteAdminUserRepository,
@@ -122,6 +124,7 @@ class AdminServices:
     auth: AuthService
     users: UserAdmin
     endpoints: ProfileEndpoints
+    active_odoo: ActiveOdooConnection
     profiles: ProfileServices
     resources: ResourceServices
     mappings: MappingServices
@@ -146,7 +149,9 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-def build_admin_services(settings: Settings, conn: sqlite3.Connection) -> AdminServices:
+def build_admin_services(
+    settings: Settings, conn: sqlite3.Connection, odoo_runtime: OdooRuntime
+) -> AdminServices:
     hasher = Argon2PasswordHasher(
         time_cost=settings.admin_argon2_time_cost,
         memory_cost=settings.admin_argon2_memory_kib,
@@ -172,6 +177,10 @@ def build_admin_services(settings: Settings, conn: sqlite3.Connection) -> AdminS
         ProfileType.REST: RestConnectionProbe(policy),
         ProfileType.ODOO: OdooConnectionProbe(policy=policy),
     }
+    activation_log = OdooActivationLog(SqliteAppSettings(conn))
+    active_odoo = ActiveOdooConnection(
+        profile_repo, vault, probes, odoo_runtime, activation_log, settings
+    )
     mapping_repo = SqliteMappingRepository(conn)
     job_repo = SqliteSyncJobRepository(conn)
     run_repo = SqliteSyncRunRepository(conn)
@@ -206,12 +215,13 @@ def build_admin_services(settings: Settings, conn: sqlite3.Connection) -> AdminS
         ),
         users=UserAdmin(users, sessions, hasher, _now),
         endpoints=endpoints,
+        active_odoo=active_odoo,
         profiles=ProfileServices(
             create=CreateProfile(profile_repo, vault),
-            update=UpdateProfile(profile_repo, vault),
-            get=GetProfile(profile_repo),
-            list=ListProfiles(profile_repo),
-            delete=DeleteProfile(profile_repo),
+            update=UpdateProfile(profile_repo, vault, activation_log),
+            get=GetProfile(profile_repo, activation_log),
+            list=ListProfiles(profile_repo, activation_log),
+            delete=DeleteProfile(profile_repo, activation_log),
             test=TestConnection(profile_repo, vault, probes),
             probes=probes,
         ),

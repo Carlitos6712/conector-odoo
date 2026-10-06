@@ -61,6 +61,7 @@ export const en: Translation = {
       kind: "Type",
       baseUrl: "Base URL",
       status: "Status",
+      lastConnected: "Last connected",
       actions: "Actions",
     },
     kinds: { odoo: "Odoo", rest: "REST API" },
@@ -85,6 +86,63 @@ export const en: Translation = {
       title: "Delete connection",
       body: 'The connection "{{name}}" will be deleted. This cannot be undone.',
     },
+    list: { title: "Connection profiles" },
+    active: {
+      title: "Active Odoo connection",
+      badge: "Active",
+      never: "Never",
+      change: "Change",
+      disconnect: "Disconnect",
+      chooseExisting: "Choose a connection",
+      createOdoo: "Create an Odoo connection",
+      none: "No Odoo connection is active: the data API answers 503.",
+      noneHint:
+        "Create an Odoo connection or activate an existing one so the data API works again.",
+      env: "This connection comes from environment variables (legacy, read-only). Activating a profile replaces it.",
+      fallback:
+        "The stored active profile could not be loaded at startup, so another source is in use. Check the profile or activate another one.",
+      fields: {
+        name: "Name",
+        baseUrl: "URL",
+        db: "Database",
+        login: "User",
+        source: "Source",
+        status: "Status",
+        lastConnected: "Last connected",
+      },
+      source: {
+        profile: "Profile",
+        env: "Environment (legacy, read-only)",
+        none: "None",
+      },
+      status: {
+        active: "Active",
+        not_configured: "Not configured",
+        fallback: "Using another source",
+      },
+      activate: {
+        action: "Use as active connection: {{name}}",
+        title: "Use as active connection",
+        body: "The connection to “{{name}}” will be tested and, if it works, it becomes the active connection immediately, with no restart. The data API (customers, products and orders) and the health check will use this Odoo. If the test fails, the current connection does not change.",
+        confirm: "Use as active connection",
+        probing: "Testing the connection…",
+        done: "{{name}} is now the active connection.",
+      },
+      disconnectDialog: {
+        title: "Disconnect Odoo",
+        body: "The connector will stop using “{{name}}”. If an environment connection is configured it will be used; otherwise the data API will answer 503.",
+        confirm: "Disconnect",
+        done: "Odoo connection disconnected.",
+      },
+      errors: {
+        activationFailed:
+          "The connection could not be activated: the test failed. The previous connection is still active.",
+        conflict: "The active connection cannot be changed right now.",
+        notOdoo: "Only an Odoo connection can be the active one.",
+        activeInUse:
+          "The active Odoo connection cannot be deleted. Disconnect it or activate another one first.",
+      },
+    },
     wizard: {
       titleCreate: "New connection",
       titleEdit: "Edit connection",
@@ -103,6 +161,14 @@ export const en: Translation = {
       next: "Next",
       back: "Back",
       save: "Save connection",
+      saveAndActivate: "Save and activate",
+      activation: {
+        running: "Testing and activating…",
+        savedNotActive:
+          "The connection was saved, but it could not be activated. Fix the problem and retry, or activate it later from the list.",
+        retry: "Retry activation",
+        goToList: "Go to connections",
+      },
       saving: "Saving…",
       secretStored: "Stored. Leave blank to keep the current value.",
       tokenUrlOidcHint: "Optional: when omitted it is discovered from the base URL.",
@@ -993,6 +1059,15 @@ export const en: Translation = {
       failedRun: "Run #{{id}} of “{{job}}”: {{status}}",
       staleRun: "Run #{{id}} of “{{job}}”: no heartbeat for over 15 minutes",
       repeated: "“{{job}}” has failed {{count}} times in a row",
+      odooNone:
+        "No Odoo connection is active: the data API answers 503. Set one up in Connections.",
+      odooFallback:
+        "The active Odoo profile could not be loaded at startup and another source is in use. Check it in Connections.",
+    },
+    odoo: {
+      title: "Active Odoo",
+      none: "No active Odoo connection",
+      view: "View connections",
     },
     recent: {
       title: "Recent runs",

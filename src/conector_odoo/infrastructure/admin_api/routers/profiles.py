@@ -43,6 +43,8 @@ async def get_profile(profile_id: int, admin: AdminDep) -> ProfileOut:
 @router.put("/{profile_id}")
 async def update_profile(profile_id: int, body: ProfileIn, admin: AdminDep) -> ProfileOut:
     view = await admin.profiles.update.execute(profile_id, body.to_domain(), body.secrets_domain())
+    if view.is_active:  # the live client was built from the old values
+        await admin.active_odoo.refresh_if_active(profile_id)
     return ProfileOut.of(view)
 
 

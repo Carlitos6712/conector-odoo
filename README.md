@@ -84,8 +84,8 @@ and the run continues.
 
 ## Quick start (local development)
 
-Prerequisites: Python with [uv](https://docs.astral.sh/uv/), Node 20+. The service needs an Odoo
-instance for the `ODOO_*` settings (they are required even if you only use the admin UI).
+Prerequisites: Python with [uv](https://docs.astral.sh/uv/), Node 20+. No Odoo settings are needed
+in `.env`: you enter the Odoo connection in the admin UI after the first sign-in (see below).
 
 ```bash
 # 1. Backend
@@ -94,8 +94,8 @@ cp .env.example .env
 uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-Edit `.env`: set `ODOO_URL`, `ODOO_DB`, `ODOO_USER`, `ODOO_API_KEY`, `WEBHOOK_SECRET`, paste the
-generated key into `ENCRYPTION_KEY`, and add the first admin plus plain-HTTP cookies for local use:
+Edit `.env`: set `WEBHOOK_SECRET`, paste the generated key into `ENCRYPTION_KEY`, and add the first
+admin plus plain-HTTP cookies for local use (`ODOO_*` can stay unset, see "Active Odoo connection"):
 
 ```bash
 ADMIN_BOOTSTRAP_USER=admin
@@ -117,6 +117,38 @@ npm run dev                   # http://localhost:5173 ; VITE_BACKEND_URL overrid
 Sign in with the bootstrap user. The first admin is created only when no admin exists, so the two
 `ADMIN_BOOTSTRAP_*` variables can be removed afterwards. More users: **Ajustes** > **Usuarios**.
 
+### Active Odoo connection
+
+The connector talks to ONE Odoo at a time for the data API (`/customers`, `/products`,
+`/sale-orders`) and `/health`. You choose it in the admin UI, not in `.env`:
+
+1. Create an Odoo connection profile (URL, database, login, API key; secrets are stored encrypted).
+2. Activate it. The profile is tested first (URL, reachability, TLS, authentication); if the test
+   fails nothing changes and the API answers 422 `odoo_activation_failed` with the failing step.
+3. The activated profile is remembered across restarts. Activate another one at any time, no
+   restart needed: in-flight requests finish on the old connection, which is then closed.
+
+In the UI (**Conexiones**): the "Conexión Odoo activa" panel shows which Odoo is live and where it
+comes from (profile, legacy environment or none, with a banner when nothing is connected). On an
+Odoo profile use "Usar como conexión activa" (the row action), or finish the wizard with "Guardar y
+activar". A failed test shows the failing step and keeps the previous connection. "Desconectar"
+forgets the active profile. Operators see the panel and the "Activa" badge but cannot change it.
+
+Resolution at startup: the remembered active profile (if it still exists and decrypts) > the legacy
+`ODOO_*` variables when ALL four are set (source `env`) > none. A broken active profile logs a
+warning and falls back; it never stops the service. With no connection at all the service starts,
+`/livez` and the admin UI work, `/health` reports `"odoo": "not_configured"`, and the data API
+answers 503 `odoo_not_configured` until a profile is activated. The webhook intake does not need
+Odoo.
+
+The admin API: `GET /admin/api/odoo/active` (any signed-in user), `PUT /admin/api/odoo/active`
+with `{"profile_id": N}` and `DELETE /admin/api/odoo/active` (admin, CSRF). Disconnecting falls
+back to the `ODOO_*` environment connection when present, otherwise to none. The active profile
+cannot be deleted (409); editing it reloads the live client. Profile responses carry `is_active`
+and `last_connected_at`. Protocol, retries, concurrency, batch size and company come from the
+global `ODOO_PROTOCOL`, `ODOO_MAX_RETRIES`, `ODOO_MAX_CONCURRENCY`, `ODOO_BATCH_SIZE` and
+`ODOO_COMPANY_ID`; the timeout comes from the profile.
+
 To serve the UI from the backend itself (no dev server): `npm run build` in `frontend/`, then open
 <http://localhost:8000/>. The backend serves `FRONTEND_DIST_DIR` (default `./frontend/dist`, relative
 to the working directory); if it is missing, the API still works and one warning is logged.
@@ -133,7 +165,8 @@ Odoo and the target REST API are **not** bundled; point the connector at them.
 cp .env.example .env
 # Generate the vault key and paste it as ENCRYPTION_KEY:
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-# Edit .env: ODOO_*, WEBHOOK_SECRET, ENCRYPTION_KEY, ADMIN_BOOTSTRAP_USER/PASSWORD
+# Edit .env: WEBHOOK_SECRET, ENCRYPTION_KEY, ADMIN_BOOTSTRAP_USER/PASSWORD
+# (ODOO_* is optional: set the Odoo connection in the admin UI after signing in)
 
 docker compose up -d --build
 docker compose logs -f connector
@@ -141,8 +174,8 @@ docker compose down          # keeps the data volume; add -v to delete it
 ```
 
 The admin UI is at <http://localhost:8000/> (change the host port with `CONNECTOR_PORT`).
-Compose refuses to start while `ODOO_URL`, `ODOO_DB`, `ODOO_USER`, `ODOO_API_KEY`,
-`WEBHOOK_SECRET`, `ENCRYPTION_KEY` or `ADMIN_BOOTSTRAP_*` are unset.
+Compose refuses to start while `WEBHOOK_SECRET`, `ENCRYPTION_KEY` or `ADMIN_BOOTSTRAP_*` are
+unset. The `ODOO_*` connection variables are optional and passed through only when present.
 
 - **Cookie and TLS.** `ADMIN_COOKIE_SECURE` defaults to `true`, so browsers only send the session
   cookie over HTTPS (localhost is exempt). Put a reverse proxy that terminates TLS in front of
@@ -153,10 +186,12 @@ Compose refuses to start while `ODOO_URL`, `ODOO_DB`, `ODOO_USER`, `ODOO_API_KEY
   (the volume is named `<compose project>_connector-data`; check `docker volume ls`).
   Keep `ENCRYPTION_KEY` with the backup: without it stored secrets cannot be decrypted.
 - **Health.** The container healthcheck calls `GET /livez` (process only). `GET /health` also
-  calls Odoo and answers 503 when it is down, so it is not used as the liveness probe.
+  calls the active Odoo and answers 503 when it is down (200 with `odoo: not_configured` when none
+  is active), so it is not used as the liveness probe.
 - **Reaching Odoo or the SUWE fake on the Docker host.** `localhost` inside the container is the
   container itself. Use `http://host.docker.internal:8069` (Odoo) or
-  `http://host.docker.internal:8000` (SUWE fake) in `ODOO_URL` and in the connection profiles;
+  `http://host.docker.internal:8000` (SUWE fake) in the connection profiles (and in `ODOO_URL` if
+  you still use the legacy variables);
   compose maps that name to the host gateway through `extra_hosts`, which also works on Linux.
 - **Single replica.** Run one container: the scheduler is in-process and SQLite is local. Set
   `SYNC_SCHEDULER_ENABLED=false` to disable cron jobs.
@@ -166,16 +201,20 @@ Compose refuses to start while `ODOO_URL`, `ODOO_DB`, `ODOO_USER`, `ODOO_API_KEY
 Environment variables or entries in `.env` (source: `src/conector_odoo/config.py`). Secrets must be
 at least 16 characters where noted.
 
-### Odoo (data API and webhook handlers)
+### Odoo (data API)
+
+The preferred way to point the connector at Odoo is an Odoo connection profile activated in the
+admin UI ("Active Odoo connection" above). The four `ODOO_URL/DB/USER/API_KEY` variables are the
+**legacy mode**: used only while no profile is active, and only when ALL four are set.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `ODOO_URL` | required | Base URL of Odoo. |
-| `ODOO_DB` | required | Odoo database name. |
-| `ODOO_USER` | required | Login of the user that owns the API key. |
-| `ODOO_API_KEY` | required | Odoo API key, 16+ characters. |
-| `ODOO_PROTOCOL` | `jsonrpc` | `jsonrpc`, `xmlrpc` or `json2` (Odoo 19). |
-| `ODOO_TIMEOUT_SECONDS` | `10.0` | Per-request timeout. |
+| `ODOO_URL` | unset (legacy, optional) | Base URL of Odoo. |
+| `ODOO_DB` | unset (legacy, optional) | Odoo database name. |
+| `ODOO_USER` | unset (legacy, optional) | Login of the user that owns the API key. |
+| `ODOO_API_KEY` | unset (legacy, optional) | Odoo API key, 16+ characters. |
+| `ODOO_PROTOCOL` | `jsonrpc` | `jsonrpc`, `xmlrpc` or `json2` (Odoo 19). Applies to the active connection whatever its source. |
+| `ODOO_TIMEOUT_SECONDS` | `10.0` | Per-request timeout of the legacy env connection (a profile uses its own timeout). |
 | `ODOO_MAX_RETRIES` | `2` | Retries on network errors for idempotent calls (never for `create`). |
 | `ODOO_COMPANY_ID` | unset | Default company in the Odoo context. |
 | `ODOO_MAX_CONCURRENCY` | `8` | Max Odoo calls in flight (1-64). |
@@ -297,8 +336,11 @@ Not done, by design or yet:
 - **Private addresses are reachable by default.** Only admins can set URLs, and Odoo or the target
   API is often on an internal network, so `default` allows RFC 1918, loopback and ULA ranges. Use
   `OUTBOUND_URL_POLICY=strict` plus `OUTBOUND_ALLOWED_HOSTS` when the connector must not reach
-  anything internal except named hosts. The Odoo configured through `ODOO_URL` (the legacy data API
-  and webhook handlers) is operator-controlled and is not subject to the policy.
+  anything internal except named hosts. An Odoo profile activated from the admin UI IS subject to
+  the policy (also when it is switched at runtime); the legacy `ODOO_URL` connection is
+  operator-controlled and is not.
+- **Activating an Odoo profile is an admin action** (CSRF-protected) and probes the profile first;
+  the live connection only changes when the probe succeeds. The API never returns a credential.
 - No account unlock action or locked-account indicator in the UI.
 
 ## Usage walkthrough
@@ -307,7 +349,9 @@ Follow the sidebar order in the UI. Operators see everything but cannot change a
 
 1. **Connections.** Create a REST connection (base URL, auth: API key, Bearer, OAuth2 client
    credentials or OIDC) and an Odoo connection (URL, database, login, API key). The wizard tests each
-   step (URL, reachability, TLS, auth) before you save. Secrets are write-only.
+   step (URL, reachability, TLS, auth) before you save. Secrets are write-only. Activate one Odoo
+   connection as the live one for the data API with "Usar como conexión activa" or "Guardar y
+   activar" (see "Active Odoo connection"); no `.env` editing is needed.
 2. **Resources.** A resource describes one REST collection: list endpoint, `items_path`, `id_field`
    and pagination (`none`, `page`, `offset` or `cursor`). Create it by hand or import candidates from
    an OpenAPI 3.x / Swagger 2.0 document, then check it with the live preview. Odoo models need no

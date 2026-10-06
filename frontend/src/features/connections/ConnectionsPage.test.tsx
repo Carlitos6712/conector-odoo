@@ -2,6 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConnectionsPage } from "@/features/connections/ConnectionsPage";
 import {
+  activeOdooFixture,
   failingTest,
   odooProfileFixture,
   passingTest,
@@ -15,6 +16,7 @@ function routes(role: Role, items = [profileFixture(), odooProfileFixture]) {
   return {
     "GET /auth/me": () => json(sessionBody(role)),
     "GET /profiles": () => json({ items }),
+    "GET /odoo/active": () => json(activeOdooFixture()),
   };
 }
 
@@ -23,9 +25,11 @@ describe("ConnectionsPage list", () => {
     stubApi({
       "GET /auth/me": () => json(sessionBody()),
       "GET /profiles": () => new Promise<Response>(() => {}),
+      "GET /odoo/active": () => json(activeOdooFixture()),
     });
     await renderApp(<ConnectionsPage />);
-    expect(await screen.findByRole("status")).toHaveTextContent("Cargando");
+    const loading = await screen.findByText(/Cargando/);
+    expect(loading.closest('[role="status"]')).not.toBeNull();
   });
 
   it("renders one row per profile with kind and base URL", async () => {
@@ -34,7 +38,7 @@ describe("ConnectionsPage list", () => {
     const row = (await screen.findByText("SUWE")).closest("tr")!;
     expect(within(row).getByText("API REST")).toBeInTheDocument();
     expect(within(row).getByText("https://api.suwe.test/v1")).toBeInTheDocument();
-    const odoo = screen.getByText("Odoo producción").closest("tr")!;
+    const odoo = screen.getByText("Odoo producción", { selector: "td" }).closest("tr")!;
     expect(within(odoo).getByText("Odoo")).toBeInTheDocument();
     expect(within(odoo).getByText("Sin probar")).toBeInTheDocument();
   });
@@ -50,6 +54,7 @@ describe("ConnectionsPage list", () => {
     let calls = 0;
     stubApi({
       "GET /auth/me": () => json(sessionBody()),
+      "GET /odoo/active": () => json(activeOdooFixture()),
       "GET /profiles": () => {
         calls += 1;
         return calls === 1
@@ -101,6 +106,7 @@ describe("ConnectionsPage list", () => {
     const fetchMock = stubApi({
       "GET /auth/me": () => json(sessionBody()),
       "GET /profiles": () => json({ items }),
+      "GET /odoo/active": () => json(activeOdooFixture()),
       "DELETE /profiles/1": () => {
         items = [];
         return new Response(null, { status: 204 });

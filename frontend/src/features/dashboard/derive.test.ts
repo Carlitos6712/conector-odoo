@@ -1,5 +1,7 @@
+import { activeOdooFixture, noOdooFixture } from "@/features/connections/fixtures";
 import { jobFixture, runFixture } from "@/features/jobs/fixtures";
 import {
+  odooAttention,
   attentionItems,
   dashboardRefetchInterval,
   nextFireOf,
@@ -147,5 +149,20 @@ describe("nextFireOf", () => {
     expect(
       nextFireOf({ job_id: 1, name: "a", cron: "0 0 31 2 *", next_fire: null }, NOW),
     ).toBeNull();
+  });
+});
+
+describe("odooAttention", () => {
+  it("flags a missing connection and a fallback, and nothing while healthy", () => {
+    expect(odooAttention(noOdooFixture)).toBe("none");
+    expect(odooAttention(activeOdooFixture({ source: "env", status: "fallback" }))).toBe(
+      "fallback",
+    );
+    expect(odooAttention(activeOdooFixture())).toBeNull();
+    expect(odooAttention(activeOdooFixture({ source: "env", status: "active" }))).toBeNull();
+  });
+
+  it("raises nothing while the connection is still unknown", () => {
+    expect(odooAttention(undefined)).toBeNull();
   });
 });
