@@ -58,6 +58,14 @@ class RecordWrite:
     propagation: tuple[PropagationOutcome, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class RecordDelete:
+    """What a delete did: counterpart outcomes per job, and whether the record was already gone."""
+
+    propagation: tuple[PropagationOutcome, ...] = ()
+    already_deleted: bool = False
+
+
 class _Base:
     def __init__(self, profiles: ConnectionProfileRepository, endpoints: EndpointProvider) -> None:
         self._profiles = profiles
@@ -218,13 +226,13 @@ class DeleteRecord(_Base):
         self._xrefs = xrefs
         self._propagator = propagator
 
-    async def execute(
-        self, profile_id: int, resource: str, record_id: str
-    ) -> tuple[PropagationOutcome, ...]:
+    async def execute(self, profile_id: int, resource: str, record_id: str) -> RecordDelete:
         """Delete ONE record, delete its counterparts, then forget the remaining xrefs.
 
-        Raises ``ResourceNotFound`` (the stale xrefs are still forgotten: the record is gone) and
-        ``RecordRejected`` when the remote refuses (xrefs untouched, the record still exists).
+        Idempotent: a record that no longer exists is a success (the goal is met), the stale xrefs
+        are forgotten and nothing is propagated. Raises ``ResourceNotFound`` only for an unknown
+        resource and ``RecordRejected`` when the remote refuses (xrefs untouched, the record
+        still exists).
         A counterpart that refuses keeps its pair linked, so the other xrefs are left alone too:
         the next job run reconciles them.
         """
@@ -232,12 +240,13 @@ class DeleteRecord(_Base):
         try:
             await endpoint.delete(resource, record_id)
         except ResourceNotFound:
+            await endpoint.describe(resource)  # an unknown resource is still an error
             await self._forget(profile_id, resource, record_id)
-            raise
+            return RecordDelete(already_deleted=True)
         outcomes = await self._propagator.propagate_delete(profile_id, resource, record_id)
         if not any(o.action == "failed" for o in outcomes):
             await self._forget(profile_id, resource, record_id)
-        return tuple(outcomes)
+        return RecordDelete(tuple(outcomes))
 
     async def _forget(self, profile_id: int, resource: str, record_id: str) -> None:
         try:

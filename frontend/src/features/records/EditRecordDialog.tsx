@@ -8,9 +8,6 @@ import {
   DialogFooter,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
-import { FormField } from "@/features/connections/FormField";
 import {
   buildPatch,
   editableFields,
@@ -21,19 +18,24 @@ import {
 } from "@/features/records/columns";
 import { describeRecordError } from "@/features/records/errors";
 import { useUpdateRecord } from "@/features/records/hooks";
-import type { RecordSchema, RecordTarget, RemoteRecord } from "@/features/records/types";
-
-const NUMBER_TYPES = new Set(["integer", "float", "monetary", "number"]);
+import { RecordFormFields } from "@/features/records/RecordFormFields";
+import type {
+  PropagationReport,
+  RecordSchema,
+  RecordTarget,
+  RemoteRecord,
+} from "@/features/records/types";
 
 interface Props {
   target: RecordTarget;
   schema: RecordSchema;
   record: RemoteRecord;
   onClose: () => void;
+  onWritten: (report: PropagationReport) => void;
 }
 
 /** Mounted per record (keyed by the caller), so its form state never leaks between records. */
-function EditForm({ target, schema, record, onClose }: Props) {
+function EditForm({ target, schema, record, onClose, onWritten }: Props) {
   const { t } = useTranslation();
   const update = useUpdateRecord(target);
   const specs = useMemo(() => editableFields(schema, record), [schema, record]);
@@ -60,62 +62,24 @@ function EditForm({ target, schema, record, onClose }: Props) {
       className="flex flex-col gap-4"
       onSubmit={(event) => {
         event.preventDefault();
-        if (changed) update.mutate({ id: record.id, fields: patch }, { onSuccess: onClose });
+        if (!changed) return;
+        update.mutate(
+          { id: record.id, fields: patch },
+          {
+            onSuccess: (result) => {
+              onWritten(result);
+              onClose();
+            },
+          },
+        );
       }}
     >
       <DialogTitle>{t("records.edit.title", { name: recordLabel(record) })}</DialogTitle>
       <DialogDescription>
         {t("records.edit.intro", { model: target.resource, id: record.id })}
       </DialogDescription>
-      <div className="flex max-h-[60vh] flex-col gap-4 overflow-y-auto pr-1">
-        {specs.map((spec) => {
-          const value = form[spec.name];
-          const label = spec.label ?? spec.name;
-          const error = fieldErrors[spec.name];
-          return (
-            <FormField
-              key={spec.name}
-              name={spec.name}
-              label={label}
-              required={spec.required}
-              error={error}
-            >
-              {(control) =>
-                spec.type === "boolean" ? (
-                  <input
-                    {...control}
-                    type="checkbox"
-                    className="size-4"
-                    checked={value === true}
-                    onChange={(e) => set(spec.name, e.target.checked)}
-                  />
-                ) : spec.choices && spec.choices.length > 0 ? (
-                  <Select
-                    {...control}
-                    value={String(value)}
-                    onChange={(e) => set(spec.name, e.target.value)}
-                  >
-                    <option value="" />
-                    {spec.choices.map((choice) => (
-                      <option key={choice} value={choice}>
-                        {choice}
-                      </option>
-                    ))}
-                  </Select>
-                ) : (
-                  <Input
-                    {...control}
-                    type={NUMBER_TYPES.has(spec.type) ? "number" : "text"}
-                    step={spec.type === "integer" ? 1 : "any"}
-                    value={String(value)}
-                    onChange={(e) => set(spec.name, e.target.value)}
-                  />
-                )
-              }
-            </FormField>
-          );
-        })}
-      </div>
+      <p className="text-sm text-muted-foreground">{t("records.counterpart.edit")}</p>
+      <RecordFormFields specs={specs} form={form} fieldErrors={fieldErrors} onChange={set} />
       {general && (
         <div role="alert" className="flex flex-col gap-1 text-sm text-destructive">
           <p>{t(general.messageKey)}</p>

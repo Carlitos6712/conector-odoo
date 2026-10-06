@@ -61,6 +61,13 @@ export function editableFields(schema: RecordSchema, record: RemoteRecord): Fiel
   );
 }
 
+/** Writable fields offered when creating: no id, no read-only fields, no relations. */
+export function creatableFields(schema: RecordSchema): FieldSpec[] {
+  return schema.fields.filter(
+    (f) => !f.readonly && f.name !== schema.id_field && f.relation === null,
+  );
+}
+
 export type FormValues = Record<string, string | boolean>;
 
 const textOf = (value: unknown): string =>
@@ -73,6 +80,28 @@ export function initialForm(specs: readonly FieldSpec[], record: RemoteRecord): 
     form[spec.name] = spec.type === "boolean" ? value === true : textOf(value);
   }
   return form;
+}
+
+/** A blank form: empty text, unchecked booleans. */
+export function emptyForm(specs: readonly FieldSpec[]): FormValues {
+  return Object.fromEntries(specs.map((s) => [s.name, s.type === "boolean" ? false : ""]));
+}
+
+const coerce = (spec: FieldSpec, value: string): unknown =>
+  NUMBER_TYPES.has(spec.type) ? Number(value) : value;
+
+/** The body of a create: filled fields only (typed), plus every boolean. */
+export function buildCreate(
+  specs: readonly FieldSpec[],
+  form: FormValues,
+): Record<string, unknown> {
+  const body: Record<string, unknown> = {};
+  for (const spec of specs) {
+    const value = form[spec.name];
+    if (typeof value === "boolean") body[spec.name] = value;
+    else if (value !== undefined && value.trim() !== "") body[spec.name] = coerce(spec, value);
+  }
+  return body;
 }
 
 /** Only the fields whose value differs from the loaded record (empty object: nothing to save). */

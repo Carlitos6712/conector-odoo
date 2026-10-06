@@ -148,7 +148,9 @@ async def test_delete_removes_the_counterpart_and_the_xref() -> None:
     world = build_world()
     job_id = await synced_pair(world)
     _, _, delete = make(world)
-    outcomes = await delete.execute(1, "customers", "1")
+    result = await delete.execute(1, "customers", "1")
+    outcomes = result.propagation
+    assert not result.already_deleted
     assert [(o.action, o.side) for o in outcomes] == [("deleted", Side.SOURCE)]
     assert world.odoo.records["customers"] == {} and world.rest.records["clients"] == {}
     assert await world.xrefs.list(job_id) == []
@@ -158,7 +160,7 @@ async def test_delete_on_the_b_side_removes_the_a_record() -> None:
     world = build_world()
     job_id = await synced_pair(world)
     _, _, delete = make(world)
-    outcomes = await delete.execute(2, "clients", "1")
+    outcomes = (await delete.execute(2, "clients", "1")).propagation
     assert [o.action for o in outcomes] == ["deleted"]
     assert world.odoo.records["customers"] == {}
     assert await world.xrefs.list(job_id) == []
@@ -169,7 +171,7 @@ async def test_delete_with_a_counterpart_already_gone_is_a_success() -> None:
     job_id = await synced_pair(world)
     await world.rest.delete("clients", "1")
     _, _, delete = make(world)
-    [outcome] = await delete.execute(1, "customers", "1")
+    [outcome] = (await delete.execute(1, "customers", "1")).propagation
     assert outcome.action == "deleted" and outcome.warning is None
     assert await world.xrefs.list(job_id) == []
 
@@ -183,7 +185,7 @@ async def test_delete_refused_by_the_counterpart_keeps_the_primary_gone_and_the_
         raise RecordRejected("still referenced")
 
     world.rest.delete = refuse  # type: ignore[method-assign]
-    [outcome] = await delete.execute(1, "customers", "1")
+    [outcome] = (await delete.execute(1, "customers", "1")).propagation
     assert outcome.action == "failed" and "still referenced" in (outcome.warning or "")
     assert world.odoo.records["customers"] == {}  # the primary delete is not rolled back
     assert len(await world.xrefs.list(job_id)) == 1  # the pair stays linked
@@ -196,14 +198,35 @@ async def test_delete_of_a_target_record_of_a_one_way_job_still_forgets_its_xref
     assert job.id is not None
     await world.runner.run(job.id)
     _, _, delete = make(world)
-    assert await delete.execute(2, "clients", "1") == ()
+    result = await delete.execute(2, "clients", "1")
+    assert result.propagation == () and not result.already_deleted
     assert await world.xrefs.list(job.id) == []
 
 
-async def test_delete_of_a_missing_primary_raises_and_propagates_nothing() -> None:
+async def test_delete_of_a_missing_primary_is_an_idempotent_success() -> None:
+    world = build_world()
+    await synced_pair(world)
+    _, _, delete = make(world)
+    result = await delete.execute(1, "customers", "99")
+    assert result.propagation == () and result.already_deleted
+    assert world.rest.delete_calls == 0  # nothing to mirror
+
+
+async def test_delete_of_an_already_gone_primary_still_forgets_its_stale_xrefs() -> None:
+    world = build_world()
+    job_id = await synced_pair(world)
+    await world.odoo.delete("customers", "1")  # gone behind the connector's back
+    assert await world.xrefs.list(job_id) != []
+    _, _, delete = make(world)
+    result = await delete.execute(1, "customers", "1")
+    assert result.propagation == () and result.already_deleted
+    assert await world.xrefs.list(job_id) == []
+    assert world.rest.delete_calls == 0
+
+
+async def test_delete_on_an_unknown_resource_is_still_not_found() -> None:
     world = build_world()
     await synced_pair(world)
     _, _, delete = make(world)
     with pytest.raises(ResourceNotFound):
-        await delete.execute(1, "customers", "99")
-    assert world.rest.delete_calls == 0
+        await delete.execute(1, "nope", "1")

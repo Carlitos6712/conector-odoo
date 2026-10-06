@@ -166,9 +166,27 @@ def test_odoo_patch_writes_through_the_adapter(admin: AdminEnv) -> None:
 def test_delete_removes_exactly_one_record(admin: AdminEnv) -> None:
     notes = Notes(admin)
     response = admin.delete(f"{notes.url}/2")
-    assert response.status_code == 200 and response.json() == {"propagation": [], "warnings": []}
+    assert response.status_code == 200 and response.json() == {
+        "propagation": [],
+        "warnings": [],
+        "already_deleted": False,
+    }
     assert sorted(notes.endpoint.records["notes"]) == ["1", "3"]
-    assert admin.delete(f"{notes.url}/2").status_code == 404  # already gone, not a silent success
+
+
+def test_delete_of_an_already_gone_record_is_an_idempotent_success(admin: AdminEnv) -> None:
+    notes = Notes(admin)
+    assert admin.delete(f"{notes.url}/2").status_code == 200
+    again = admin.delete(f"{notes.url}/2")
+    assert again.status_code == 200, again.text
+    assert again.json() == {"propagation": [], "warnings": [], "already_deleted": True}
+    assert sorted(notes.endpoint.records["notes"]) == ["1", "3"]
+
+
+def test_delete_on_an_unknown_profile_or_resource_is_404(admin: AdminEnv) -> None:
+    notes = Notes(admin)
+    assert admin.delete(f"{PROFILES}/999/records/notes/1").status_code == 404
+    assert admin.delete(f"{PROFILES}/{notes.pid}/records/nope/1").status_code == 404
 
 
 def test_there_is_no_collection_level_or_filter_based_delete(admin: AdminEnv) -> None:

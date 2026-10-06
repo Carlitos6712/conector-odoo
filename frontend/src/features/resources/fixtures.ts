@@ -28,6 +28,7 @@ export function configFixture(overrides: Partial<ResourceConfig> = {}): Resource
     get_endpoint: { method: "GET", path: "/organization/clients/{id}" },
     create_endpoint: null,
     update_endpoint: null,
+    delete_endpoint: null,
     items_path: "items",
     item_path: "",
     id_field: "uuid",

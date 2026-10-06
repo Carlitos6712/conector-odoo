@@ -48,8 +48,10 @@ resource config has no write endpoints.
       (mapping, write, `_save_xref`). RED first. Commit 216eb3c; tests/sync 176 passed.
 - [x] T4 Records use cases: write-through for update/delete, new `CreateRecord` + `POST /{resource}`,
       warnings in the response. RED first. Commit 3eeb955; full suite 2057 passed.
-- [ ] T5 Frontend: create dialog, delete/edit copy about counterpart, show warnings.
+- [x] T5 Frontend: create dialog, delete/edit copy about counterpart, show warnings, `delete_endpoint` in the
+      resource form, "Sync now" on Records (runs enabled jobs of the resource). Commit ca997a7; npm test 684 passed, typecheck + lint clean.
 - [ ] T6 Live check + README section (what propagates, edited-side-wins, warnings, mock changes).
+- [ ] T7 Frontend visual restyle (user request: functionality fine, style too monochrome). Palette to agree first.
 
 ## Progress / evidence
 - Mapping done by an explorer agent (read-only). Facts used: mock store is in memory (restart resets to
@@ -73,6 +75,16 @@ resource config has no write endpoints.
     (previous config saved in the session scratchpad only; it had just the list endpoint).
   - Earlier manual tests (record-management T5): Odoo partner "Supermercados Aurora" recreated as id 220.
   - Mock data: reset to fixtures by the container restart.
+  - Job 1 `suwe-clients-to-odoo` changed from `a_to_b` / no reverse mapping to `bidirectional` with
+    `reverse_mapping` = new mapping `res.partner_to_clients` v1 (Odoo `res.partner` -> `clients`: name,
+    city, vat->tax_id, street->address, ref->uuid required). No schedule, never run since. Previous job
+    JSON saved in the session scratchpad: `job1.before.json` (mapping `clients_to_res.partner` v3 untouched,
+    copy in `mapping.clients_to_res.partner.before.json`). Restore: `PUT /admin/api/jobs/1` with the saved
+    JSON (without `id`/`next_fire`); optionally `DELETE /admin/api/mappings/res.partner_to_clients`.
+    RUN RISK: the reverse pass has no filter; native Odoo partners lack `ref`, so the required rule makes
+    them fail mapping (not created), but partners with a `ref` (e.g. from other `suwe-*` jobs) would be
+    created as SUWE clients. Do not run job 1 casually.
+  - Live check: throwaway client created/edited/deleted from both sides (Odoo partner 223, now gone).
 - T4 (writer, delegated): `CreateRecord` + `RecordWrite`; `UpdateRecord`/`DeleteRecord` take `RecordPropagator`;
   `POST /{resource}` (201); PATCH/POST return `{id, fields, propagation[], warnings[]}`; DELETE now returns
   200 `{propagation, warnings}` instead of 204 (T5 frontend and T6 README must reflect it). Delete order:
@@ -80,18 +92,21 @@ resource config has no write endpoints.
   refused pair stays linked (other jobs' stale xrefs wait for a run). RED: 14 collection errors + 10 API
   failures; GREEN. Parent re-ran `uv run pytest -q`: 2057 passed. Pre-existing, untouched: ruff E501 in
   `infrastructure/openapi/importer.py:7`, mypy error in `infrastructure/rest/auth.py:225`.
+- T5 (writer, delegated): see commit ca997a7. Create button (admin), shared `RecordFormFields`, page-level
+  `WriteReport` banner (empty propagation says no bidirectional job covers the resource), DELETE 200 body
+  handled, `delete_path` in the resource form, `SyncRecordsDialog` (jobs where source or target is the
+  resource; posts `/jobs/{id}/runs`, polls runs, refreshes list). Parent re-ran npm test/typecheck/lint.
+  Gaps: create button not hidden for REST resources without a create endpoint; run poll not cancelled on unmount.
 
 ## Pending (found while working)
-- Resource form in the UI drops `delete_endpoint` when saving (add to the form; T5).
+- Reverse pass of a bidirectional run ignores the job `record_filter` (always empty `RecordFilter()`), so
+  "Sync now" on job 1 can create in SUWE any Odoo partner that has a `ref` and no xref. Needs a reverse-pass
+  filter (source change); mitigated only by the required `ref` rule.
 - Create from the connector: the id field cannot be supplied, so SUWE `client_id` cannot be chosen (see `docs/suwe/README.md` section 4).
 
 ## Done outside the T-list (user requests during the session)
 - Resources preview: link "View all records" to the Records page (commit d3d22b5).
 - Records page: REST resource picker, page size 25/50/100, range line, show-all-columns (commit c6e7217).
 
-## Queued after T6
-- Frontend visual restyle (user: logic and sections are fine, style is monochrome with no colors).
-  Becomes its own feature document `odd/tasks/frontend-restyle.md` once the palette is decided.
-
 ## Next step
-T5: frontend create dialog, delete/edit copy about the counterpart, show warnings and the new DELETE 200 body, RED first.
+T6: live check via UI and README section; then T7 restyle (agree palette first). Decide the reverse-pass filter fix.

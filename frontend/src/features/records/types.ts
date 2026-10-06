@@ -26,3 +26,25 @@ export interface RecordTarget {
   profileId: number;
   resource: string;
 }
+
+/** What happened to the counterpart of a written record for one bidirectional job. */
+export interface PropagationOutcome {
+  job_id: number | null;
+  job_name: string;
+  side: string;
+  action: "created" | "updated" | "deleted" | "skipped" | "failed";
+  counterpart_id: string | null;
+  warning: string | null;
+}
+
+/** Write-through report returned by create, edit and delete. */
+export interface PropagationReport {
+  propagation: PropagationOutcome[];
+  warnings: string[];
+  /** Set client-side when a delete found the record already gone (nothing to propagate). */
+  alreadyGone?: boolean;
+}
+
+export interface RecordWriteResult extends RemoteRecord, PropagationReport {}
+
+export type WriteKind = "create" | "update" | "delete";

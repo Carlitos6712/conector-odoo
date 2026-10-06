@@ -571,7 +571,8 @@ Odoo instance without leaving the connector. Pick an Odoo connection, enter a mo
   **Deleting is permanent** (Odoo `unlink`, not archive). Odoo may refuse to delete a record that other
   records still reference (invoices, orders, ...); the refusal is shown and nothing is deleted.
 - **Admin only.** Operators can browse but the edit and delete buttons are not offered and the API
-  rejects the writes. Odoo models only; REST connections do not support delete.
+  rejects the writes. REST resources can create, edit and delete too when their resource config has the
+  matching endpoints (`create`, `update`, `delete`).
 - **No bulk delete, by design.** There is no multi-select, no "delete all" and no filter-based delete,
   in the UI or in the API (`/admin/api/profiles/{profile_id}/records/{resource}` has list, get, `PATCH`
   and `DELETE` of one record). For a mass cleanup, take a backup first (next section).
@@ -616,6 +617,39 @@ contains all the data.
 
 I wrote these commands from the container names and mounts reported by `docker ps` / `docker inspect`;
 the restore commands were not executed.
+
+### Record write-through (bidirectional jobs)
+
+A create, edit or delete done on the Records page is also applied to the **counterpart** record in the
+other system, through the sync cross-reference (xref), without waiting for a job run.
+
+- **Which jobs take part.** Only enabled jobs with direction `bidirectional` and a `reverse_mapping`
+  whose source or target is the resource you write to. If several match, each one is applied and
+  reported separately. With no matching job the write stays on the targeted connection and the report
+  says nothing was propagated.
+- **Create** makes the counterpart (or adopts an already linked one) and links the pair. **Edit** pushes
+  the changed fields. **Delete** removes the counterpart too (needs `delete_endpoint` on a REST
+  resource). The record you act on is the **edited side**, and it wins: the counterpart is overwritten.
+- **A counterpart failure never rolls back your write.** The response carries a warning, the xref hash
+  stays stale and the next job run reconciles the pair. A counterpart that is already gone counts as
+  deleted; one that refuses (for example an Odoo partner still referenced) keeps the pair linked.
+- **Response.** `POST` (201) and `PATCH` return `{id, fields, propagation[], warnings[]}`. `DELETE`
+  returns 200 with `{propagation, warnings, already_deleted}`, not 204. Deleting a record that is
+  already gone succeeds (`already_deleted: true`, stale xrefs are forgotten, nothing is propagated).
+- **Sync now.** The button on the Records page runs, for real and in the background, the enabled jobs
+  that use the selected resource, then refreshes the list. Use **Runs** to follow them.
+- **Newest wins on job runs.** A job with `conflict_rule: newest_wins` resolves a record changed on both
+  sides since the last sync by the later of `source_updated_field` / `target_updated_field`. Equal or
+  unparsable times write nothing and record a `conflict` error.
+- **Reverse filter.** `reverse_record_filter` (same shape as `record_filter`) applies only to the
+  reverse pass, in the target side's field names. SUWE-written Odoo partners carry the marker
+  `function = suwe-sync` so the reverse pass skips them; the write-through is not filtered. Setup and
+  caveats are in [`docs/suwe/README.md`](docs/suwe/README.md). Always **dry-run** a bidirectional job
+  before its first real run: the reverse pass can create SUWE clients from Odoo partners that have a
+  `ref` and no marker.
+- **Mock and job changes.** The SUWE mock needs `PATCH` and `DELETE` on `/organization/clients/{id}`,
+  and the `clients` resource and job 1 need the endpoints and the reverse mapping. The exact changes
+  and how to repeat them are in `docs/suwe/README.md`.
 
 ## How data updates work
 

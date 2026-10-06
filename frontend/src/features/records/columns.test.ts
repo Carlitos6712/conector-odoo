@@ -1,6 +1,9 @@
 import {
   allColumns,
+  buildCreate,
   buildPatch,
+  creatableFields,
+  emptyForm,
   editableFields,
   initialForm,
   parseFieldErrors,
@@ -117,5 +120,31 @@ describe("allColumns", () => {
       "extra",
       "other",
     ]);
+  });
+});
+
+describe("create form", () => {
+  it("offers the writable scalar fields, never the id, read-only fields or relations", () => {
+    expect(creatableFields(partnerSchema).map((f) => f.name)).toEqual([
+      "name",
+      "email",
+      "city",
+      "active",
+    ]);
+  });
+
+  it("starts blank, with booleans unchecked", () => {
+    const specs = creatableFields(partnerSchema);
+    expect(emptyForm(specs)).toEqual({ name: "", email: "", city: "", active: false });
+  });
+
+  it("sends only the filled fields, typed, and every boolean", () => {
+    const specs = creatableFields(partnerSchema);
+    expect(buildCreate(specs, { name: "Grace", email: "", city: " ", active: true })).toEqual({
+      name: "Grace",
+      active: true,
+    });
+    const numeric = [{ ...partnerSchema.fields[1]!, name: "age", type: "integer" }];
+    expect(buildCreate(numeric, { age: "42" })).toEqual({ age: 42 });
   });
 });

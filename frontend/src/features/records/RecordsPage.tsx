@@ -19,13 +19,17 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useProfiles } from "@/features/connections/hooks";
+import { useJobs } from "@/features/jobs/hooks";
 import { allColumns, pickColumns, recordLabel } from "@/features/records/columns";
+import { CreateRecordDialog } from "@/features/records/CreateRecordDialog";
 import { DeleteRecordDialog } from "@/features/records/DeleteRecordDialog";
 import { EditRecordDialog } from "@/features/records/EditRecordDialog";
 import { describeRecordError } from "@/features/records/errors";
 import { useRecords } from "@/features/records/hooks";
-import type { RemoteRecord } from "@/features/records/types";
+import type { PropagationReport, RemoteRecord, WriteKind } from "@/features/records/types";
+import { jobsForResource, SyncRecordsDialog } from "@/features/records/SyncRecordsDialog";
 import { useDebounced } from "@/features/records/useDebounced";
+import { WriteReport, type WriteSummary } from "@/features/records/WriteReport";
 import { formatCell } from "@/features/resources/format";
 import { useResources } from "@/features/resources/hooks";
 
@@ -60,6 +64,10 @@ export function RecordsPage() {
   const [showAll, setShowAll] = useState(false);
   const [editing, setEditing] = useState<RemoteRecord | null>(null);
   const [deleting, setDeleting] = useState<RemoteRecord | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [written, setWritten] = useState<WriteSummary | null>(null);
+  const jobs = useJobs();
 
   const isRest = (chosen ?? fallback)?.type === "rest";
   const resources = useResources(isRest ? profileId : null);
@@ -71,6 +79,9 @@ export function RecordsPage() {
   const resource = isRest ? restResource : odooResource;
   const search = useDebounced(searchDraft.trim());
   const target = { profileId: profileId ?? -1, resource };
+  const syncJobs = jobsForResource(jobs.data ?? [], profileId, resource);
+  const reportWrite = (kind: WriteKind) => (report: PropagationReport) =>
+    setWritten({ kind, ...report });
   const records = useRecords(
     profileId !== null && resource
       ? { ...target, search, limit: pageSize, offset: (page - 1) * pageSize }
@@ -182,6 +193,27 @@ export function RecordsPage() {
             </div>
           </div>
 
+          <AdminOnly>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button disabled={!data} onClick={() => setCreating(true)}>
+                {t("records.createRecord")}
+              </Button>
+              <Button
+                variant="outline"
+                disabled={syncJobs.length === 0}
+                title={syncJobs.length === 0 ? t("records.sync.noJobs") : undefined}
+                onClick={() => setSyncing(true)}
+              >
+                {t("records.sync.button")}
+              </Button>
+              {syncJobs.length === 0 && resource && !jobs.isPending && (
+                <span className="text-sm text-muted-foreground">{t("records.sync.noJobs")}</span>
+              )}
+            </div>
+          </AdminOnly>
+
+          {written && <WriteReport summary={written} onDismiss={() => setWritten(null)} />}
+
           {failure ? (
             <div role="alert" className="flex flex-col items-start gap-2 text-sm">
               <p className="text-destructive">{t(failure.messageKey)}</p>
@@ -277,14 +309,24 @@ export function RecordsPage() {
                 schema={data.schema}
                 record={editing}
                 onClose={() => setEditing(null)}
+                onWritten={reportWrite("update")}
+              />
+              <CreateRecordDialog
+                open={creating}
+                target={target}
+                schema={data.schema}
+                onClose={() => setCreating(false)}
+                onWritten={reportWrite("create")}
               />
               <DeleteRecordDialog
                 target={target}
                 record={deleting}
                 onClose={() => setDeleting(null)}
+                onWritten={reportWrite("delete")}
               />
             </>
           )}
+          <SyncRecordsDialog jobs={syncJobs} open={syncing} onClose={() => setSyncing(false)} />
         </>
       )}
     </div>
