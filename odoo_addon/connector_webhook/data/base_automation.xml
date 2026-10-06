@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        Targets Odoo 17+ (base.automation `trigger` values `on_create` / `on_write`).
+        `(4, id)` links work for both the Many2many `action_server_ids` of 17 and the One2many of
+        18+. See README.md for version caveats and the manual (UI) alternative.
+    -->
+
+    <!-- res.partner created -> partner.created -->
+    <record id="server_action_partner_created" model="ir.actions.server">
+        <field name="name">Connector webhook: partner created</field>
+        <field name="model_id" ref="base.model_res_partner"/>
+        <field name="state">code</field>
+        <field name="usage">base_automation</field>
+        <field name="code">for record in records:
+    env['connector.webhook']._send_event('partner.created', record)</field>
+    </record>
+    <record id="automation_partner_created" model="base.automation">
+        <field name="name">Connector webhook: partner created</field>
+        <field name="model_id" ref="base.model_res_partner"/>
+        <field name="trigger">on_create</field>
+        <field name="action_server_ids" eval="[(4, ref('server_action_partner_created'))]"/>
+        <field name="active" eval="True"/>
+    </record>
+
+    <!-- res.partner written (name, email, phone, vat, is_company) -> partner.updated -->
+    <record id="server_action_partner_updated" model="ir.actions.server">
+        <field name="name">Connector webhook: partner updated</field>
+        <field name="model_id" ref="base.model_res_partner"/>
+        <field name="state">code</field>
+        <field name="usage">base_automation</field>
+        <field name="code">for record in records:
+    env['connector.webhook']._send_event('partner.updated', record)</field>
+    </record>
+    <record id="automation_partner_updated" model="base.automation">
+        <field name="name">Connector webhook: partner updated</field>
+        <field name="model_id" ref="base.model_res_partner"/>
+        <field name="trigger">on_write</field>
+        <field name="trigger_field_ids" eval="[(6, 0, [
+            ref('base.field_res_partner__name'),
+            ref('base.field_res_partner__email'),
+            ref('base.field_res_partner__phone'),
+            ref('base.field_res_partner__vat'),
+            ref('base.field_res_partner__is_company'),
+        ])]"/>
+        <field name="action_server_ids" eval="[(4, ref('server_action_partner_updated'))]"/>
+        <field name="active" eval="True"/>
+    </record>
+
+    <!-- sale.order moves to 'sale' (confirmed) -> sale_order.confirmed -->
+    <record id="server_action_sale_order_confirmed" model="ir.actions.server">
+        <field name="name">Connector webhook: sale order confirmed</field>
+        <field name="model_id" ref="sale.model_sale_order"/>
+        <field name="state">code</field>
+        <field name="usage">base_automation</field>
+        <field name="code">for record in records:
+    env['connector.webhook']._send_event('sale_order.confirmed', record)</field>
+    </record>
+    <record id="automation_sale_order_confirmed" model="base.automation">
+        <field name="name">Connector webhook: sale order confirmed</field>
+        <field name="model_id" ref="sale.model_sale_order"/>
+        <field name="trigger">on_write</field>
+        <field name="trigger_field_ids" eval="[(6, 0, [ref('sale.field_sale_order__state')])]"/>
+        <field name="filter_pre_domain">[('state', '!=', 'sale')]</field>
+        <field name="filter_domain">[('state', '=', 'sale')]</field>
+        <field name="action_server_ids" eval="[(4, ref('server_action_sale_order_confirmed'))]"/>
+        <field name="active" eval="True"/>
+    </record>
+</odoo>
