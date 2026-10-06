@@ -81,10 +81,50 @@ job with direction `bidirectional` and a `reverse_mapping`. Repeat on every mach
 2. `PUT /admin/api/jobs/<job-id>` with the job unchanged except `direction: "bidirectional"` and
    `reverse_mapping: {"name": "res.partner_to_clients", "version": null}`.
 
-The required `ref`->`uuid` rule limits the reverse leg of a job RUN: Odoo partners without `ref` (native
-ones) fail mapping and are not created in SUWE. Partners that do carry a `ref` (for example created by
-the other `suwe-*` jobs) are NOT filtered and would be created as clients. Do not run this job unless that
-is acceptable. Restore: `PUT` the job back with `direction: "a_to_b"` and `reverse_mapping: null`.
+3. Mark the partners written by the OTHER `suwe-*` jobs so the reverse pass can skip them. Marker: the
+   Odoo `res.partner` field `function` (Job Position, free char, unused by every SUWE mapping) set to
+   `suwe-sync`. For each forward mapping of jobs `suwe-groups-to-odoo`, `suwe-stores-to-odoo`,
+   `suwe-kyc-to-odoo`, `suwe-users-to-odoo` and `suwe-partners-to-odoo` (`groups_to_res.partner`,
+   `stores_to_res.partner`, `kyc_to_res.partner`, `users_to_res.partner`, `partners_to_res.partner`), add
+   the rule `{"target": "function", "expr": {"type": "constant", "value": "suwe-sync"}, "required": false}`
+   and `PUT /admin/api/mappings/<name>` (each became version 2; the jobs use `version: null`, so they
+   follow the latest). Do NOT add it to `clients_to_res.partner` (job 1), or client partners would be
+   skipped too. Then run each of those jobs once (`POST /admin/api/jobs/<id>/runs` with
+   `{"dry_run": false}`, one at a time): they update the existing partners through the xref and stamp
+   them (observed: 8 + 90 + 30 + 40 + 6 updates, 0 failed, 1 new partner for a SUWE group that had never
+   been synced).
+4. Set the reverse filter on job 1 (`PUT /admin/api/jobs/<job-id>`, whole job body unchanged except):
+   `"reverse_record_filter": {"equals": {}, "since": null, "raw": {"domain": [["function", "!=", "suwe-sync"], ["ref", "!=", false]]}}`.
+   The second term skips Odoo partners without a `ref` (native partners 1, 3 and 7), which would otherwise fail the
+   required `ref` -> `uuid` rule on every run and leave each run as `partial`.
+   Odoo `!=` also matches empty values, so unmarked partners pass.
+
+A job has a `reverse_record_filter` (same shape as `record_filter`: `equals`, `since`, `raw`; empty by
+default) applied only to the reverse pass, so its field names belong to side B (for this job, Odoo
+`res.partner`; `raw` takes an Odoo domain). The write-through from the Records page is not filtered.
+
+What the reverse pass of job 1 still picks up: partners with a `ref` and no marker, that is the SUWE
+client partners (expected), plus any partner created by hand with a `ref`. Native partners without `ref`
+fail the required `ref`->`uuid` rule and are not created. A new partner written by another `suwe-*` job
+is marked on its first run (the mapping carries the marker); a partner written before step 3 stays
+unmarked until its job is re-run. The marker is a convention: someone clearing or editing `function` on
+a marked partner makes it eligible again.
+
+5. Resolve edits made on both sides with the most recent one: `PUT /admin/api/jobs/<job-id>` (whole job
+   body unchanged except) `"conflict_rule": "newest_wins"`, `"source_updated_field": "updated_at"` (SUWE
+   `clients`) and `"target_updated_field": "write_date"` (Odoo `res.partner`, naive UTC text). A conflict
+   only exists when both sides changed since the last sync; then the later timestamp wins. Equal,
+   missing or unparsable times still write nothing and record a non-retryable `conflict` error.
+
+   Why the runner re-reads the record: the SUWE `clients` LIST items carry no `updated_at` (only the
+   detail endpoint does) and the forward pass reads its source records from the list. Under
+   `newest_wins`, when the source record has no value in `source_updated_field`, the runner fetches the
+   full record by id and reads the time from it; without that fallback every conflict would be flagged.
+   Nothing is fetched when the field is present, and other conflict rules are unaffected.
+
+Restore: `PUT` job 1 with `reverse_record_filter` empty (`raw: null`), and optionally `direction: "a_to_b"`
+and `reverse_mapping: null`. To drop the marker, `PUT` the mappings of step 3 without the `function` rule
+(new versions) and re-run the jobs; the `function` values already written stay in Odoo until edited.
 
 ## 2. Behaviour of the mock you must know
 
@@ -114,3 +154,32 @@ Update this list as development goes on.
 - [ ] Connector UI: resource form must include `delete_endpoint` (T5).
 - [ ] When this is applied on a real SUWE (not the mock), the real API must expose equivalent update and
   delete endpoints; adjust the resource config paths accordingly.
+
+## 5. Cleanup of run 39 (test data)
+
+Run 39 of job 1 (`suwe-clients-to-odoo`, manual, 2026-10-06 12:56 UTC) ran the reverse pass before the
+marker and the reverse filter existed. It pushed Odoo partners written by the other `suwe-*` jobs
+(groups, stores, KYC, users, partners) into SUWE `clients`: the mock went from 38 to 214 clients.
+
+**Identification.** The mock ignores the `uuid` sent on create and generates its own, so `ref` -> `uuid`
+does not match. The evidence used instead: job 1 xref rows (`source_id` = SUWE uuid, `target_id` = Odoo
+partner id) whose partner carries the marker `function = suwe-sync` (174), cross-checked with the mock
+`created_at` (all `2026-10-05T10:00:00Z`, the mock's fixed value, unlike the fixtures which have
+December to June dates). Result: 174 clients, 0 of them original fixtures. Not deleted on purpose: the
+leftovers `Sipay`, `Messi`, `Aena`, `Erik Bocadillo` (no xref, user test data).
+
+**Safety rule.** Never delete these clients through the connector (`DELETE
+/admin/api/profiles/2/records/clients/{id}`): job 1 is bidirectional, so write-through would also
+delete the linked Odoo partners. Delete them only on the mock itself:
+`DELETE http://localhost:8000/api/v1/organization/clients/{uuid}` (no auth, in memory).
+
+**What was done.** 174 sequential `DELETE`s on the mock (all `200`); then the 174 job 1 xref rows
+removed with a transaction on `data/admin.db` (`delete from xref where job_id = 1 and
+resource = 'clients' and source_id = ?`), after a backup. The Odoo partner list (214) was identical
+before and after. A dry-run of job 1 afterwards: created 4 (the leftovers), skipped 72, failed 3
+(partners 1, 3, 7 have no `ref`).
+
+**Redo on another machine.** Either restart the mock container (resets its data to the fixtures, then
+forget the job 1 xrefs with the SQL above for all job 1 rows that are not original clients), or repeat
+the identification (xref rows of job 1 whose target partner has `function = suwe-sync`) and delete those
+uuids on the mock directly. Always keep the reverse filter of section 1.3 set before running job 1.

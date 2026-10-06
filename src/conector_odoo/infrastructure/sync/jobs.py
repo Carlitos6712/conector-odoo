@@ -38,8 +38,8 @@ SyncJobs = list[SyncJob]  # the ``list`` method below shadows the builtin
 _COLUMNS = (
     "id, name, source_profile_id, source_resource, target_profile_id, target_resource, "
     "mapping_name, mapping_version, reverse_mapping_name, reverse_mapping_version, direction, "
-    "trigger_json, filter_json, batch_size, upsert_key, conflict_rule, source_updated_field, "
-    "target_updated_field, enabled"
+    "trigger_json, filter_json, reverse_filter_json, batch_size, upsert_key, conflict_rule, "
+    "source_updated_field, target_updated_field, enabled"
 )
 
 
@@ -72,10 +72,10 @@ class SqliteSyncJobRepository:
                     "INSERT INTO sync_jobs (name, source_profile_id, source_resource, "
                     "target_profile_id, target_resource, mapping_name, mapping_version, "
                     "reverse_mapping_name, reverse_mapping_version, direction, trigger_json, "
-                    "filter_json, batch_size, upsert_key, conflict_rule, source_updated_field, "
-                    "target_updated_field, enabled, mapping_id, reverse_mapping_id, created_at, "
-                    "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-                    "?, ?, ?, ?)",
+                    "filter_json, reverse_filter_json, batch_size, upsert_key, conflict_rule, "
+                    "source_updated_field, target_updated_field, enabled, mapping_id, "
+                    "reverse_mapping_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, "
+                    "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (*values, now, now),
                 )
             except sqlite3.IntegrityError as exc:
@@ -97,8 +97,8 @@ class SqliteSyncJobRepository:
                     "UPDATE sync_jobs SET name = ?, source_profile_id = ?, source_resource = ?, "
                     "target_profile_id = ?, target_resource = ?, mapping_name = ?, "
                     "mapping_version = ?, reverse_mapping_name = ?, reverse_mapping_version = ?, "
-                    "direction = ?, trigger_json = ?, filter_json = ?, batch_size = ?, "
-                    "upsert_key = ?, conflict_rule = ?, source_updated_field = ?, "
+                    "direction = ?, trigger_json = ?, filter_json = ?, reverse_filter_json = ?, "
+                    "batch_size = ?, upsert_key = ?, conflict_rule = ?, source_updated_field = ?, "
                     "target_updated_field = ?, enabled = ?, mapping_id = ?, "
                     "reverse_mapping_id = ?, updated_at = ? WHERE id = ?",
                     (*values, datetime.now(UTC).isoformat(), job.id),
@@ -153,6 +153,7 @@ class SqliteSyncJobRepository:
             job.direction.value,
             json.dumps(_trigger_to_json(job.trigger)),
             json.dumps(_filter_to_json(job.record_filter)),
+            json.dumps(_filter_to_json(job.reverse_record_filter)),
             job.batch_size,
             job.upsert_key,
             job.conflict_rule.value,
@@ -232,10 +233,11 @@ def _to_job(row: tuple[Any, ...]) -> SyncJob:
         direction=Direction(row[10]),
         trigger=_trigger_from_json(row[11]),
         record_filter=_filter_from_json(row[12]),
-        batch_size=row[13],
-        upsert_key=row[14],
-        conflict_rule=ConflictRule(row[15]),
-        source_updated_field=row[16],
-        target_updated_field=row[17],
-        enabled=bool(row[18]),
+        reverse_record_filter=_filter_from_json(row[13]),
+        batch_size=row[14],
+        upsert_key=row[15],
+        conflict_rule=ConflictRule(row[16]),
+        source_updated_field=row[17],
+        target_updated_field=row[18],
+        enabled=bool(row[19]),
     )

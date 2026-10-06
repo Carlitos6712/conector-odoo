@@ -41,6 +41,8 @@ export interface JobFormState {
   /** `since` and `raw` have no editor yet: they are carried through unchanged. */
   preservedSince: string | null;
   preservedRaw: Record<string, unknown> | null;
+  /** The reverse-pass filter has no editor either: carried through so a save never resets it. */
+  preservedReverseFilter: RecordFilterDoc;
   batchSize: string;
   conflictRule: ConflictRule;
   sourceUpdatedField: string;
@@ -85,6 +87,7 @@ export const emptyJobState = (): JobFormState => ({
   filters: [],
   preservedSince: null,
   preservedRaw: null,
+  preservedReverseFilter: { equals: {}, since: null, raw: null },
   batchSize: "100",
   conflictRule: "source_wins",
   sourceUpdatedField: "",
@@ -121,6 +124,7 @@ export function stateFromJob(job: Job | JobInput): JobFormState {
     })),
     preservedSince: job.record_filter.since,
     preservedRaw: job.record_filter.raw,
+    preservedReverseFilter: job.reverse_record_filter,
     batchSize: String(job.batch_size),
     conflictRule: job.conflict_rule,
     sourceUpdatedField: job.source_updated_field ?? "",
@@ -187,6 +191,7 @@ export function toJobInput(state: JobFormState): JobInput {
     direction: state.direction,
     trigger: triggerOf(state),
     record_filter: recordFilter,
+    reverse_record_filter: state.preservedReverseFilter,
     batch_size: Number(state.batchSize),
     upsert_key:
       state.upsertKind === "field" ? `${FIELD_PREFIX}${state.upsertField.trim()}` : "xref",

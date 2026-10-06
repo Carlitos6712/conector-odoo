@@ -218,6 +218,11 @@ _APP_SETTINGS = (
     """,
 )
 
+# Job-level selection for the reverse pass of a bidirectional run (same JSON shape as filter_json).
+_REVERSE_RECORD_FILTER = (
+    "ALTER TABLE sync_jobs ADD COLUMN reverse_filter_json TEXT NOT NULL DEFAULT '{}'",
+)
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "initial_admin_schema", _INITIAL_SCHEMA),
     Migration(2, "connection_profile_options", _PROFILE_OPTIONS),
@@ -226,4 +231,5 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(5, "admin_auth", _ADMIN_AUTH),
     Migration(6, "login_ip_throttle", _LOGIN_IP_THROTTLE),
     Migration(7, "app_settings", _APP_SETTINGS),
+    Migration(8, "reverse_record_filter", _REVERSE_RECORD_FILTER),
 )

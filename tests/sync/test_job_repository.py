@@ -65,6 +65,11 @@ async def test_round_trip_all_fields(conn: sqlite3.Connection) -> None:
             since=datetime(2026, 1, 1, tzinfo=UTC),
             raw={"domain": [["a", "=", 1]]},
         ),
+        reverse_record_filter=RecordFilter(
+            equals={"kind": "client"},
+            since=datetime(2026, 2, 1, tzinfo=UTC),
+            raw={"domain": [["ref", "!=", False]]},
+        ),
         batch_size=250,
         enabled=False,
         mapping=MappingRef("fwd", 1),
@@ -144,3 +149,16 @@ async def test_delete_removes_job_and_xrefs_but_is_refused_when_runs_exist(
         await repo.delete(second.id)
     with pytest.raises(SyncJobNotFound):
         await repo.delete(first.id)
+
+
+async def test_reverse_filter_defaults_to_empty_and_updates(conn: sqlite3.Connection) -> None:
+    import dataclasses
+
+    await seed_mappings(conn)
+    repo = SqliteSyncJobRepository(conn)
+    saved = await repo.add(make_job(direction=Direction.BIDIRECTIONAL))
+    assert saved.reverse_record_filter == RecordFilter()
+    flt = RecordFilter(equals={"kind": "client"})
+    changed = await repo.update(dataclasses.replace(saved, reverse_record_filter=flt))
+    assert changed.reverse_record_filter == flt
+    assert (await repo.get(saved.id)).reverse_record_filter == flt  # type: ignore[union-attr]
