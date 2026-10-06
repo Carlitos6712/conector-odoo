@@ -87,6 +87,11 @@ class VaultNotConfigured(VaultError):
     """A secret must be encrypted/decrypted but no usable ``ENCRYPTION_KEY`` is configured."""
 
 
+class VaultKeyAlreadyConfigured(VaultError):
+    """A vault key is already configured (env or key file); generating another would orphan the
+    secrets encrypted under it."""
+
+
 class VaultDecryptionError(VaultError):
     """A stored secret cannot be decrypted (wrong ``ENCRYPTION_KEY`` or corrupted data)."""
 

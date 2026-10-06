@@ -7,7 +7,7 @@ the previous keys can then be dropped.
 """
 
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Literal
 
 from cryptography.fernet import Fernet, InvalidToken, MultiFernet
@@ -15,6 +15,7 @@ from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 from conector_odoo.config import Settings
 from conector_odoo.domain.errors import VaultDecryptionError, VaultNotConfigured
 from conector_odoo.domain.profiles import Secrets
+from conector_odoo.infrastructure.profiles.key_file import resolve_key
 
 _GENERATE_HINT = (
     'generate one with: python -c "from cryptography.fernet import Fernet; '
@@ -29,8 +30,12 @@ class FernetVault:
     generated key would orphan every secret on the next restart). Neither the keys nor the
     secrets appear in ``repr`` or in any error message."""
 
-    def __init__(self, key: str | None, previous_keys: Sequence[str] = ()) -> None:
-        self._key = key
+    def __init__(
+        self, key: str | Callable[[], str | None] | None, previous_keys: Sequence[str] = ()
+    ) -> None:
+        # A callable is resolved on every use, so a key generated at runtime is picked up
+        # without a restart.
+        self._key_source = key
         self._previous = tuple(previous_keys)
 
     def __repr__(self) -> str:
@@ -75,11 +80,17 @@ class FernetVault:
         self.decrypt(blob)  # validates the token AND the payload shape, with the safe error
         return self._multi().rotate(blob)
 
+    @property
+    def _key(self) -> str | None:
+        source = self._key_source
+        return source() if callable(source) else source
+
     def _primary(self) -> Fernet:
-        if not self._key:
+        key = self._key
+        if not key:
             raise VaultNotConfigured(f"ENCRYPTION_KEY is not set; {_GENERATE_HINT}")
         try:
-            return Fernet(self._key.encode())
+            return Fernet(key.encode())
         except ValueError:
             raise VaultNotConfigured(
                 f"ENCRYPTION_KEY is not a valid Fernet key; {_GENERATE_HINT}"
@@ -97,5 +108,5 @@ class FernetVault:
 
 
 def build_vault(settings: Settings) -> FernetVault:
-    key = settings.encryption_key.get_secret_value() if settings.encryption_key else None
-    return FernetVault(key, settings.previous_encryption_keys())
+    """The key is resolved lazily: ``ENCRYPTION_KEY`` first, then the key file."""
+    return FernetVault(lambda: resolve_key(settings)[0], settings.previous_encryption_keys())

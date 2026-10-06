@@ -1,6 +1,7 @@
 """Application settings loaded from environment variables and an optional ``.env`` file."""
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, SecretStr, field_validator, model_validator
@@ -57,6 +58,9 @@ class Settings(BaseSettings):
     # Comma-separated OLD Fernet keys, used to decrypt only (never to encrypt) while a key rotation
     # is in progress; see ``python -m conector_odoo.manage rotate-vault-key``.
     encryption_key_previous: SecretStr | None = None
+    # File holding a generated vault key (mode 0600). ``ENCRYPTION_KEY`` always wins over it.
+    # Default: ``vault.key`` next to the admin database (none for an in-memory database).
+    vault_key_file: str | None = None
     webhook_secret: SecretStr
 
     idempotency_db_path: str = "./data/idempotency.sqlite3"
@@ -134,6 +138,13 @@ class Settings(BaseSettings):
         """True when SOME but not all of the legacy ODOO_* connection variables are set."""
         values = (self.odoo_url, self.odoo_db, self.odoo_user, self.odoo_api_key)
         return any(values) and not all(values)
+
+    def vault_key_path(self) -> Path | None:
+        if self.vault_key_file:
+            return Path(self.vault_key_file)
+        if self.admin_db_path == ":memory:":
+            return None
+        return Path(self.admin_db_path).parent / "vault.key"
 
     def previous_encryption_keys(self) -> list[str]:
         raw = (
