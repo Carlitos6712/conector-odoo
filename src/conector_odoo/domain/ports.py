@@ -456,3 +456,26 @@ class LoginThrottle(Protocol):
     ) -> None: ...
 
     async def reset(self, key: str) -> None: ...
+
+
+class IpLoginThrottle(Protocol):
+    """Sliding-window count of failed logins per client address (normalised key)."""
+
+    async def retry_after(
+        self, ip: str, now: datetime, *, max_failures: int, window_seconds: int
+    ) -> int:
+        """Seconds until ``ip`` may try again; ``0`` when fewer than ``max_failures`` failures
+        happened in the last ``window_seconds``."""
+        ...
+
+    async def record_failure(self, ip: str, now: datetime, *, window_seconds: int) -> None:
+        """Count one failure and forget failures older than the window."""
+        ...
+
+
+class KnownLoginIps(Protocol):
+    """Addresses a username signed in from successfully, remembered for a limited time."""
+
+    async def is_known(self, key: str, ip: str, now: datetime, *, max_age_seconds: int) -> bool: ...
+
+    async def remember(self, key: str, ip: str, now: datetime, *, max_age_seconds: int) -> None: ...

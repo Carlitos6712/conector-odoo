@@ -51,6 +51,8 @@ from conector_odoo.domain.profiles import ProfileType
 from conector_odoo.infrastructure.auth.hasher import Argon2PasswordHasher
 from conector_odoo.infrastructure.auth.repository import (
     SqliteAdminUserRepository,
+    SqliteIpLoginThrottle,
+    SqliteKnownLoginIps,
     SqliteLoginThrottle,
     SqliteSessionStore,
 )
@@ -157,6 +159,9 @@ def build_admin_services(settings: Settings, conn: sqlite3.Connection) -> AdminS
         idle_timeout_seconds=settings.admin_session_idle_seconds,
         max_failures=settings.admin_login_max_failures,
         lockout_seconds=settings.admin_login_lockout_seconds,
+        ip_max_failures=settings.admin_login_ip_max_failures,
+        ip_window_seconds=settings.admin_login_ip_window_seconds,
+        known_ip_seconds=settings.admin_login_known_ip_days * 24 * 3600,
     )
     profile_repo = SqliteConnectionProfileRepository(conn)
     catalog = SqliteResourceCatalogRepository(conn)
@@ -189,7 +194,16 @@ def build_admin_services(settings: Settings, conn: sqlite3.Connection) -> AdminS
     )
     # The builders are looked up at call time so tests (and later customisation) can swap them.
     return AdminServices(
-        auth=AuthService(users, sessions, SqliteLoginThrottle(conn), hasher, _now, config),
+        auth=AuthService(
+            users,
+            sessions,
+            SqliteLoginThrottle(conn),
+            hasher,
+            _now,
+            config,
+            ip_throttle=SqliteIpLoginThrottle(conn),
+            known_ips=SqliteKnownLoginIps(conn),
+        ),
         users=UserAdmin(users, sessions, hasher, _now),
         endpoints=endpoints,
         profiles=ProfileServices(

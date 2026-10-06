@@ -212,6 +212,10 @@ at least 16 characters where noted.
 | `ADMIN_SESSION_IDLE_SECONDS` | `7200` | Idle timeout (2 h, min 60). |
 | `ADMIN_LOGIN_MAX_FAILURES` | `5` | Failed logins per username before lockout. |
 | `ADMIN_LOGIN_LOCKOUT_SECONDS` | `900` | Lockout duration. |
+| `ADMIN_LOGIN_IP_MAX_FAILURES` | `20` | Failed logins or password checks from one client address (any usernames) inside the window before that address is blocked (429). |
+| `ADMIN_LOGIN_IP_WINDOW_SECONDS` | `900` | Sliding window of the per-address throttle. |
+| `ADMIN_LOGIN_KNOWN_IP_DAYS` | `30` | How long an address that signed in successfully stays "known" for its username and may log in through a lockout caused by other addresses. `0` disables the bypass. |
+| `TRUSTED_PROXY_COUNT` | `0` | Reverse proxies in front of the app that append to `X-Forwarded-For`. `0` ignores the header (the socket peer is the client); `N` uses the N-th entry from the right. Set it to match your proxy chain, see Security. |
 | `ADMIN_ARGON2_TIME_COST` / `ADMIN_ARGON2_MEMORY_KIB` / `ADMIN_ARGON2_PARALLELISM` | `3` / `65536` / `4` | Argon2id cost. Lower only on tiny hosts or in tests. |
 | `LOG_LEVEL` | `INFO` | JSON logs; secrets are redacted. |
 
@@ -225,6 +229,7 @@ at least 16 characters where noted.
 | CSRF | A per-session token returned by login and `/auth/me` must be sent as `X-CSRF-Token` on every non-GET request. |
 | Roles | `admin` (everything) and `operator` (read-only). One router-level guard denies by default; a test walks the OpenAPI route table and fails if a route answers anonymous callers, lets an operator mutate, or skips CSRF. Anything that contacts a remote system with stored credentials (test, preview, discover, import, dry-run) is a POST, so operators cannot trigger it. Every user may change their own password. |
 | Lockout | 5 failed logins per username lock it for 15 minutes (429 + `Retry-After`). Unknown usernames are throttled the same way and verify against a dummy hash, so message, status and timing match. |
+| Per-address throttle | 20 failures per client address in a sliding 15 minute window (any usernames, `POST /auth/login` and `/auth/password`) block that address with the same 429 and generic body, even for correct credentials; a blocked address stops adding rows. Counters live in SQLite (`login_ip_failures`), so restarts and several workers agree; old rows are purged on write. A successful login does not clear the address counter. IPv6 is grouped by /64. |
 | Secret vault | Connection secrets are encrypted with Fernet (`ENCRYPTION_KEY`) before they reach SQLite. They are write-only: the API returns `has_secret` flags, never values. No key is generated implicitly. |
 | Webhooks | `X-Odoo-Signature` = HMAC-SHA256 over `timestamp.body`, constant-time compare, timestamp tolerance, event-id deduplication. |
 | OpenAPI import | http/https only, 5 MB cap, YAML via `safe_load`, local `$ref` only. Redirects are followed by hand: max 3 hops, same host only, never https to http. |
@@ -235,7 +240,19 @@ database. There is no key-rotation tool: rotating means re-entering all secrets 
 
 Not done, by design or yet:
 
-- **No per-IP throttling**; lockout is per username only.
+- **Client address and proxies.** The throttle keys on the socket peer. Behind a reverse proxy
+  every request shares the proxy's address, so set `TRUSTED_PROXY_COUNT` to the number of proxies
+  you run (the app then takes the N-th `X-Forwarded-For` entry from the right, never the left-most,
+  and falls back to the peer when the chain is shorter or malformed). Leave it at `0` when the app
+  is reachable directly: a larger value would let any client choose its own address. With `0`
+  behind a proxy, 20 failures from anyone would block everybody and the known-address bypass below
+  would apply to every user.
+- **Account lockout by strangers.** Username lockout lets anyone who knows an admin's name keep
+  it locked by failing on purpose. Mitigation: an address the user signed in from in the last
+  `ADMIN_LOGIN_KNOWN_IP_DAYS` days still gets its password checked (and counted) despite the lock,
+  and a correct password clears it; the address throttle bounds guessing from that address. A
+  stranger, or a first login from a new address, stays locked until the lock expires. Password
+  changes never use the bypass.
 - **TLS is expected at a reverse proxy.** The service speaks plain HTTP. The `Secure` cookie default
   means the UI only works over HTTPS (or on localhost) unless you set `ADMIN_COOKIE_SECURE=false`.
 - **No SSRF blocklist.** An admin can point a connection or an OpenAPI import at any host, including

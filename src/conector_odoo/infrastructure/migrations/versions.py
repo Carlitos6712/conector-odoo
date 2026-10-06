@@ -184,10 +184,33 @@ _ADMIN_AUTH = (
     """,
 )
 
+# Per-client-address login throttling: one row per failed attempt (sliding window, purged on write)
+# and the addresses each username recently signed in from (lets the owner past a lockout that
+# other addresses caused). Timestamps are epoch seconds.
+_LOGIN_IP_THROTTLE = (
+    """
+    CREATE TABLE login_ip_failures (
+        ip TEXT NOT NULL,
+        at REAL NOT NULL
+    )
+    """,
+    "CREATE INDEX idx_login_ip_failures_ip_at ON login_ip_failures(ip, at)",
+    "CREATE INDEX idx_login_ip_failures_at ON login_ip_failures(at)",
+    """
+    CREATE TABLE known_login_ips (
+        username_key TEXT NOT NULL,
+        ip TEXT NOT NULL,
+        last_success_at REAL NOT NULL,
+        PRIMARY KEY (username_key, ip)
+    )
+    """,
+)
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "initial_admin_schema", _INITIAL_SCHEMA),
     Migration(2, "connection_profile_options", _PROFILE_OPTIONS),
     Migration(3, "resource_catalog", _RESOURCE_CATALOG),
     Migration(4, "sync_engine", _SYNC_ENGINE),
     Migration(5, "admin_auth", _ADMIN_AUTH),
+    Migration(6, "login_ip_throttle", _LOGIN_IP_THROTTLE),
 )

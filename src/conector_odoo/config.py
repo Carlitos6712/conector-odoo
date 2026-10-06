@@ -86,6 +86,16 @@ class Settings(BaseSettings):
     admin_session_idle_seconds: int = Field(default=2 * 3600, ge=60)
     admin_login_max_failures: int = Field(default=5, ge=1)
     admin_login_lockout_seconds: int = Field(default=900, ge=1)
+    # Per client address (sliding window): failed logins / password checks from one address, across
+    # all usernames, before that address is blocked with 429.
+    admin_login_ip_max_failures: int = Field(default=20, ge=1)
+    admin_login_ip_window_seconds: int = Field(default=900, ge=1)
+    # How long (days) an address that signed in successfully stays "known" for its username, which
+    # lets the owner past a lockout caused by other addresses. 0 disables the bypass.
+    admin_login_known_ip_days: int = Field(default=30, ge=0)
+    # Number of reverse proxies in front of the app that append to X-Forwarded-For. 0 (default)
+    # ignores the header and uses the socket peer; N > 0 takes the N-th entry from the right.
+    trusted_proxy_count: int = Field(default=0, ge=0)
     # Argon2id cost; the defaults follow the argon2-cffi/OWASP recommendation. Lower them only on
     # very small hosts or in tests.
     admin_argon2_time_cost: int = Field(default=3, ge=1)

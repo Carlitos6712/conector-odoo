@@ -131,7 +131,10 @@ def test_wrong_attempts_lock_out_like_login(admin: AdminEnv) -> None:
     assert locked.status_code == 429
     assert locked.json()["error"] == "too_many_attempts"
     assert int(locked.headers["retry-after"]) > 0
-    assert _can_login(admin, ADMIN_USER, ADMIN_PASSWORD) is False  # same per-username lockout
+    # Same per-username lockout. (From this already-known address a login would be let through by
+    # the known-address bypass, see test_login_ip_throttle.py; a password change never is.)
+    again = admin.post(URL, json=_body(ADMIN_PASSWORD))
+    assert again.status_code == 429
 
 
 def test_a_successful_change_clears_earlier_failures(admin: AdminEnv) -> None:
