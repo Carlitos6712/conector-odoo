@@ -420,8 +420,8 @@ unconfirmed. Options:
 
 ### Step by step: move SUWE data into Odoo
 
-This is the flow that was run end to end: SUWE `clients` -> Odoo `res.partner` (20 records created,
-0 failures). Where each thing lives:
+This is the flow that was run end to end: SUWE `clients` -> Odoo `res.partner` (36 records created,
+0 failures; a repeated run skipped all 36). Where each thing lives:
 
 | What | Where |
 |---|---|
@@ -461,7 +461,11 @@ probe). It does not prove that data flows; step 2 does.
 **2. Resource (Resources)**
 
 Create `clients` on the SUWE connection: list endpoint `GET /organization/clients`, `items_path`
-`items`, `id_field` `uuid`. Click **Preview**: you must see real records (name, `tax_id`, `city`,
+`items`, `id_field` `uuid`, and **pagination `page`** (`page_param` `page`, `size_param` `page_size`,
+`total_pages_path` `total_pages`). The SUWE API returns 20 records per page; without pagination only
+the first page (20 of 36 clients) is synced and the run still reports `succeeded`. Optionally set a
+**get endpoint** `GET /organization/clients/{id}`; it is required to run a job on selected records
+(`only_records`). Click **Preview**: you must see real records (name, `tax_id`, `city`,
 `address`...). If the preview is empty, fix this step before going on.
 
 **3. Mapping (Mappings)**
@@ -491,16 +495,36 @@ Name `suwe-clients-to-odoo`, source `clients` (SUWE), target `res.partner` (Odoo
 
 **5. Run (Jobs > Run, then Runs)**
 
-1. Run it as a **simulation** first (`dry_run`). Expect `created = 20`, `failed = 0`, and nothing is
+1. Run it as a **simulation** first (`dry_run`). Expect `processed = 36`, `failed = 0`, and nothing is
    written.
-2. Run it for real. Expect `succeeded`, `created = 20`, `failed = 0`, and no entries under the run
+2. Run it for real. Expect `succeeded`, `created = 36`, `failed = 0`, and no entries under the run
    errors.
 3. Check Odoo: Contacts must list the companies (for example "Supermercados Aurora", VAT
    `B12345670`).
 
-Running the job again should update instead of duplicating (the upsert key matches existing
-records), but that second real run has not been verified; do a simulation first and check that it
-reports `updated` and not `created`.
+Running the job again does not duplicate: a second real run reported `created = 0`, `skipped = 36`,
+`failed = 0` (verified). If the first run was made without pagination (20 records), the next run
+after enabling it creates only the missing 16 and skips the 20 already synced.
+
+**Other SUWE entities (verified against the mock)**
+
+Each was registered as a resource with the same `page` pagination plus a get endpoint, mapped to
+`res.partner`, dry-run with 0 errors, simulated, and really run on 3 selected records (`only_records`):
+
+| Resource (list endpoint) | Records in the mock | Mapping to `res.partner` | Real run (3 records) |
+|---|---|---|---|
+| `groups` (`/organization/groups`) | 8 | `name`, `comment` <- `description`, `ref` <- `uuid`, `is_company` = true | 3 created |
+| `stores` (`/organization/stores`) | 90 | `name`, `street` <- `address`, `zip` <- `postal_code`, `city`, `vat` <- `tax_id`, `ref`, `is_company` = true | 3 created |
+| `kyc` (`/kyc/`) | 30 | `name` = concat(`first_name`, `last_name`), `email`, `phone`, `ref`, `is_company` = false | 3 created |
+| `users` (`/users/`) | 40 | `name` = concat(`first_name`, `last_name`), `email`, `ref`, `is_company` = false | 3 created |
+| `partners` (`/organization/partners`) | 6 | `name`, `ref`, `is_company` = true | 3 created |
+
+Every mapping also needs the constant `autopost_bills` = `ask`. A repeated run on the same records
+skipped them (`created = 0`). The full-size runs (all 8 + 90 + 30 + 40 + 6 records) were only
+simulated, not written to Odoo.
+
+Not migrated: `links` and `bins` (no natural Odoo model was chosen), `balance` (mock CSV data),
+`transactions` and `analytics` (served from the data lake, not Postgres).
 
 **Troubleshooting**
 
@@ -509,6 +533,8 @@ reports `updated` and not `created`.
 | Connection test hangs at `http://172.24.26.141:9000` | No route to the company network. Connect the VPN (`ip -br a` shows a VPN interface) or use the mock. |
 | Test fails with a timeout on `:8000` | The SUWE source is not running (`docker ps`). |
 | Dry run: `required field has no value` for `autopost_bills` | Add the constant rule from step 3. |
+| Run `succeeded` but fewer records than the source total | The resource has no pagination. Set `page` pagination (step 2). |
+| Run `failed` with `internal error: RecordRejected` when running on selected records | The resource has no get endpoint. Add `GET <list path>/{id}` to the resource. |
 | `api_suwe`: `uv run` fails building the environment | The sibling `fastapi_auditlog` checkout is missing (see prerequisites). |
 | `api_suwe`: 401 `Missing uuid claim` | The token has no `uuid` claim. Request the `jwt-uuid` scope. |
 | Real `api_suwe` endpoints for users, transactions or analytics fail | They depend on Authentik and the data lake (Trino); both need the VPN. `balance` is mock data and should not be migrated. |
