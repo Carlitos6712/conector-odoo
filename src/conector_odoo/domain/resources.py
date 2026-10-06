@@ -66,6 +66,7 @@ class ResourceConfig:
     get_endpoint: EndpointSpec | None = None
     create_endpoint: EndpointSpec | None = None
     update_endpoint: EndpointSpec | None = None
+    delete_endpoint: EndpointSpec | None = None
     items_path: str = ""
     item_path: str = ""
     id_field: str = "id"

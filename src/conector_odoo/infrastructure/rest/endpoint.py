@@ -115,9 +115,10 @@ class RestRecordEndpoint:
         return _written(cfg, response.content, response, fields, id)
 
     async def delete(self, resource: str, id: str) -> None:
-        """REST resources have no delete endpoint in their config: deleting is not supported."""
-        await self._configs.get(resource)  # unknown resource -> ResourceNotFound
-        raise RecordRejected(f"resource {resource!r} does not support delete")
+        """404 surfaces as ``ResourceNotFound``; callers decide whether "already gone" is fine."""
+        cfg = await self._configs.get(resource)
+        spec = _require(cfg.delete_endpoint, cfg, "delete")
+        await self._http.request(spec.method, _path(spec, id))
 
     # -- pagination ------------------------------------------------------------------------
 

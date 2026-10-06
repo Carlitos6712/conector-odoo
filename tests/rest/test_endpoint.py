@@ -7,7 +7,7 @@ import respx
 from conector_odoo.domain.errors import RecordRejected, ResourceNotFound
 from conector_odoo.domain.ports import RecordEndpoint
 from conector_odoo.domain.records import FieldSpec, FieldType
-from conector_odoo.domain.resources import PaginationConfig, PaginationStrategy
+from conector_odoo.domain.resources import EndpointSpec, PaginationConfig, PaginationStrategy
 from conector_odoo.infrastructure.rest.endpoint import RestRecordEndpoint
 from tests.rest.helpers import BASE, StaticConfigs, config, endpoint, http_client, query
 
@@ -227,6 +227,22 @@ async def test_configured_get_endpoint_keeps_priority_over_the_list() -> None:
     assert not list_route.called
 
 
-async def test_delete_is_not_supported_by_rest_resources() -> None:
+async def test_delete_without_a_delete_endpoint_is_rejected() -> None:
     with pytest.raises(RecordRejected, match="does not support delete"):
         await endpoint().delete("items", "1")
+
+
+@respx.mock
+async def test_delete_calls_the_item_url() -> None:
+    route = respx.delete(f"{LIST}/a%2Fb").respond(204)
+    cfg = config(delete_endpoint=EndpointSpec("DELETE", "/items/{id}"))
+    assert await endpoint(cfg).delete("items", "a/b") is None
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_delete_missing_record_is_resource_not_found() -> None:
+    respx.delete(f"{LIST}/5").respond(404)
+    cfg = config(delete_endpoint=EndpointSpec("DELETE", "/items/{id}"))
+    with pytest.raises(ResourceNotFound):
+        await endpoint(cfg).delete("items", "5")
