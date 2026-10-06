@@ -28,6 +28,10 @@ export interface Profile {
   has_secret: Partial<Record<SecretField, boolean>>;
   created_at: string | null;
   updated_at: string | null;
+  /** True for the Odoo profile the connector currently uses (never true for REST profiles). */
+  is_active: boolean;
+  /** UTC ISO of the last successful activation; null when never connected. */
+  last_connected_at: string | null;
 }
 
 /** Write-only credentials. A missing key keeps the stored value on update. */
@@ -60,4 +64,20 @@ export interface ConnectionTestResult {
   ok: boolean;
   failed_step: string | null;
   steps: ProbeStep[];
+}
+
+export type OdooSource = "profile" | "env" | "none";
+export type OdooStatus = "active" | "not_configured" | "fallback";
+
+/** Wire shape of `GET|PUT|DELETE /admin/api/odoo/active`; never carries a credential. */
+export interface ActiveOdoo {
+  source: OdooSource;
+  profile_id: number | null;
+  profile_name: string | null;
+  base_url: string | null;
+  db: string | null;
+  login: string | null;
+  last_connected_at: string | null;
+  status: OdooStatus;
+  warning: string | null;
 }

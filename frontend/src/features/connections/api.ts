@@ -1,5 +1,10 @@
 import { api } from "@/api/client";
-import type { ConnectionTestResult, Profile, ProfileInput } from "@/features/connections/types";
+import type {
+  ActiveOdoo,
+  ConnectionTestResult,
+  Profile,
+  ProfileInput,
+} from "@/features/connections/types";
 
 export const PROFILES_KEY = ["profiles"] as const;
 export const profileKey = (id: number) => [...PROFILES_KEY, id] as const;
@@ -21,3 +26,14 @@ export const testDraft = (input: ProfileInput) =>
   api.post<ConnectionTestResult>("/profiles/test", input);
 
 export const testSaved = (id: number) => api.post<ConnectionTestResult>(`/profiles/${id}/test`);
+
+export const ACTIVE_ODOO_KEY = ["odoo", "active"] as const;
+
+export const getActiveOdoo = () => api.get<ActiveOdoo>("/odoo/active");
+
+/** Probes the profile and, only if it works, makes it the live Odoo connection. */
+export const activateOdoo = (profileId: number) =>
+  api.put<ActiveOdoo>("/odoo/active", { profile_id: profileId });
+
+/** Forgets the active profile: the env connection takes over when configured, else none. */
+export const disconnectOdoo = () => api.delete<ActiveOdoo>("/odoo/active");

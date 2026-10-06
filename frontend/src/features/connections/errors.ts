@@ -1,4 +1,5 @@
 import { ApiError } from "@/api/client";
+import type { ConnectionTestResult, ProbeStep } from "@/features/connections/types";
 
 export type ProfileAction = "save" | "delete" | "test";
 
@@ -57,4 +58,63 @@ export function describeProfileError(error: unknown, action: ProfileAction): Des
   if (error.status === 403) return { messageKey: "connections.errors.forbidden", fieldErrors: {} };
   if (error.status === 404) return { messageKey: "connections.errors.notFound", fieldErrors: {} };
   return { messageKey: "common.unexpectedError", fieldErrors: {} };
+}
+
+export interface DescribedActiveError {
+  messageKey: string;
+  params?: Record<string, unknown>;
+  /** The probe steps of a failed activation, to highlight the failing one. */
+  result: ConnectionTestResult | null;
+}
+
+const isStep = (value: unknown): value is ProbeStep =>
+  typeof value === "object" &&
+  value !== null &&
+  typeof (value as ProbeStep).name === "string" &&
+  typeof (value as ProbeStep).ok === "boolean" &&
+  typeof (value as ProbeStep).detail === "string";
+
+function activationResult(error: ApiError): ConnectionTestResult | null {
+  const { steps, failed_step: failed } = error.extra;
+  if (!Array.isArray(steps) || !steps.every(isStep)) return null;
+  const failedStep = typeof failed === "string" ? failed : null;
+  return {
+    ok: false,
+    failed_step: failedStep,
+    steps: steps.map((s) => ({ ...s, hint: typeof s.hint === "string" ? s.hint : null })),
+  };
+}
+
+/** Maps a failure of activating or disconnecting the Odoo connection to translation keys. */
+export function describeActiveOdooError(error: unknown): DescribedActiveError {
+  if (!(error instanceof ApiError)) {
+    return { messageKey: "common.unexpectedError", result: null };
+  }
+  if (error.code === "network_error") return { messageKey: "common.networkError", result: null };
+  if (error.code === "odoo_activation_failed") {
+    return {
+      messageKey: "connections.active.errors.activationFailed",
+      result: activationResult(error),
+    };
+  }
+  if (error.code === "vault_not_configured") {
+    return { messageKey: "connections.errors.vaultMissing", result: null };
+  }
+  if (error.status === 429) {
+    return error.retryAfterSeconds === null
+      ? { messageKey: "connections.errors.rateLimitedUnknown", result: null }
+      : {
+          messageKey: "connections.errors.rateLimited",
+          params: { seconds: error.retryAfterSeconds },
+          result: null,
+        };
+  }
+  if (error.status === 403) return { messageKey: "connections.errors.forbidden", result: null };
+  if (error.status === 404) return { messageKey: "connections.errors.notFound", result: null };
+  if (error.status === 409) {
+    return { messageKey: "connections.active.errors.conflict", result: null };
+  }
+  if (error.status === 422)
+    return { messageKey: "connections.active.errors.notOdoo", result: null };
+  return { messageKey: "common.unexpectedError", result: null };
 }
