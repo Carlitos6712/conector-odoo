@@ -178,3 +178,50 @@ async def test_describe_infers_fields_from_a_sample_record() -> None:
 async def test_describe_without_schema_or_data_is_empty() -> None:
     respx.get(LIST).respond(200, json={"items": []})
     assert (await endpoint().describe("items")).fields == ()
+
+
+PAGED = PaginationConfig(
+    strategy=PaginationStrategy.PAGE,
+    page_param="page",
+    size_param="page_size",
+    total_pages_path="total_pages",
+)
+
+
+def _pages(rows: list[dict[str, int]], size: int):  # type: ignore[no-untyped-def]
+    def handler(request: httpx.Request) -> httpx.Response:
+        page = int(query(request)["page"])
+        chunk = rows[(page - 1) * size : page * size]
+        return httpx.Response(200, json={"items": chunk, "total_pages": -(-len(rows) // size)})
+
+    return handler
+
+
+@respx.mock
+async def test_get_without_get_endpoint_falls_back_to_the_paginated_list() -> None:
+    respx.get(LIST).mock(side_effect=_pages([{"id": i} for i in range(1, 6)], 2))
+    ep = endpoint(config(get_endpoint=None, pagination=PAGED))
+    rec = await ep.get("items", "5")
+    assert rec is not None and rec.id == "5"
+
+
+@respx.mock
+async def test_get_fallback_returns_none_when_the_id_is_not_listed() -> None:
+    respx.get(LIST).mock(side_effect=_pages([{"id": 1}, {"id": 2}], 2))
+    assert await endpoint(config(get_endpoint=None, pagination=PAGED)).get("items", "9") is None
+
+
+@respx.mock
+async def test_get_fallback_matches_a_custom_id_field() -> None:
+    respx.get(LIST).respond(200, json={"items": [{"uuid": "u1"}, {"uuid": "u2"}]})
+    rec = await endpoint(config(get_endpoint=None, id_field="uuid")).get("items", "u2")
+    assert rec is not None and rec.id == "u2"
+
+
+@respx.mock
+async def test_configured_get_endpoint_keeps_priority_over_the_list() -> None:
+    list_route = respx.get(LIST).respond(200, json={"items": []})
+    respx.get(f"{LIST}/7").respond(200, json={"id": 7})
+    rec = await endpoint().get("items", "7")
+    assert rec is not None and rec.id == "7"
+    assert not list_route.called

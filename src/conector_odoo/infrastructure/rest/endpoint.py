@@ -65,12 +65,22 @@ class RestRecordEndpoint:
 
     async def get(self, resource: str, id: str) -> Record | None:
         cfg = await self._configs.get(resource)
-        spec = _require(cfg.get_endpoint, cfg, "get")
+        spec = cfg.get_endpoint
+        if spec is None:
+            return await self._get_from_list(cfg, id)
         try:
             response = await self._http.request(spec.method, _path(spec, id))
         except ResourceNotFound:
             return None
         return _record(cfg, dig(_body(response), cfg.item_path), id)
+
+    async def _get_from_list(self, cfg: ResourceConfig, id: str) -> Record | None:
+        """Resources without a get endpoint: scan the list (honoring pagination) for ``id``."""
+        async for page in self._pages(cfg, {}, self._scan_batch_size):
+            for record in page:
+                if record.id == id:
+                    return record
+        return None
 
     async def sample(self, resource: str, limit: int) -> list[Record]:
         async for batch in self.iter_batches(resource, RecordFilter(), limit):
