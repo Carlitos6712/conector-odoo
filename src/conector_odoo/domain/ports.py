@@ -253,7 +253,7 @@ class RecordSource(Protocol):
 class RecordSink(Protocol):
     """Writes records of any resource to a remote system.
 
-    ``create`` and ``update`` raise ``RecordRejected`` when the remote refuses the data.
+    ``create``, ``update`` and ``delete`` raise ``RecordRejected`` when the remote refuses the data.
     """
 
     async def describe(self, resource: str) -> ResourceSchema: ...
@@ -265,6 +265,11 @@ class RecordSink(Protocol):
         ...
 
     async def update(self, resource: str, id: str, fields: dict[str, Any]) -> Record: ...
+
+    async def delete(self, resource: str, id: str) -> None:
+        """Permanently remove ONE record. Raises ``ResourceNotFound`` when it does not exist and
+        ``RecordRejected`` when the remote refuses (still referenced, access rules, unsupported)."""
+        ...
 
 
 @runtime_checkable

@@ -13,6 +13,7 @@ class InMemoryRecordEndpoint:
         self.records: dict[str, dict[str, Record]] = {name: {} for name in self.schemas}
         self.create_calls = 0
         self.update_calls = 0
+        self.delete_calls = 0
         self.get_calls = 0
         self._hooks: list[Callable[[str, str, dict[str, Any]], BaseException | None]] = []
         self._next_id = 1
@@ -98,3 +99,10 @@ class InMemoryRecordEndpoint:
         updated = Record(id=id, fields={**current.fields, **fields})
         table[id] = updated
         return updated
+
+    async def delete(self, resource: str, id: str) -> None:
+        self.delete_calls += 1
+        table = self._table(resource)
+        if id not in table:
+            raise ResourceNotFound(f"{resource}/{id}")
+        del table[id]

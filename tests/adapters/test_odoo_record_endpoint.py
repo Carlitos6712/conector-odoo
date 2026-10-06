@@ -106,6 +106,10 @@ class FakeOdoo:
                 if r["id"] in args[0]:
                     r.update(args[1])
             return True
+        if method == "unlink":
+            before = len(rows)
+            rows[:] = [r for r in rows if r["id"] not in args[0]]
+            return len(rows) < before
         raise AssertionError(f"unexpected {method}")
 
 
@@ -405,6 +409,71 @@ async def test_update_with_non_numeric_id_is_resource_not_found() -> None:
     with pytest.raises(ResourceNotFound):
         await endpoint.update("res.partner", "abc", {"name": "x"})
     assert odoo.calls_to("write") == []
+
+
+async def test_delete_unlinks_the_record_for_real() -> None:
+    endpoint, odoo = make()
+    odoo.rows["res.partner"] = [partner(1), partner(2)]
+    await endpoint.delete("res.partner", "1")
+    assert [c[2] for c in odoo.calls_to("unlink")] == [[[1]]]
+    assert odoo.calls_to("write") == []  # a real delete, not the client's archive shortcut
+    assert [r["id"] for r in odoo.rows["res.partner"]] == [2]
+
+
+async def test_delete_of_a_missing_record_is_resource_not_found_and_does_not_unlink() -> None:
+    endpoint, odoo = make()
+    with pytest.raises(ResourceNotFound, match="999"):
+        await endpoint.delete("res.partner", "999")
+    assert odoo.calls_to("unlink") == []
+
+
+async def test_delete_with_non_numeric_id_is_resource_not_found() -> None:
+    endpoint, odoo = make()
+    with pytest.raises(ResourceNotFound):
+        await endpoint.delete("res.partner", "abc")
+    assert odoo.calls_to("unlink") == []
+
+
+async def test_delete_of_a_referenced_record_is_a_clear_record_rejected() -> None:
+    endpoint, odoo = make()
+    odoo.rows["res.partner"] = [partner(1)]
+    odoo.failures["unlink"] = OdooValidationError("You cannot delete a partner with invoices")
+    with pytest.raises(RecordRejected, match="invoices") as raised:
+        await endpoint.delete("res.partner", "1")
+    assert "res.partner" in str(raised.value) and "1" in str(raised.value)
+
+
+async def test_delete_access_denied_is_record_rejected_not_an_auth_failure() -> None:
+    endpoint, odoo = make()
+    odoo.rows["res.partner"] = [partner(1)]
+    odoo.failures["unlink"] = OdooPermissionError("no unlink right")
+    with pytest.raises(RecordRejected, match="access"):
+        await endpoint.delete("res.partner", "1")
+
+
+async def test_delete_record_gone_between_check_and_unlink_is_resource_not_found() -> None:
+    endpoint, odoo = make()
+    odoo.rows["res.partner"] = [partner(1)]
+    odoo.failures["unlink"] = OdooNotFound("gone")
+    with pytest.raises(ResourceNotFound):
+        await endpoint.delete("res.partner", "1")
+
+
+async def test_delete_unavailable_propagates_as_remote_unavailable() -> None:
+    endpoint, odoo = make()
+    odoo.rows["res.partner"] = [partner(1)]
+    odoo.failures["unlink"] = OdooUnavailable("boom")
+    with pytest.raises(RemoteUnavailable):
+        await endpoint.delete("res.partner", "1")
+
+
+@pytest.mark.parametrize("model", ["ir.config_parameter", "res.users", "ir.actions.server"])
+async def test_dangerous_models_cannot_be_deleted_by_default(model: str) -> None:
+    endpoint, odoo = make()
+    odoo.models[model] = {"name": {"type": "char", "string": "Name"}}
+    with pytest.raises(RecordRejected, match="allow_system_model_writes"):
+        await endpoint.delete(model, "1")
+    assert odoo.calls_to("unlink") == []
 
 
 # -- errors ----------------------------------------------------------------------------------

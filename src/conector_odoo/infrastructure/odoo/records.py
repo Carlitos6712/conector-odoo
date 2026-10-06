@@ -164,6 +164,35 @@ class OdooRecordEndpoint:
             await self._client.write(resource, [record_id], values)
         return await self._read_back(resource, info, record_id)
 
+    async def delete(self, resource: str, id: str) -> None:
+        """Permanently remove ONE record with Odoo ``unlink`` (not the client's archive shortcut).
+
+        Odoo's ``unlink`` silently succeeds for ids that do not exist, so existence is checked
+        first: a missing record is ``ResourceNotFound``, never a silent success. Refusals (record
+        referenced elsewhere, access rules) are ``RecordRejected`` with Odoo's own message.
+        """
+        self._check_writable(resource)
+        await self._info(resource)  # unknown model -> ResourceNotFound
+        record_id = _int_id(id)
+        if record_id is None:
+            raise ResourceNotFound(f"{resource}: no record with id {id!r}")
+        with _translated():
+            found = await self._client.execute_kw(
+                resource, "read", [[record_id]], {"fields": ["id"]}
+            )
+        if not found:
+            raise ResourceNotFound(f"{resource}: record {record_id} not found")
+        try:
+            with _translated():
+                try:
+                    await self._client.execute_kw(resource, "unlink", [[record_id]])
+                except OdooPermissionError as exc:  # a per-record refusal, not a bad session
+                    raise OdooValidationError(f"access denied: {exc}") from None
+        except RecordRejected as exc:
+            raise RecordRejected(f"cannot delete {resource} {record_id}: {exc}") from None
+        except ResourceNotFound:
+            raise ResourceNotFound(f"{resource}: record {record_id} not found") from None
+
     # -- internals -------------------------------------------------------------------------
 
     def _check_writable(self, model: str) -> None:
