@@ -36,7 +36,7 @@ Backend
 - [x] B10 /admin/api + admin login + roles
 Frontend
 - [x] F1 Vite/React/TS/Tailwind/shadcn scaffold, i18n (es), TanStack Query, static serving from FastAPI
-- [ ] F2 Connections wizard
+- [x] F2 Connections wizard
 - [ ] F3 Resources browser
 - [ ] F4 Mapping editor
 - [ ] F5 Jobs wizard
@@ -70,6 +70,7 @@ Delivery
 - B10: delegated direct (single writer; trigger: 2+ non-trivial files, ~90 files). TDD RED observed per stage (collection ModuleNotFoundError application.auth; 11 failed/10 errors on the missing /admin/api routes; 23 failed profile/resource route tests; 19 failed mapping/job/run route tests; 3 failed wiring tests; hardening: 6 redirect tests, huge-exponent int() hang, resources list_with_problems missing), then GREEN.
 
 - F1: delegated direct (single writer; trigger: 2+ non-trivial files, ~70 files). TDD RED observed per stage: api client (vitest: failed to resolve `@/api/client`), i18n/auth/shell (3 suites failed to resolve missing modules), static serving (pytest: 9 of 17 failed before `mount_frontend` existed). Tooling scaffold commit and `cn` util test were written together (no separate RED).
+- F2: delegated direct (single writer; trigger: 2+ non-trivial files, ~35 files). TDD RED observed per stage: errors/hooks/list suites failed to resolve the missing `@/features/connections/*` modules, then wizard suite (same cause), then GREEN. Wizard implementation was green on the first run after the RED.
 
 ## Commits
 - B1: 94fad86 feat(db): add versioned migrator and admin schema
@@ -105,6 +106,9 @@ Delivery
 - F1: 1e730e2 feat(frontend): scaffold Vite, React, TypeScript, Tailwind and shadcn tooling
 - F1: 96c8548 feat(frontend): add typed API client, session auth, i18n and app shell
 - F1: (this commit) feat(api): serve the frontend build with an SPA fallback
+- F2: d29c7e3 feat(frontend): add connections data layer and list page
+- F2: 4369e4f feat(frontend): add connection wizard with draft test
+- F2: (this commit) docs(odd): record F2 progress
 
 ## Progress / verification
 Baseline: 612 passed on branch start.
@@ -168,6 +172,8 @@ F1: frontend `frontend/` (npm + package-lock; pnpm not installed). Vite 8, React
 Frontend contracts for F2+: `src/api/client.ts` (`api.get/post/put/patch/delete`, `ApiError{status,code,detail,retryAfterSeconds,extra}`, CSRF kept in memory via `csrfStore`, 401 -> `setUnauthorizedHandler` clears the session query so `RequireAuth` redirects to /login; pass `handleUnauthorized:false` where 401 is expected). `useSession()` gives `{user,isAdmin,canMutate}`; wrap mutating controls in `<AdminOnly>` (operators are read-only; Settings nav is admin-only because /users is admin-only). Nav list in `src/nav.ts`; placeholder pages render `<PlaceholderPage>` per section. i18n: `src/i18n/{es,en}.ts` (es default and fallback; a test enforces key parity), add keys to both. Add shadcn components by hand or `npx shadcn add` (components.json is present).
 Static serving: `infrastructure/api/static_frontend.py`, setting FRONTEND_DIST_DIR (default ./frontend/dist, relative to cwd). Registered last in create_app; reserved first segments (all registered routes + admin/docs/redoc/openapi.json/webhooks) answer 404, never HTML; missing file with an extension -> 404; extensionless -> index.html; assets/* immutable 1 year, everything else no-cache; resolve()+is_relative_to blocks traversal and symlink escapes; missing dist logs one warning at startup and is re-checked per request. Non-GET on unknown paths answer 404 (not 405). D3 must build the frontend into the image and set FRONTEND_DIST_DIR.
 Verification F1: see final report (frontend lint/typecheck/test/build green; backend pytest 1600 passed, ruff, mypy clean).
+F2: `src/features/connections/` (types, api, hooks, errors, form, FormField, TestResultView, ConnectionsPage, DeleteProfileDialog, ConnectionWizard, ConnectionWizardPage). Routes /connections, /connections/new, /connections/:id/edit (wizard redirects operators to the list). New primitives: table, badge, dialog (@radix-ui/react-dialog, role=alertdialog for confirms), select (native), steps. Validation is hand-written (no zod dependency added). Frontend tests 69 (was 33); lint/typecheck/build green; backend untouched (pytest/ruff/mypy not run).
+F2 contract notes for F3+: (1) 409 is code `conflict` for both ProfileNameTaken and ProfileInUse; the UI tells them apart by action (DELETE = in use, POST/PUT = name taken). (2) 422 detail is a flat string `body.field: msg; ...` (no structured issues for profiles); the UI parses `body.<field>:` prefixes into field errors and never shows the raw text. (3) There is no persisted last-test status on a profile: the list shows the outcome of tests run in the current page session only ("Sin probar" otherwise). (4) POST /profiles/test has no profile id, so on edit the draft test needs every credential retyped; with blank secrets the wizard offers "Probar la conexión guardada" (POST /profiles/{id}/test, tests the STORED version). A backend `POST /profiles/{id}/test` accepting a draft body that falls back to stored secrets would remove that limitation (not done). (5) Odoo profiles are sent with auth_method=api_key and secrets.api_key; there is no Odoo protocol field (JSON-RPC only). (6) PUT replaces extra_headers, so the wizard sends the stored ones unchanged (not editable yet). (7) Probe `detail`/`hint` are server English text, shown as is (already masked server-side); step names are translated via `connections.steps.*`. (8) Credential mutations use gcTime 0 and reset on unmount; typed secrets exist only in wizard component state.
 
 ## Next step
-F2 Connections wizard (uses `src/api/client.ts`, `useSession`, i18n keys).
+F3 (next frontend task in the list above); reuse `features/connections` patterns (hooks with invalidation, `describe*Error`, FormField).
