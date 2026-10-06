@@ -21,16 +21,18 @@ const SERIES: readonly { key: Series; swatch: string }[] = [
   { key: "other", swatch: "bg-muted-foreground/40" },
 ];
 
-const CHART_HEIGHT_PX = 120;
+const CHART_HEIGHT_PX = 160;
+const MIN_BAR_PX = 6;
 
-function dayLabel(day: string, options: Intl.DateTimeFormatOptions): string {
+function dayLabel(day: string, options: Intl.DateTimeFormatOptions, locale: string): string {
   const [year, month, date] = day.split("-").map(Number);
-  return new Date(year ?? 0, (month ?? 1) - 1, date ?? 1).toLocaleDateString("es-ES", options);
+  return new Date(year ?? 0, (month ?? 1) - 1, date ?? 1).toLocaleDateString(locale, options);
 }
 
 /** Stacked daily counts as plain CSS bars, with a text alternative and a table fallback. */
 export function OutcomeChart({ buckets }: { buckets: readonly DayBucket[] }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const language = i18n.language;
   const [showTable, setShowTable] = useState(false);
   const tableId = useId();
   const max = Math.max(...buckets.map((b) => b.total), 1);
@@ -45,27 +47,41 @@ export function OutcomeChart({ buckets }: { buckets: readonly DayBucket[] }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <div role="img" aria-label={alt} className="grid grid-cols-7 gap-2">
+      <div role="img" aria-label={alt} className="grid grid-cols-7 gap-1.5 sm:gap-3">
         {buckets.map((bucket) => (
-          <div key={bucket.day} aria-hidden className="flex flex-col items-center gap-1">
-            <span className="text-xs tabular-nums">{bucket.total}</span>
+          <div key={bucket.day} aria-hidden className="flex min-w-0 flex-col items-center gap-1.5">
+            <span className="text-xs font-medium tabular-nums">{bucket.total}</span>
             <div
-              className="flex w-full max-w-10 flex-col-reverse overflow-hidden rounded-sm bg-muted/40"
+              className="flex w-full items-end justify-center border-b border-border"
               style={{ height: CHART_HEIGHT_PX }}
             >
-              {SERIES.map(({ key, swatch }) =>
-                bucket[key] > 0 ? (
-                  <div
-                    key={key}
-                    className={swatch}
-                    style={{ height: `${(bucket[key] / max) * 100}%` }}
-                  />
-                ) : null,
+              {bucket.total > 0 ? (
+                <div
+                  className="flex w-full max-w-14 flex-col-reverse overflow-hidden rounded-t-sm"
+                  style={{
+                    height: `${(bucket.total / max) * 100}%`,
+                    minHeight: MIN_BAR_PX,
+                  }}
+                >
+                  {SERIES.map(({ key, swatch }) =>
+                    bucket[key] > 0 ? (
+                      <div
+                        key={key}
+                        className={swatch}
+                        style={{ flexGrow: bucket[key], flexBasis: 0, minHeight: 2 }}
+                      />
+                    ) : null,
+                  )}
+                </div>
+              ) : (
+                <div className="h-0.5 w-full max-w-14 rounded-full bg-muted-foreground/30" />
               )}
             </div>
-            <span className="text-xs text-muted-foreground">
-              {dayLabel(bucket.day, { weekday: "short" })}{" "}
-              {dayLabel(bucket.day, { day: "numeric" })}
+            <span className="flex flex-col items-center text-[11px] leading-tight text-muted-foreground sm:text-xs">
+              <span>{dayLabel(bucket.day, { weekday: "short" }, language)}</span>
+              <span className="tabular-nums">
+                {dayLabel(bucket.day, { day: "numeric" }, language)}
+              </span>
             </span>
           </div>
         ))}
@@ -106,7 +122,11 @@ export function OutcomeChart({ buckets }: { buckets: readonly DayBucket[] }) {
             {buckets.map((bucket) => (
               <TableRow key={bucket.day}>
                 <TableCell>
-                  {dayLabel(bucket.day, { weekday: "long", day: "numeric", month: "short" })}
+                  {dayLabel(
+                    bucket.day,
+                    { weekday: "long", day: "numeric", month: "short" },
+                    language,
+                  )}
                 </TableCell>
                 {SERIES.map(({ key }) => (
                   <TableCell key={key}>{bucket[key]}</TableCell>

@@ -1061,6 +1061,7 @@ export const en: Translation = {
   },
   dashboard: {
     refresh: "Refresh",
+    refreshing: "Refreshing…",
     summary: {
       title: "Summary",
       connections: "Connections",

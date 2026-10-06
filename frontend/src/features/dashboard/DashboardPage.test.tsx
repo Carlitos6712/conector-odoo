@@ -299,6 +299,33 @@ describe("DashboardPage", () => {
       ),
     );
   });
+
+  it("shows a busy, disabled refresh button while the refetch is pending", async () => {
+    let release: () => void = () => {};
+    let hold = false;
+    const gate = () => new Promise<void>((resolve) => (release = resolve));
+    const base = routes();
+    stubApi({
+      ...base,
+      "GET /dashboard": async () => {
+        if (hold) await gate();
+        return base["GET /dashboard"]();
+      },
+    });
+    await renderApp(<DashboardPage />, "/");
+    await screen.findByRole("link", { name: /Conexiones/ });
+    const button = screen.getByRole("button", { name: "Actualizar" });
+    await vi.waitFor(() => expect(button).toBeEnabled());
+    hold = true;
+    await userEvent.click(button);
+    await vi.waitFor(() => expect(button).toBeDisabled());
+    expect(button).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByText("Actualizando…")).toBeInTheDocument();
+    release();
+    await vi.waitFor(() => expect(button).toBeEnabled());
+    expect(button).not.toHaveAttribute("aria-busy", "true");
+    expect(screen.queryByText("Actualizando…")).not.toBeInTheDocument();
+  });
 });
 
 describe("DashboardPage active Odoo", () => {

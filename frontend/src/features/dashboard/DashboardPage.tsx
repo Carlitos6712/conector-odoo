@@ -36,6 +36,7 @@ import { useJobs } from "@/features/jobs/hooks";
 import { RunNowDialog } from "@/features/jobs/RunNowDialog";
 import { TriggerSummary } from "@/features/jobs/TriggerSummary";
 import type { Job } from "@/features/jobs/types";
+import { cn } from "@/lib/utils";
 import { formatDateTime } from "@/features/mappings/format";
 import { formatDuration, runDurationSeconds } from "@/features/runs/format";
 import { RunStatusBadge } from "@/features/runs/RunStatusBadge";
@@ -453,16 +454,27 @@ export function DashboardPage() {
 
   const jobName = (id: number) =>
     jobs.data?.find((job) => job.id === id)?.name ?? t("runs.unknownJob", { id });
-  const refresh = () => void Promise.all([dashboard.refetch(), recent.refetch(), jobs.refetch()]);
+  const refreshing = dashboard.isFetching || recent.isFetching || jobs.isFetching;
+  const refresh = () => Promise.all([dashboard.refetch(), recent.refetch(), jobs.refetch()]);
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold">{t("nav.dashboard")}</h1>
-        <Button variant="outline" onClick={refresh}>
-          <RefreshCw aria-hidden className="size-4" />
-          {t("dashboard.refresh")}
-        </Button>
+        <div className="flex items-center gap-3">
+          <span role="status" className="text-xs text-muted-foreground">
+            {refreshing ? t("dashboard.refreshing") : null}
+          </span>
+          <Button
+            variant="outline"
+            onClick={() => void refresh()}
+            disabled={refreshing}
+            aria-busy={refreshing}
+          >
+            <RefreshCw aria-hidden className={cn("size-4", refreshing && "animate-spin")} />
+            {t("dashboard.refresh")}
+          </Button>
+        </div>
       </div>
       <Section id="dash-summary" title={t("dashboard.summary.title")}>
         <Summary query={dashboard} />

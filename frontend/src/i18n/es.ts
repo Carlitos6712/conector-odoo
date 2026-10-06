@@ -1074,6 +1074,7 @@ export const es = {
   },
   dashboard: {
     refresh: "Actualizar",
+    refreshing: "Actualizando…",
     summary: {
       title: "Resumen",
       connections: "Conexiones",
