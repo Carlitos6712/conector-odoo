@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     idempotency_db_path: str = "./data/idempotency.sqlite3"
     # Admin database (profiles, mappings, jobs, runs, users); migrated at startup.
     admin_db_path: str = "./data/admin.db"
+    # Built admin frontend (``frontend/dist``), relative to the working directory; served at ``/``.
+    # A missing directory is harmless: the API keeps working and one warning is logged.
+    frontend_dist_dir: str = "./frontend/dist"
     # An ``in_progress`` key older than this is treated as abandoned (outcome unknown).
     idempotency_in_progress_timeout_seconds: float = DEFAULT_IN_PROGRESS_TIMEOUT_SECONDS
     # Records older than this are purged (at startup and every purge interval).

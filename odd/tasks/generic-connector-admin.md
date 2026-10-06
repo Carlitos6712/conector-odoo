@@ -16,7 +16,7 @@ Link Odoo with arbitrary external REST APIs (first target: SUWE) and add a web f
 Whole plan below, approved by user. Push/PR/merge remain user decisions.
 
 ## TDD
-Mode: enabled (project config, Strict TDD). Runner: `uv run pytest` (backend); frontend runner TBD in F1 (vitest).
+Mode: enabled (project config, Strict TDD). Runner: `uv run pytest` (backend); frontend runner: `npm test` (vitest run, jsdom + React Testing Library).
 
 ## Delivery strategy
 ask-on-risk (default). Chain strategy chosen by user: feature-branch-chain (slice PRs target the feature branch; feature branch merges to main last). Slice boundaries: slice 1 = B1+B2 (94fad86, d57ea4c, e16758d).
@@ -35,7 +35,7 @@ Backend
 - [x] B9 Triggers: manual, cron scheduler, webhook trigger
 - [x] B10 /admin/api + admin login + roles
 Frontend
-- [ ] F1 Vite/React/TS/Tailwind/shadcn scaffold, i18n (es), TanStack Query, static serving from FastAPI
+- [x] F1 Vite/React/TS/Tailwind/shadcn scaffold, i18n (es), TanStack Query, static serving from FastAPI
 - [ ] F2 Connections wizard
 - [ ] F3 Resources browser
 - [ ] F4 Mapping editor
@@ -69,6 +69,8 @@ Delivery
 - B9: delegated direct (single writer). TDD RED observed per stage (ModuleNotFoundError application.sync_trigger; domain.cron; application.scheduler; application.webhook_triggers; config attribute missing), then GREEN.
 - B10: delegated direct (single writer; trigger: 2+ non-trivial files, ~90 files). TDD RED observed per stage (collection ModuleNotFoundError application.auth; 11 failed/10 errors on the missing /admin/api routes; 23 failed profile/resource route tests; 19 failed mapping/job/run route tests; 3 failed wiring tests; hardening: 6 redirect tests, huge-exponent int() hang, resources list_with_problems missing), then GREEN.
 
+- F1: delegated direct (single writer; trigger: 2+ non-trivial files, ~70 files). TDD RED observed per stage: api client (vitest: failed to resolve `@/api/client`), i18n/auth/shell (3 suites failed to resolve missing modules), static serving (pytest: 9 of 17 failed before `mount_frontend` existed). Tooling scaffold commit and `cn` util test were written together (no separate RED).
+
 ## Commits
 - B1: 94fad86 feat(db): add versioned migrator and admin schema
 - B2: d57ea4c fix(db): serialize concurrent migrations and release stores on startup failure
@@ -100,6 +102,9 @@ Delivery
 - B10: b567b5a fix(openapi): follow redirects by hand and never leave the requested host
 - B10: 76796da fix(mapping): reject numbers whose exponent cannot be materialised
 - B10: d7b67ab fix(resources): skip and report a corrupt catalog row instead of failing the whole list
+- F1: 1e730e2 feat(frontend): scaffold Vite, React, TypeScript, Tailwind and shadcn tooling
+- F1: 96c8548 feat(frontend): add typed API client, session auth, i18n and app shell
+- F1: (this commit) feat(api): serve the frontend build with an SPA fallback
 
 ## Progress / verification
 Baseline: 612 passed on branch start.
@@ -159,5 +164,10 @@ Route log (all under /admin/api; `*` = admin only even for GET):
 Error envelope `{error, detail}` everywhere (422 mapping/validation adds `issues`, 429 adds Retry-After); unexpected errors -> 500 `internal_error` with no detail. ~7000 lines over 10 commits (about 3500 src, 3500 tests), over the 400 heuristic: auth, guard, four route groups, wiring and four hardening fixes are separate coherent units.
 Notes for F1+: static serving still missing (no route outside /admin/api, /webhooks, data API). Frontend gets `csrf_token` from login or /auth/me and must send it as X-CSRF-Token on every non-GET; mapping/resource bodies follow domain codecs (mapping JSON in domain/mapping_codec.py; resource config models in admin_api/schemas/resources.py, OpenAPI at /openapi.json).
 
+F1: frontend `frontend/` (npm + package-lock; pnpm not installed). Vite 8, React 19, TS 6 strict, Tailwind 4 (@tailwindcss/vite), hand-written shadcn/ui (new-york) primitives (button, input, label, card) because the shadcn CLI is interactive; ESLint 9 flat + jsx-a11y + react-hooks, Prettier; vitest 5 + RTL (33 tests). Scripts: dev (proxy /admin/api -> VITE_BACKEND_URL or http://localhost:8000), build (tsc + vite), lint (eslint + prettier --check), typecheck, test. eslint pinned to 9 (typescript-eslint/jsx-a11y peers do not accept 10 yet).
+Frontend contracts for F2+: `src/api/client.ts` (`api.get/post/put/patch/delete`, `ApiError{status,code,detail,retryAfterSeconds,extra}`, CSRF kept in memory via `csrfStore`, 401 -> `setUnauthorizedHandler` clears the session query so `RequireAuth` redirects to /login; pass `handleUnauthorized:false` where 401 is expected). `useSession()` gives `{user,isAdmin,canMutate}`; wrap mutating controls in `<AdminOnly>` (operators are read-only; Settings nav is admin-only because /users is admin-only). Nav list in `src/nav.ts`; placeholder pages render `<PlaceholderPage>` per section. i18n: `src/i18n/{es,en}.ts` (es default and fallback; a test enforces key parity), add keys to both. Add shadcn components by hand or `npx shadcn add` (components.json is present).
+Static serving: `infrastructure/api/static_frontend.py`, setting FRONTEND_DIST_DIR (default ./frontend/dist, relative to cwd). Registered last in create_app; reserved first segments (all registered routes + admin/docs/redoc/openapi.json/webhooks) answer 404, never HTML; missing file with an extension -> 404; extensionless -> index.html; assets/* immutable 1 year, everything else no-cache; resolve()+is_relative_to blocks traversal and symlink escapes; missing dist logs one warning at startup and is re-checked per request. Non-GET on unknown paths answer 404 (not 405). D3 must build the frontend into the image and set FRONTEND_DIST_DIR.
+Verification F1: see final report (frontend lint/typecheck/test/build green; backend pytest 1600 passed, ruff, mypy clean).
+
 ## Next step
-F1 Vite/React/TS/Tailwind/shadcn scaffold, i18n (es), TanStack Query, static serving from FastAPI (consumes /admin/api).
+F2 Connections wizard (uses `src/api/client.ts`, `useSession`, i18n keys).
