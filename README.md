@@ -149,7 +149,8 @@ Compose refuses to start while `ODOO_URL`, `ODOO_DB`, `ODOO_USER`, `ODOO_API_KEY
   port 8000 for any real deployment. Set `ADMIN_COOKIE_SECURE=false` only for plain-HTTP local use.
 - **Data.** Both SQLite databases (`admin.db`, `idempotency.sqlite3`) live on the named volume
   `connector-data` mounted at `/app/data`. Back it up while the stack is stopped or idle:
-  `docker compose run --rm --no-deps -v "$PWD":/backup --entrypoint tar connector czf /backup/connector-data.tgz -C /app/data .`
+  `docker run --rm --user 0 --entrypoint tar -v conector-odoo_connector-data:/data:ro -v "$PWD":/backup conector-odoo:latest czf /backup/connector-data.tgz -C /data .`
+  (the volume is named `<compose project>_connector-data`; check `docker volume ls`).
   Keep `ENCRYPTION_KEY` with the backup: without it stored secrets cannot be decrypted.
 - **Health.** The container healthcheck calls `GET /livez` (process only). `GET /health` also
   calls Odoo and answers 503 when it is down, so it is not used as the liveness probe.
