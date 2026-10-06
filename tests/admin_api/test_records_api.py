@@ -9,7 +9,13 @@ from tests.adapters.test_odoo_record_endpoint import FakeOdoo, partner
 from tests.admin_api.conftest import AdminEnv
 from tests.admin_api.test_profiles_api import PROFILES
 from tests.admin_api.test_resources_api import make_profile
-from tests.admin_api.world import Fakes, make_job, wait_for_run
+from tests.admin_api.world import (
+    Fakes,
+    make_job,
+    reverse_definition,
+    save_mapping,
+    wait_for_run,
+)
 
 NOTES = ResourceSchema(
     "notes",
@@ -160,7 +166,7 @@ def test_odoo_patch_writes_through_the_adapter(admin: AdminEnv) -> None:
 def test_delete_removes_exactly_one_record(admin: AdminEnv) -> None:
     notes = Notes(admin)
     response = admin.delete(f"{notes.url}/2")
-    assert response.status_code == 204 and response.content == b""
+    assert response.status_code == 200 and response.json() == {"propagation": [], "warnings": []}
     assert sorted(notes.endpoint.records["notes"]) == ["1", "3"]
     assert admin.delete(f"{notes.url}/2").status_code == 404  # already gone, not a silent success
 
@@ -180,7 +186,7 @@ def test_odoo_delete_unlinks_and_a_refusal_is_a_422_with_odoo_message(admin: Adm
 
     pid, odoo = odoo_profile(admin)
     url = f"{PROFILES}/{pid}/records/res.partner"
-    assert admin.delete(f"{url}/1").status_code == 204
+    assert admin.delete(f"{url}/1").status_code == 200
     assert [c[2] for c in odoo.calls_to("unlink")] == [[[1]]]
     odoo.failures["unlink"] = OdooValidationError("partner still has invoices")
     refused = admin.delete(f"{url}/2")
@@ -210,7 +216,7 @@ def test_deleting_a_synced_target_record_forgets_its_xref_so_the_next_run_recrea
     assert wait_for_run(admin, first["id"])["counters"]["created"] == 3
 
     url = f"{PROFILES}/{fakes.dst_id}/records/clients"
-    assert admin.delete(f"{url}/2").status_code == 204
+    assert admin.delete(f"{url}/2").status_code == 200
 
     second = admin.post(f"/admin/api/jobs/{job_id}/runs", json={}).json()
     counters: dict[str, Any] = wait_for_run(admin, second["id"])["counters"]
@@ -226,6 +232,93 @@ def test_deleting_a_record_of_another_resource_keeps_the_sync_xrefs(admin: Admin
     wait_for_run(admin, run["id"])
     fakes.src.seed("customers", {"name": "Zed", "email": "z@x.com"})
     # deleting a SOURCE-side record is not a target deletion: the job's xrefs stay untouched
-    assert admin.delete(f"{PROFILES}/{fakes.src_id}/records/customers/3").status_code == 204
+    assert admin.delete(f"{PROFILES}/{fakes.src_id}/records/customers/3").status_code == 200
     again = admin.post(f"/admin/api/jobs/{job_id}/runs", json={}).json()
     assert wait_for_run(admin, again["id"])["counters"]["skipped"] == 2
+
+
+# -- write-through to the counterpart -------------------------------------------------------
+
+
+def bidirectional_pair(admin: AdminEnv) -> tuple[Fakes, int]:
+    """Two profiles with one synced customer/client pair under a bidirectional job."""
+    fakes = Fakes(admin)
+    fakes.seed(1)
+    assert save_mapping(admin, reverse_definition()).status_code == 200
+    job_id = make_job(admin, fakes, direction="bidirectional", reverse_mapping={"name": "rev"})
+    run = admin.post(f"/admin/api/jobs/{job_id}/runs", json={}).json()
+    assert wait_for_run(admin, run["id"])["counters"]["created"] == 1
+    return fakes, job_id
+
+
+def test_patch_writes_through_and_reports_the_job_outcome(admin: AdminEnv) -> None:
+    fakes, job_id = bidirectional_pair(admin)
+    response = admin.patch(
+        f"{PROFILES}/{fakes.src_id}/records/customers/1", json={"fields": {"name": "Zed"}}
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["fields"]["name"] == "Zed" and body["warnings"] == []
+    [outcome] = body["propagation"]
+    assert (outcome["job_id"], outcome["action"], outcome["side"]) == (job_id, "updated", "source")
+    assert fakes.dst.records["clients"]["1"].fields["full_name"] == "Zed"
+
+
+def test_patch_with_a_failing_counterpart_is_200_with_a_warning(admin: AdminEnv) -> None:
+    from conector_odoo.domain.errors import RemoteUnavailable
+
+    fakes, _ = bidirectional_pair(admin)
+    fakes.dst.reject_next(RemoteUnavailable("suwe is down"))
+    response = admin.patch(
+        f"{PROFILES}/{fakes.src_id}/records/customers/1", json={"fields": {"name": "Zed"}}
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["fields"]["name"] == "Zed"
+    assert body["propagation"][0]["action"] == "failed"
+    assert len(body["warnings"]) == 1 and "suwe is down" in body["warnings"][0]
+    assert "customers-sync" in body["warnings"][0]
+
+
+def test_post_creates_the_record_and_its_counterpart(admin: AdminEnv) -> None:
+    fakes, _ = bidirectional_pair(admin)
+    response = admin.post(
+        f"{PROFILES}/{fakes.src_id}/records/customers",
+        json={"fields": {"name": "Cleo", "email": "cleo@x.com"}},
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["id"] == "2" and body["fields"]["name"] == "Cleo"
+    assert [o["action"] for o in body["propagation"]] == ["created"]
+    assert body["warnings"] == []
+    assert fakes.dst.records["clients"]["2"].fields["full_name"] == "Cleo"
+
+
+def test_post_without_a_job_creates_only_the_record(admin: AdminEnv) -> None:
+    notes = Notes(admin)
+    response = admin.post(notes.url, json={"fields": {"title": "New"}})
+    assert response.status_code == 201, response.text
+    assert response.json()["propagation"] == []
+    assert len(notes.endpoint.records["notes"]) == 4
+
+
+def test_post_rejects_unknown_and_empty_fields_and_unknown_resources(admin: AdminEnv) -> None:
+    notes = Notes(admin)
+    for fields in ({"nope": 1}, {"created": "x"}, {}):
+        assert admin.post(notes.url, json={"fields": fields}).status_code == 422, fields
+    assert admin.post(notes.url, json={"title": "x"}).status_code == 422  # no wrapper
+    assert (
+        admin.post(f"{PROFILES}/{notes.pid}/records/nope", json={"fields": {"a": 1}}).status_code
+        == 404
+    )
+    assert notes.endpoint.create_calls == 0
+
+
+def test_delete_writes_through_and_reports_the_job_outcome(admin: AdminEnv) -> None:
+    fakes, job_id = bidirectional_pair(admin)
+    response = admin.delete(f"{PROFILES}/{fakes.src_id}/records/customers/1")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert [(o["job_id"], o["action"]) for o in body["propagation"]] == [(job_id, "deleted")]
+    assert body["warnings"] == []
+    assert fakes.dst.records["clients"] == {} and fakes.src.records["customers"] == {}

@@ -1,18 +1,24 @@
-"""``/admin/api/profiles/{id}/records/{resource}``: browse, edit and delete INDIVIDUAL records of a
-connected system (for an Odoo profile ``resource`` is the model, e.g. ``res.partner``).
+"""``/admin/api/profiles/{id}/records/{resource}``: browse, create, edit and delete INDIVIDUAL
+records of a connected system (for an Odoo profile ``resource`` is the model, e.g. ``res.partner``).
 
 Writes are admin only and CSRF protected by the shared ``authorize`` dependency. There is no
 collection-level or filter-based delete on purpose: one record per request.
+
+Writes are also applied to the counterpart of every enabled bidirectional job; the response lists
+what happened per job (``propagation``) and a ready-made ``warnings`` list. A counterpart failure
+never fails the request: the targeted record is already written.
 """
 
-from fastapi import APIRouter, Query, Response
+from fastapi import APIRouter, Query
 
 from conector_odoo.application.records import DEFAULT_LIMIT, MAX_LIMIT, MAX_OFFSET
 from conector_odoo.infrastructure.admin_api.deps import AdminDep
 from conector_odoo.infrastructure.admin_api.schemas.resources import (
+    RecordDeleteOut,
     RecordOut,
     RecordPageOut,
     RecordPatchIn,
+    RecordWriteOut,
 )
 
 router = APIRouter(prefix="/profiles/{profile_id}/records", tags=["admin-records"])
@@ -38,19 +44,28 @@ async def get_record(profile_id: int, resource: str, record_id: str, admin: Admi
     return RecordOut.of(await admin.records.get.execute(profile_id, resource, record_id))
 
 
+@router.post("/{resource}", status_code=201)
+async def create_record(
+    profile_id: int, resource: str, body: RecordPatchIn, admin: AdminDep
+) -> RecordWriteOut:
+    """Create ONE record on this profile, then on the counterpart of each bidirectional job."""
+    created = await admin.records.create.execute(profile_id, resource, body.fields)
+    return RecordWriteOut.from_write(created)
+
+
 @router.patch("/{resource}/{record_id}")
 async def patch_record(
     profile_id: int, resource: str, record_id: str, body: RecordPatchIn, admin: AdminDep
-) -> RecordOut:
+) -> RecordWriteOut:
     """Change fields of ONE record; read-only and unknown fields are rejected (422)."""
     updated = await admin.records.update.execute(profile_id, resource, record_id, body.fields)
-    return RecordOut.of(updated)
+    return RecordWriteOut.from_write(updated)
 
 
-@router.delete("/{resource}/{record_id}", status_code=204)
+@router.delete("/{resource}/{record_id}")
 async def delete_record(
     profile_id: int, resource: str, record_id: str, admin: AdminDep
-) -> Response:
-    """Delete ONE record. Never touches other records, never cascades."""
-    await admin.records.delete.execute(profile_id, resource, record_id)
-    return Response(status_code=204)
+) -> RecordDeleteOut:
+    """Delete ONE record (and its counterparts). Never touches other records, never cascades."""
+    outcomes = await admin.records.delete.execute(profile_id, resource, record_id)
+    return RecordDeleteOut.of(outcomes)
