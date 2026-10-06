@@ -58,7 +58,7 @@ today and never touches remote data.
 - Xref: `XRefRepository.forget_target(profile_id, resource, target_id)` deletes xrefs of jobs targeting that
   profile/resource. Runner today: unchanged source + deleted target = skipped forever (stale hash); changed source =
   recreated. Cleanup on delete (also when already gone) makes the next run recreate it. Tested end to end.
-- T3 (route: delegated, frontend writer; commit 880ba4c): RED 3 new
+- T3 (route: delegated, frontend writer; commit e6ccb54 (message-recorded hash)): RED 3 new
   suites failed to load (no implementation), GREEN 659 frontend tests passed (61 files), typecheck and lint clean.
   New `features/records/` (api, hooks, errors, columns, dialogs, page), nav entry + route `/records`, en/es copy.
   Admin-only edit/delete buttons, edit sends only changed writable fields, delete confirmation names record and
