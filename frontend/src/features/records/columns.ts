@@ -16,6 +16,31 @@ export function pickColumns(schema: RecordSchema): FieldSpec[] {
     .slice(0, MAX_FALLBACK_COLUMNS);
 }
 
+/**
+ * Every column the data has: all schema fields but the id (it has its own column), then any key
+ * that only appears in the records, in first-seen order.
+ */
+export function allColumns(schema: RecordSchema, records: readonly RemoteRecord[]): FieldSpec[] {
+  const columns = schema.fields.filter((f) => f.name !== schema.id_field);
+  const known = new Set(schema.fields.map((f) => f.name));
+  for (const record of records) {
+    for (const name of Object.keys(record.fields)) {
+      if (known.has(name)) continue;
+      known.add(name);
+      columns.push({
+        name,
+        type: "unknown",
+        required: false,
+        readonly: true,
+        label: null,
+        choices: null,
+        relation: null,
+      });
+    }
+  }
+  return columns;
+}
+
 /** What names a record to a human: its name, then display_name, then `#id`. */
 export function recordLabel(record: RemoteRecord): string {
   for (const key of ["name", "display_name"]) {
