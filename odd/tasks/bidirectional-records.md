@@ -51,7 +51,8 @@ resource config has no write endpoints.
 - [x] T5 Frontend: create dialog, delete/edit copy about counterpart, show warnings, `delete_endpoint` in the
       resource form, "Sync now" on Records (runs enabled jobs of the resource). Commit ca997a7; npm test 684 passed, typecheck + lint clean.
 - [ ] T6 Live check + README section (what propagates, edited-side-wins, warnings, mock changes).
-- [ ] T7 Frontend visual restyle (user request: functionality fine, style too monochrome). Palette to agree first.
+- [x] T7 Frontend visual restyle: indigo/blue palette chosen by the user, tokens in `index.css` (light + dark),
+      indigo sidebar, soft-tint badges, tables, dialogs, toasts. Commit 27189e7; npm test 685 passed, typecheck + lint clean.
 
 ## Progress / evidence
 - Mapping done by an explorer agent (read-only). Facts used: mock store is in memory (restart resets to
@@ -107,6 +108,18 @@ resource config has no write endpoints.
 - Reverse-pass filter (writer, delegated): commit 1fa6e06. `SyncJob.reverse_record_filter` (migration 8, API
   `JobIn/JobOut`, runner reverse pass uses it; forward pass keeps `record_filter`); write-through stays
   unfiltered. 6 RED then green. Parent re-ran: uv run pytest 2063 passed, npm test 684 passed.
+- T7 (writer, delegated): see commit 27189e7. Primary #443ec3 (light) / #808aff (dark); sidebar #1d1f51 / #101230;
+  success/warning/info/destructive tokens with soft variants; contrast computed AA for all listed pairs.
+  Gaps: dark theme and Jobs/Records pages, dialogs, toasts, WriteReport not visually reviewed.
+- Newest-wins (user request: on a two-sided change the most recent state wins), commit 306728f: runner reads
+  the pass source record via `get` when the list lacks the updated field (SUWE list has no `updated_at`).
+  Job 1 now `newest_wins`, `source_updated_field=updated_at`, `target_updated_field=write_date` (backup
+  scratchpad `job1.before-newest.json`). Dry-run 45 (writes nothing, proven in code): partial, created 4,
+  skipped 246, failed 3 (Odoo partners 1/3/7, no `ref`), conflicts 0; Odoo accepted the filter domain.
+  The 4 creations were not identified (sample truncated); the get fallback was not exercised live.
+  uv run pytest 2068 passed. Equal or unparsable times still flag a conflict and write nothing.
+- Partners 221/222/224 deleted via the connector API at user request (221/222 had job 1 xrefs; SUWE
+  counterparts R345678/A123456 report 404 afterwards; whether they existed before is unknown).
 
 ## Pending (found while working)
 - Job 1 reverse filter now SET (see test-data log). Open: Odoo partners 221 "Aena" (`ref` R345678), 222
@@ -122,4 +135,4 @@ resource config has no write endpoints.
 - Records page: REST resource picker, page size 25/50/100, range line, show-all-columns (commit c6e7217).
 
 ## Next step
-Wait for the user to delete partners 221/222/224 by hand (first job 1 run must be a dry-run); T6 live check via UI and README section; then T7 restyle (agree palette first).
+Wait for the user to delete partners 221/222/224 by hand (first job 1 run must be a dry-run); T6 live check via UI (include a visual review of dark theme, Records, Jobs, dialogs) and README section.
