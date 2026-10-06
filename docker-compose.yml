@@ -1,16 +1,47 @@
-# Odoo is external: point ODOO_URL (in .env) at your instance.
+# Odoo and the target REST API are external: point ODOO_URL and the connection profiles at them.
+# Copy .env.example to .env and fill it in; required values fail fast when missing.
+# Terminate TLS in a reverse proxy in front of port 8000 (the session cookie is Secure by default).
 services:
   connector:
     build: .
     image: conector-odoo:latest
-    env_file: .env
     environment:
-      # The container always stores its SQLite file on the mounted volume.
+      ODOO_URL: ${ODOO_URL:?set ODOO_URL in .env}
+      ODOO_DB: ${ODOO_DB:?set ODOO_DB in .env}
+      ODOO_USER: ${ODOO_USER:?set ODOO_USER in .env}
+      ODOO_API_KEY: ${ODOO_API_KEY:?set ODOO_API_KEY in .env}
+      ODOO_PROTOCOL: ${ODOO_PROTOCOL:-jsonrpc}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:?set WEBHOOK_SECRET in .env}
+      CONNECTOR_API_KEY: ${CONNECTOR_API_KEY:-}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env (see .env.example)}
+      ADMIN_BOOTSTRAP_USER: ${ADMIN_BOOTSTRAP_USER:?set ADMIN_BOOTSTRAP_USER in .env}
+      ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:?set ADMIN_BOOTSTRAP_PASSWORD in .env}
+      # Secure by default; set false only for plain-HTTP local use (no proxy).
+      ADMIN_COOKIE_SECURE: ${ADMIN_COOKIE_SECURE:-true}
+      SYNC_SCHEDULER_ENABLED: ${SYNC_SCHEDULER_ENABLED:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Fixed by the image; the databases live on the connector-data volume.
       IDEMPOTENCY_DB_PATH: /app/data/idempotency.sqlite3
+      ADMIN_DB_PATH: /app/data/admin.db
+      FRONTEND_DIST_DIR: /app/frontend/dist
     ports:
-      - "8000:8000"
+      - "${CONNECTOR_PORT:-8000}:8000"
     volumes:
       - connector-data:/app/data
+    # Reach an Odoo or API running on the Docker host as http://host.docker.internal:<port>.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      # Liveness only (/livez): /health depends on Odoo and would flap with it.
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/livez', timeout=4)"
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
     restart: unless-stopped
 
 volumes:
