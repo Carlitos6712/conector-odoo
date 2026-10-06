@@ -32,10 +32,13 @@ class Settings(BaseSettings):
         hide_input_in_errors=True,  # validation errors must not echo (short) secrets
     )
 
-    odoo_url: str
-    odoo_db: str
-    odoo_user: str
-    odoo_api_key: SecretStr
+    # Legacy connection: all four are OPTIONAL. The preferred way is to create an Odoo connection
+    # profile in the admin UI and activate it; these are used only when no profile is active and
+    # ALL four are set (source "env"). The tuning variables below apply to either source.
+    odoo_url: str | None = None
+    odoo_db: str | None = None
+    odoo_user: str | None = None
+    odoo_api_key: SecretStr | None = None
     odoo_protocol: OdooProtocol = "jsonrpc"
     odoo_timeout_seconds: float = 10.0
     odoo_max_retries: int = 2
@@ -119,6 +122,15 @@ class Settings(BaseSettings):
                 "ADMIN_BOOTSTRAP_USER and ADMIN_BOOTSTRAP_PASSWORD must be set together"
             )
         return self
+
+    def odoo_env_configured(self) -> bool:
+        """True when the legacy ODOO_URL/DB/USER/API_KEY are all set."""
+        return all((self.odoo_url, self.odoo_db, self.odoo_user, self.odoo_api_key))
+
+    def odoo_env_partial(self) -> bool:
+        """True when SOME but not all of the legacy ODOO_* connection variables are set."""
+        values = (self.odoo_url, self.odoo_db, self.odoo_user, self.odoo_api_key)
+        return any(values) and not all(values)
 
     def previous_encryption_keys(self) -> list[str]:
         raw = (

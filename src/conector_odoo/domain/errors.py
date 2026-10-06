@@ -216,3 +216,22 @@ class AdminForbidden(ConnectorError):
 
 class CsrfInvalid(ConnectorError):
     """A state-changing admin request lacks a valid CSRF token."""
+
+
+class OdooNotConfigured(ConnectorError):
+    """No Odoo connection is active: neither a profile was activated nor the legacy env set."""
+
+
+class OdooActivationFailed(ConnectorError):
+    """The connection test of a profile failed, so it was NOT activated; the previous connection
+    stays in place. ``failed_step`` names the probe step, ``steps`` lists every step that ran."""
+
+    def __init__(
+        self,
+        message: str,
+        failed_step: str | None = None,
+        steps: tuple[tuple[str, bool, str, str | None], ...] = (),
+    ) -> None:
+        super().__init__(message)
+        self.failed_step = failed_step
+        self.steps = steps

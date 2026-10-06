@@ -25,7 +25,9 @@ from conector_odoo.domain.errors import (
     MappingInUse,
     MappingInvalid,
     MappingNotFound,
+    OdooActivationFailed,
     OdooAuthError,
+    OdooNotConfigured,
     OdooNotFound,
     OdooPermissionError,
     OdooUnavailable,
@@ -63,6 +65,8 @@ _MAPPING: tuple[tuple[type[ConnectorError] | tuple[type[ConnectorError], ...], i
     (OdooNotFound, 404, "not_found"),
     (OdooValidationError, 422, "validation_error"),
     (OdooUnavailable, 502, "odoo_unavailable"),
+    (OdooNotConfigured, 503, "odoo_not_configured"),
+    (OdooActivationFailed, 422, "odoo_activation_failed"),
     # -- admin API (/admin/api) -------------------------------------------------------------
     (SessionInvalid, 401, "unauthenticated"),
     (AuthenticationFailed, 401, "invalid_credentials"),
@@ -201,6 +205,18 @@ def connector_error_response(request: Request, exc: ConnectorError) -> JSONRespo
         return JSONResponse(partial, status_code=502)
     status, code = error_status_and_code(exc)
     _log_failure(request, exc, status, detail)
+    if isinstance(exc, OdooActivationFailed):
+        # The probe steps (already free of secrets) let the UI show which check failed.
+        failed: dict[str, object] = {
+            "error": code,
+            "detail": detail,
+            "failed_step": exc.failed_step,
+            "steps": [
+                {"name": n, "ok": ok, "detail": scrub(d, request.app.state.settings), "hint": h}
+                for n, ok, d, h in exc.steps
+            ],
+        }
+        return JSONResponse(failed, status_code=status)
     return JSONResponse(_body(code, detail), status_code=status)
 
 

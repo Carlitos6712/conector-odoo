@@ -206,6 +206,18 @@ _LOGIN_IP_THROTTLE = (
     """,
 )
 
+# Application state that is not user data: the Odoo connection profile activated from the admin UI
+# and when each profile last connected (keys are namespaced, values are plain strings).
+_APP_SETTINGS = (
+    """
+    CREATE TABLE app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+)
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "initial_admin_schema", _INITIAL_SCHEMA),
     Migration(2, "connection_profile_options", _PROFILE_OPTIONS),
@@ -213,4 +225,5 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(4, "sync_engine", _SYNC_ENGINE),
     Migration(5, "admin_auth", _ADMIN_AUTH),
     Migration(6, "login_ip_throttle", _LOGIN_IP_THROTTLE),
+    Migration(7, "app_settings", _APP_SETTINGS),
 )
