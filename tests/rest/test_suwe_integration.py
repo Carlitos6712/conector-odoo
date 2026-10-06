@@ -52,8 +52,11 @@ async def test_lists_every_suwe_client_with_page_pagination() -> None:
         records = [
             r async for batch in endpoint.iter_batches("clients", RecordFilter(), 10) for r in batch
         ]
-        assert len(records) == 37
-        assert len({r.id for r in records}) == 37
+        async with httpx.AsyncClient() as http:
+            probe = await http.get(f"{prof.base_url}/organization/clients?page=1&page_size=1")
+        expected = probe.json()["total"]
+        assert len(records) == expected
+        assert len({r.id for r in records}) == expected
         assert await endpoint.get("clients", records[0].id or "") is not None
     finally:
         await endpoint.aclose()
