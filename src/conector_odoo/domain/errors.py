@@ -1,6 +1,8 @@
 """Domain errors. The API layer maps them to 401 / 403 / 404 / 422 / 502 (and 202 for
 ``CreatedButUnreadable``; ``BatchPartiallyApplied`` is a 502 that lists the created ids)."""
 
+from collections.abc import Mapping
+
 
 class ConnectorError(Exception):
     """Base class for every error raised by the connector domain."""
@@ -87,3 +89,26 @@ class VaultNotConfigured(VaultError):
 
 class VaultDecryptionError(VaultError):
     """A stored secret cannot be decrypted (wrong ``ENCRYPTION_KEY`` or corrupted data)."""
+
+
+class ResourceNotFound(ConnectorError):
+    """The remote system has no such resource (model, endpoint, collection)."""
+
+
+class RecordRejected(ConnectorError):
+    """The remote system refused a record (validation or business rule).
+
+    ``field_errors`` maps field names to the remote's message when it reports them.
+    """
+
+    def __init__(self, message: str, field_errors: Mapping[str, str] | None = None) -> None:
+        super().__init__(message)
+        self.field_errors: dict[str, str] = dict(field_errors or {})
+
+
+class RemoteUnavailable(ConnectorError):
+    """The remote system is unreachable, timed out or failed unexpectedly."""
+
+
+class RemoteAuthError(ConnectorError):
+    """The remote system rejected the credentials or the session."""

@@ -1,7 +1,7 @@
 """Ports (async Protocols) implemented by infrastructure adapters."""
 
 from collections.abc import AsyncIterator, Awaitable, Callable
-from typing import Protocol
+from typing import Any, Protocol, runtime_checkable
 
 from conector_odoo.domain.entities import (
     Customer,
@@ -20,6 +20,8 @@ from conector_odoo.domain.profiles import (
     Secrets,
     StoredProfile,
 )
+from conector_odoo.domain.records import Record, RecordFilter, ResourceSchema
+from conector_odoo.domain.resources import ResourceConfig
 
 EventHandler = Callable[[OdooEvent], Awaitable[None]]
 
@@ -144,3 +146,54 @@ class ConnectionProbe(Protocol):
     """
 
     async def probe(self, profile: ConnectionProfile, secrets: Secrets) -> list[ProbeStep]: ...
+
+
+@runtime_checkable
+class RecordSource(Protocol):
+    """Reads records of any resource from a remote system.
+
+    Raises ``ResourceNotFound``, ``RemoteAuthError`` or ``RemoteUnavailable``.
+    """
+
+    async def describe(self, resource: str) -> ResourceSchema: ...
+
+    def iter_batches(
+        self, resource: str, record_filter: RecordFilter, batch_size: int
+    ) -> AsyncIterator[list[Record]]:
+        """Stream matching records, ``batch_size`` at a time; one batch in memory."""
+        ...
+
+    async def get(self, resource: str, id: str) -> Record | None: ...
+
+    async def sample(self, resource: str, limit: int) -> list[Record]: ...
+
+
+@runtime_checkable
+class RecordSink(Protocol):
+    """Writes records of any resource to a remote system.
+
+    ``create`` and ``update`` raise ``RecordRejected`` when the remote refuses the data.
+    """
+
+    async def describe(self, resource: str) -> ResourceSchema: ...
+
+    async def find_by(self, resource: str, field: str, value: Any) -> Record | None: ...
+
+    async def create(self, resource: str, fields: dict[str, Any], idempotency_key: str) -> Record:
+        """Create a record; replaying the same ``idempotency_key`` returns the same record."""
+        ...
+
+    async def update(self, resource: str, id: str, fields: dict[str, Any]) -> Record: ...
+
+
+@runtime_checkable
+class RecordEndpoint(RecordSource, RecordSink, Protocol):
+    """A system that can be both read from and written to."""
+
+
+class ResourceConfigProvider(Protocol):
+    """Looks up the ``ResourceConfig`` of a resource name (storage is not the adapter's concern)."""
+
+    async def get(self, resource: str) -> ResourceConfig:
+        """Raises ``ResourceNotFound`` when the resource is not configured."""
+        ...

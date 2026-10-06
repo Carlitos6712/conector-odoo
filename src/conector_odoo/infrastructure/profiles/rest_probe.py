@@ -52,6 +52,8 @@ async def check_endpoint(profile: ConnectionProfile) -> list[ProbeStep]:
             await client.get(profile.base_url.strip(), headers=profile.extra_headers)
     except httpx.TransportError as exc:
         return _classify(exc, profile)
+    except (httpx.InvalidURL, UnicodeError):
+        return [_unbuildable(REACHABLE)]
     if profile.base_url.strip().lower().startswith("https"):
         detail = (
             "certificate verification disabled (tls_verify=false)"
@@ -152,7 +154,19 @@ class RestConnectionProbe:
                 f"the authenticated request failed ({type(exc).__name__})",
                 "The server stopped answering during the credential check; retry the test.",
             )
+        except (httpx.InvalidURL, UnicodeError):
+            return _unbuildable(AUTH)
         return _judge(response.status_code)
+
+
+def _unbuildable(step: str) -> ProbeStep:
+    return ProbeStep(
+        step,
+        False,
+        "the request could not be built from this profile",
+        "Check the base URL and token URL for invalid characters, and that header names/values "
+        "are plain ASCII.",
+    )
 
 
 def _judge(status: int) -> ProbeStep:
@@ -163,12 +177,36 @@ def _judge(status: int) -> ProbeStep:
             f"the server rejected the credentials (HTTP {status})",
             "Check the key/token/client credentials and that the account has access to the API.",
         )
+    if status == 404:
+        return ProbeStep(
+            AUTH,
+            False,
+            "the base URL answered HTTP 404, so the credentials could not be checked",
+            "Check the base URL and path prefix (e.g. https://host/api/v1): the server does not "
+            "know that path.",
+        )
+    if status == 429:
+        return ProbeStep(
+            AUTH,
+            False,
+            "the server is rate limiting this client (HTTP 429)",
+            "The API throttled the credential check; wait a moment and retry, or lower the "
+            "request rate.",
+        )
     if status >= 500:
         return ProbeStep(
             AUTH,
             False,
             f"the server failed while checking credentials (HTTP {status})",
             "The API is reachable but erroring; try again later or check the server logs.",
+        )
+    if status >= 400:
+        return ProbeStep(
+            AUTH,
+            False,
+            f"the server rejected the authenticated request (HTTP {status})",
+            "The credentials were sent but the request was refused; check the base URL, required "
+            "headers and API documentation.",
         )
     return ProbeStep(AUTH, True, f"credentials accepted (HTTP {status})")
 
